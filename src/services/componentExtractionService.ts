@@ -141,7 +141,10 @@ export async function extractComponentsFromScreen(
     });
 
     if (response.error) {
-      throw new Error(response.error.message || 'Edge function error');
+      console.error('[ComponentExtraction] Edge function error:', response.error);
+      // Try to get more details from the response
+      const errorDetails = response.error.message || response.error.context?.body || JSON.stringify(response.error);
+      throw new Error(errorDetails || 'Edge function error');
     }
 
     const data = response.data as {
