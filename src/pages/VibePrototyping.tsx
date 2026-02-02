@@ -2423,8 +2423,23 @@ export const VibePrototyping: React.FC = () => {
   const handleBuildHighFidelity = useCallback(async () => {
     if (!currentSession || !plan) return;
 
-    // VISION-FIRST: Screenshot is required
-    if (!screenScreenshot) {
+    // VISION-FIRST: Screenshot is required - capture on-demand if missing
+    let screenshot = screenScreenshot;
+    if (!screenshot && screen?.editedHtml) {
+      console.log('[VibePrototyping] Screenshot missing, capturing on-demand...');
+      try {
+        const result = await captureHtmlScreenshot(screen.editedHtml, { maxWidth: 1280, maxHeight: 800, quality: 0.7 });
+        if (result?.base64) {
+          screenshot = await compressScreenshot(result.base64, 400);
+          setScreenScreenshot(screenshot);
+          console.log('[VibePrototyping] On-demand screenshot captured:', Math.round(screenshot.length / 1024), 'KB');
+        }
+      } catch (err) {
+        console.error('[VibePrototyping] Failed to capture screenshot on-demand:', err);
+      }
+    }
+
+    if (!screenshot) {
       showError('Screenshot is required for generation. Please wait for the screen to load.');
       return;
     }
@@ -2434,7 +2449,7 @@ export const VibePrototyping: React.FC = () => {
     console.log('[VibePrototyping] Starting high-fidelity generation...');
     console.log('[VibePrototyping] Session ID:', currentSession.id);
     console.log('[VibePrototyping] Plans count:', plan.plans?.length);
-    console.log('[VibePrototyping] Screenshot:', `${Math.round(screenScreenshot.length / 1024)}KB`);
+    console.log('[VibePrototyping] Screenshot:', `${Math.round(screenshot.length / 1024)}KB`);
     console.log('[VibePrototyping] Has metadata (design tokens):', !!sourceMetadata);
     console.log('[VibePrototyping] Wireframes available:', wireframes.length);
     console.log('[VibePrototyping] Generation method: V2 edit-based (UI-preserving)');
@@ -2525,7 +2540,7 @@ export const VibePrototyping: React.FC = () => {
           }));
           setCompletedVariantIndices((prev) => new Set([...prev, variantIndex]));
         },
-        screenScreenshot,
+        screenshot,
         selectedProvider || undefined,
         selectedModel || undefined
       );
@@ -2738,8 +2753,23 @@ export const VibePrototyping: React.FC = () => {
   const handleRepromptWireframes = useCallback(async (variantIndex?: number) => {
     if (!currentSession || !plan) return;
 
-    // VISION-FIRST: Screenshot is required
-    if (!screenScreenshot) {
+    // VISION-FIRST: Screenshot is required - capture on-demand if missing
+    let screenshot = screenScreenshot;
+    if (!screenshot && screen?.editedHtml) {
+      console.log('[VibePrototyping] Screenshot missing, capturing on-demand...');
+      try {
+        const result = await captureHtmlScreenshot(screen.editedHtml, { maxWidth: 1280, maxHeight: 800, quality: 0.7 });
+        if (result?.base64) {
+          screenshot = await compressScreenshot(result.base64, 400);
+          setScreenScreenshot(screenshot);
+          console.log('[VibePrototyping] On-demand screenshot captured:', Math.round(screenshot.length / 1024), 'KB');
+        }
+      } catch (err) {
+        console.error('[VibePrototyping] Failed to capture screenshot on-demand:', err);
+      }
+    }
+
+    if (!screenshot) {
       showError('Screenshot is required for wireframe generation. Please wait for the screen to load.');
       return;
     }
@@ -2773,7 +2803,7 @@ export const VibePrototyping: React.FC = () => {
         sourceMetadata || undefined,
         selectedVariants,
         undefined, // onProgress
-        screenScreenshot,
+        screenshot,
         selectedProvider || undefined,
         selectedModel || undefined
       );
