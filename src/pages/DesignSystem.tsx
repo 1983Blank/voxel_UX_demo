@@ -53,6 +53,8 @@ import {
   labelFontsWithLLM,
   isLLMLabelingAvailable,
 } from '@/services/designSystemLabelingService';
+import { captureHtmlScreenshot, compressScreenshot } from '@/services/screenshotService';
+import { isLLMExtractionAvailable } from '@/services/designTokenExtractionService';
 
 interface ExtractedColor {
   id: string;
@@ -756,6 +758,7 @@ export const DesignSystem: React.FC = () => {
     lastExtractionTime,
     initializeTokens,
     extractTokensFromScreens,
+    extractTokensWithLLM,
     deleteTokens,
     updateToken,
     selectedIds,
@@ -866,7 +869,7 @@ export const DesignSystem: React.FC = () => {
     }
   }, [tokens, lastExtractionTime, isTokensInitialized, isLoadingTokens, isStoreExtracting]);
 
-  // Extract design system from screens (now uses the store with persistence)
+  // Extract design system from screens using LLM vision
   const extractDesignSystem = useCallback(async () => {
     setIsExtracting(true);
     setExtractionProgress(0);
@@ -882,25 +885,75 @@ export const DesignSystem: React.FC = () => {
         return;
       }
 
-      const htmlStrings = screensWithHtml.map((s) => s.editedHtml!);
+      // Check if LLM extraction is available
+      const useLLM = await isLLMExtractionAvailable();
 
-      // Simulate async processing with progress display
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      if (useLLM) {
+        // LLM-based extraction with screenshots
+        setExtractionMessage('Capturing screenshots...');
+        setExtractionProgress(5);
 
-      // Show progress during local parsing (for UX feedback)
-      extractDesignTokens(htmlStrings, (progress, message) => {
-        setExtractionProgress(progress);
-        setExtractionMessage(message);
-      });
+        // Capture screenshot from first screen for visual context
+        const firstScreen = screensWithHtml[0];
+        let screenshotBase64: string | undefined;
 
-      // Extract and persist to the store (Supabase)
-      // The useEffect will update designSystem from the store's tokens
-      const screenInputs = screensWithHtml.map(s => ({
-        id: s.id,
-        name: s.name,
-        html: s.editedHtml!,
-      }));
-      await extractTokensFromScreens(screenInputs);
+        try {
+          const screenshot = await captureHtmlScreenshot(firstScreen.editedHtml!, {
+            maxWidth: 1280,
+            maxHeight: 900,
+            quality: 0.85,
+          });
+
+          if (screenshot) {
+            // Compress if needed
+            const compressed = await compressScreenshot(screenshot.base64, 1024 * 1024);
+            screenshotBase64 = compressed || screenshot.base64;
+            console.log('[DesignSystem] Screenshot captured:', Math.round((screenshotBase64?.length || 0) / 1024), 'KB');
+          }
+        } catch (err) {
+          console.warn('[DesignSystem] Screenshot capture failed, continuing without:', err);
+        }
+
+        if (!screenshotBase64) {
+          showError('Failed to capture screenshot for AI analysis. Using basic extraction.');
+          // Fall back to basic extraction
+          const screenInputs = screensWithHtml.map(s => ({
+            id: s.id,
+            name: s.name,
+            html: s.editedHtml!,
+          }));
+          await extractTokensFromScreens(screenInputs);
+        } else {
+          // Use LLM extraction
+          const screenInputs = screensWithHtml.map(s => ({
+            id: s.id,
+            name: s.name,
+            html: s.editedHtml!,
+            screenshotBase64: s.id === firstScreen.id ? screenshotBase64 : undefined,
+          }));
+
+          await extractTokensWithLLM(screenInputs, (progress, message) => {
+            setExtractionProgress(progress);
+            setExtractionMessage(message);
+          });
+        }
+      } else {
+        // Basic extraction without LLM (fallback)
+        setExtractionMessage('Analyzing HTML patterns...');
+
+        const htmlStrings = screensWithHtml.map((s) => s.editedHtml!);
+        extractDesignTokens(htmlStrings, (progress, message) => {
+          setExtractionProgress(progress);
+          setExtractionMessage(message);
+        });
+
+        const screenInputs = screensWithHtml.map(s => ({
+          id: s.id,
+          name: s.name,
+          html: s.editedHtml!,
+        }));
+        await extractTokensFromScreens(screenInputs);
+      }
 
       // Clear local designSystem so it gets rebuilt from store tokens
       setDesignSystem(null);
@@ -911,7 +964,7 @@ export const DesignSystem: React.FC = () => {
     } finally {
       setIsExtracting(false);
     }
-  }, [screens, showSuccess, showError, extractTokensFromScreens]);
+  }, [screens, showSuccess, showError, extractTokensFromScreens, extractTokensWithLLM]);
 
   // Generate AI labels for colors and fonts
   const handleGenerateAILabels = async () => {

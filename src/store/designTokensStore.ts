@@ -20,6 +20,11 @@ import {
   type TokenCategory,
   type TokenStatus,
 } from '@/services/designTokensPersistenceService';
+import {
+  extractRawTokensFromHtml,
+  classifyTokensWithLLM,
+  type ClassifiedToken,
+} from '@/services/designTokenExtractionService';
 import { isSupabaseConfigured } from '@/services/supabase';
 
 // Re-export types
@@ -50,6 +55,10 @@ interface DesignTokensState {
   // Token CRUD
   extractTokensFromScreens: (
     screens: Array<{ id: string; name: string; html: string }>
+  ) => Promise<DesignToken[]>;
+  extractTokensWithLLM: (
+    screens: Array<{ id: string; name: string; html: string; screenshotBase64?: string }>,
+    onProgress?: (progress: number, message: string) => void
   ) => Promise<DesignToken[]>;
   addToken: (token: Omit<DesignToken, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
   updateToken: (id: string, updates: Partial<DesignToken>) => Promise<void>;
@@ -506,6 +515,104 @@ export const useDesignTokensStore = create<DesignTokensState>()(
           }
         } catch (error) {
           console.error('[DesignTokensStore] Error extracting tokens:', error);
+          set({ isExtracting: false });
+          throw error;
+        }
+      },
+
+      extractTokensWithLLM: async (screens, onProgress) => {
+        set({ isExtracting: true });
+
+        try {
+          // Step 1: Extract raw tokens from all screens
+          onProgress?.(10, 'Extracting raw values from HTML...');
+          const allRawTokens: Array<{ type: string; value: string; count: number }> = [];
+
+          for (const screen of screens) {
+            const rawTokens = extractRawTokensFromHtml(screen.html);
+            allRawTokens.push(...rawTokens);
+          }
+
+          // Deduplicate raw tokens
+          const tokenMap = new Map<string, { type: string; value: string; count: number }>();
+          allRawTokens.forEach(t => {
+            const key = `${t.type}:${t.value}`;
+            const existing = tokenMap.get(key);
+            if (existing) {
+              existing.count += t.count;
+            } else {
+              tokenMap.set(key, { ...t });
+            }
+          });
+          const dedupedRawTokens = Array.from(tokenMap.values())
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 40); // Limit for LLM context
+
+          console.log(`[DesignTokensStore] Raw tokens: ${dedupedRawTokens.length}`);
+          onProgress?.(30, `Found ${dedupedRawTokens.length} unique values to classify...`);
+
+          // Step 2: Get screenshot from first screen with one
+          const screenWithScreenshot = screens.find(s => s.screenshotBase64);
+          if (!screenWithScreenshot?.screenshotBase64) {
+            throw new Error('No screenshot available for LLM classification');
+          }
+
+          // Step 3: Call LLM for classification
+          onProgress?.(50, 'Sending to AI for semantic classification...');
+          const classifiedTokens = await classifyTokensWithLLM(
+            screenWithScreenshot.id,
+            screenWithScreenshot.name,
+            screenWithScreenshot.screenshotBase64,
+            dedupedRawTokens.map(t => ({
+              type: t.type as 'color' | 'typography' | 'spacing' | 'border-radius' | 'shadow',
+              value: t.value,
+              count: t.count,
+            }))
+          );
+
+          onProgress?.(80, `Classified ${classifiedTokens.length} tokens, saving...`);
+
+          // Step 4: Convert ClassifiedTokens to DesignTokens
+          const designTokens: DesignToken[] = classifiedTokens.map((ct: ClassifiedToken) => ({
+            id: uuidv4(),
+            name: ct.name,
+            category: ct.type as TokenCategory,
+            subcategory: ct.subcategory,
+            value: ct.value,
+            valueType: ct.type === 'color' ? 'color' : undefined,
+            description: ct.description,
+            cssVariable: ct.cssVariable,
+            usageCount: ct.usageCount,
+            sourceScreenIds: screens.map(s => s.id),
+            sourceScreenNames: screens.map(s => s.name),
+            status: 'pending' as TokenStatus,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          }));
+
+          console.log(`[DesignTokensStore] LLM classified ${designTokens.length} tokens`);
+
+          // Step 5: Save to Supabase
+          if (isSupabaseConfigured()) {
+            const savedTokens = await replaceAllDesignTokens(designTokens);
+            set({
+              tokens: savedTokens,
+              isExtracting: false,
+              lastExtractionTime: new Date().toISOString(),
+            });
+            onProgress?.(100, 'Done!');
+            return savedTokens;
+          } else {
+            set({
+              tokens: designTokens,
+              isExtracting: false,
+              lastExtractionTime: new Date().toISOString(),
+            });
+            onProgress?.(100, 'Done!');
+            return designTokens;
+          }
+        } catch (error) {
+          console.error('[DesignTokensStore] Error extracting tokens with LLM:', error);
           set({ isExtracting: false });
           throw error;
         }
