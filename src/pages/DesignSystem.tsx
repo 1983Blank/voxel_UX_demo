@@ -12,6 +12,8 @@ import IconButton from '@mui/material/IconButton';
 import Divider from '@mui/material/Divider';
 import LinearProgress from '@mui/material/LinearProgress';
 import Tooltip from '@mui/material/Tooltip';
+import Checkbox from '@mui/material/Checkbox';
+import Fade from '@mui/material/Fade';
 import {
   Button,
   Card,
@@ -44,6 +46,8 @@ import { useScreensStore } from '@/store/screensStore';
 import { useDesignTokensStore } from '@/store/designTokensStore';
 import { useSnackbar } from '@/components/SnackbarProvider';
 import { PageHeader } from '@/components/PageHeader';
+import { BatchSelectionBar } from '@/components/BatchSelectionBar';
+import { CheckCircle as CheckCircleIcon, Trash as TrashIcon } from '@phosphor-icons/react';
 import {
   labelColorsWithLLM,
   labelFontsWithLLM,
@@ -371,16 +375,23 @@ function ColorSwatch({
   onApprove,
   onEdit,
   onDelete,
+  isSelected,
+  onSelect,
 }: {
   color: ExtractedColor;
   onCopy: (value: string) => void;
   onApprove: (id: string) => void;
   onEdit: (id: string, label: string) => void;
   onDelete: (id: string) => void;
+  isSelected?: boolean;
+  onSelect?: (id: string) => void;
 }) {
   const [copied, setCopied] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editLabel, setEditLabel] = useState(color.label || '');
+  const [isHovered, setIsHovered] = useState(false);
+
+  const showCheckbox = isHovered || isSelected;
 
   const handleCopy = () => {
     navigator.clipboard.writeText(color.hex);
@@ -397,10 +408,12 @@ function ColorSwatch({
   return (
     <Card
       variant="outlined"
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
       sx={{
         overflow: 'hidden',
-        border: color.approved ? '2px solid' : '1px solid',
-        borderColor: color.approved ? 'success.main' : 'divider',
+        border: isSelected ? '2px solid' : color.approved ? '2px solid' : '1px solid',
+        borderColor: isSelected ? 'primary.main' : color.approved ? 'success.main' : 'divider',
         transition: 'all 0.2s ease',
       }}
     >
@@ -414,6 +427,35 @@ function ColorSwatch({
         }}
         onClick={handleCopy}
       >
+        {/* Selection checkbox - appears on hover */}
+        {onSelect && (
+          <Fade in={showCheckbox}>
+            <Box
+              sx={{
+                position: 'absolute',
+                top: 4,
+                left: 4,
+                zIndex: 10,
+              }}
+            >
+              <Checkbox
+                checked={isSelected}
+                onChange={(e) => {
+                  e.stopPropagation();
+                  onSelect(color.id);
+                }}
+                onClick={(e) => e.stopPropagation()}
+                sx={{
+                  p: 0,
+                  bgcolor: 'rgba(255,255,255,0.9)',
+                  borderRadius: 0.5,
+                  '&:hover': { bgcolor: 'white' },
+                  '& .MuiSvgIcon-root': { fontSize: 18 },
+                }}
+              />
+            </Box>
+          </Fade>
+        )}
         <Box
           className="swatch-actions"
           sx={{
@@ -711,6 +753,14 @@ export const DesignSystem: React.FC = () => {
     lastExtractionTime,
     initializeTokens,
     extractTokensFromScreens,
+    deleteTokens,
+    updateToken,
+    selectedIds,
+    toggleTokenSelection,
+    selectAllTokens,
+    clearSelection,
+    approveSelectedTokens,
+    deleteSelectedTokens,
   } = useDesignTokensStore();
   const { showSuccess, showError } = useSnackbar();
 
@@ -894,8 +944,17 @@ export const DesignSystem: React.FC = () => {
     showSuccess(`Copied: ${value}`);
   };
 
-  const handleApproveColor = (id: string) => {
+  const handleApproveColor = async (id: string) => {
     if (!designSystem) return;
+    const color = designSystem.colors.find(c => c.id === id);
+    if (!color) return;
+
+    const newStatus = color.approved ? 'pending' : 'approved';
+
+    // Update in store (persists to Supabase)
+    await updateToken(id, { status: newStatus as 'pending' | 'approved' });
+
+    // Update local state
     setDesignSystem({
       ...designSystem,
       colors: designSystem.colors.map((c) =>
@@ -915,8 +974,13 @@ export const DesignSystem: React.FC = () => {
     showSuccess('Color label updated');
   };
 
-  const handleDeleteColor = (id: string) => {
+  const handleDeleteColor = async (id: string) => {
     if (!designSystem) return;
+
+    // Delete from store (persists to Supabase)
+    await deleteTokens([id]);
+
+    // Update local state
     setDesignSystem({
       ...designSystem,
       colors: designSystem.colors.filter((c) => c.id !== id),
@@ -926,8 +990,17 @@ export const DesignSystem: React.FC = () => {
     setDeleteTarget(null);
   };
 
-  const handleApproveFont = (id: string) => {
+  const handleApproveFont = async (id: string) => {
     if (!designSystem) return;
+    const font = designSystem.fonts.find(f => f.id === id);
+    if (!font) return;
+
+    const newStatus = font.approved ? 'pending' : 'approved';
+
+    // Update in store (persists to Supabase)
+    await updateToken(id, { status: newStatus as 'pending' | 'approved' });
+
+    // Update local state
     setDesignSystem({
       ...designSystem,
       fonts: designSystem.fonts.map((f) =>
@@ -947,8 +1020,13 @@ export const DesignSystem: React.FC = () => {
     showSuccess('Font label updated');
   };
 
-  const handleDeleteFont = (id: string) => {
+  const handleDeleteFont = async (id: string) => {
     if (!designSystem) return;
+
+    // Delete from store (persists to Supabase)
+    await deleteTokens([id]);
+
+    // Update local state
     setDesignSystem({
       ...designSystem,
       fonts: designSystem.fonts.filter((f) => f.id !== id),
@@ -963,13 +1041,56 @@ export const DesignSystem: React.FC = () => {
     setDeleteDialogOpen(true);
   };
 
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = async () => {
     if (!deleteTarget) return;
     if (deleteTarget.type === 'color') {
-      handleDeleteColor(deleteTarget.id);
+      await handleDeleteColor(deleteTarget.id);
     } else if (deleteTarget.type === 'font') {
-      handleDeleteFont(deleteTarget.id);
+      await handleDeleteFont(deleteTarget.id);
     }
+  };
+
+  // Batch selection handlers for colors
+  const handleToggleColorSelection = (id: string) => {
+    toggleTokenSelection(id);
+  };
+
+  const handleSelectAllColors = () => {
+    if (!designSystem) return;
+    const colorIds = designSystem.colors.map(c => c.id);
+    const allSelected = colorIds.every(id => selectedIds.includes(id));
+    if (allSelected) {
+      clearSelection();
+    } else {
+      selectAllTokens(colorIds);
+    }
+  };
+
+  const handleBatchApproveColors = async () => {
+    await approveSelectedTokens();
+    // Update local state
+    if (designSystem) {
+      setDesignSystem({
+        ...designSystem,
+        colors: designSystem.colors.map(c =>
+          selectedIds.includes(c.id) ? { ...c, approved: true } : c
+        ),
+      });
+    }
+    showSuccess(`Approved ${selectedIds.length} colors`);
+  };
+
+  const handleBatchDeleteColors = async () => {
+    const count = selectedIds.length;
+    await deleteSelectedTokens();
+    // Update local state
+    if (designSystem) {
+      setDesignSystem({
+        ...designSystem,
+        colors: designSystem.colors.filter(c => !selectedIds.includes(c.id)),
+      });
+    }
+    showSuccess(`Deleted ${count} colors`);
   };
 
   const approvedColorsCount = designSystem?.colors.filter((c) => c.approved).length || 0;
@@ -1099,6 +1220,8 @@ export const DesignSystem: React.FC = () => {
                       onApprove={handleApproveColor}
                       onEdit={handleEditColor}
                       onDelete={(id) => openDeleteDialog('color', id)}
+                      isSelected={selectedIds.includes(color.id)}
+                      onSelect={handleToggleColorSelection}
                     />
                   </Grid>
                 ))}
@@ -1226,6 +1349,30 @@ export const DesignSystem: React.FC = () => {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Batch Selection Bar */}
+      <BatchSelectionBar
+        selectedCount={selectedIds.length}
+        totalCount={activeTab === 0 ? (designSystem?.colors.length || 0) : (designSystem?.fonts.length || 0)}
+        onSelectAll={handleSelectAllColors}
+        onClearSelection={clearSelection}
+        actions={[
+          {
+            label: 'Approve',
+            icon: <CheckCircleIcon size={18} />,
+            onClick: handleBatchApproveColors,
+            color: 'success',
+            tooltip: 'Approve selected items',
+          },
+          {
+            label: 'Delete',
+            icon: <TrashIcon size={18} />,
+            onClick: handleBatchDeleteColors,
+            color: 'error',
+            tooltip: 'Delete selected items',
+          },
+        ]}
+      />
     </Box>
   );
 };

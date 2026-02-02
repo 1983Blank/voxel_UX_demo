@@ -14,8 +14,7 @@ import Tooltip from '@mui/material/Tooltip';
 import IconButton from '@mui/material/IconButton';
 import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
-import Collapse from '@mui/material/Collapse';
-import Alert from '@mui/material/Alert';
+import Slide from '@mui/material/Slide';
 import {
   Plus,
   MagnifyingGlass,
@@ -26,8 +25,6 @@ import {
   Flask,
   GridFour,
   List,
-  CheckSquare,
-  X,
 } from '@phosphor-icons/react';
 import {
   Button,
@@ -40,7 +37,7 @@ import {
   DialogActions,
   Chip,
 } from '@/components/ui';
-import { EmptyState, ThumbnailCard, PageHeader } from '@/components';
+import { EmptyState, ThumbnailCard, PageHeader, BatchSelectionBar } from '@/components';
 import { useSnackbar } from '@/components/SnackbarProvider';
 import { useThemeStore } from '@/store/themeStore';
 import { useScreensStore } from '@/store/screensStore';
@@ -121,7 +118,6 @@ export function Prototypes() {
 
   // New state for batch actions and list view
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
-  const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   // Initialize screens and fetch prototypes on mount
@@ -281,19 +277,16 @@ export function Prototypes() {
   };
 
   // Batch actions
-  const handleToggleSelectionMode = () => {
-    if (isSelectionMode) {
-      setSelectedIds([]);
-    }
-    setIsSelectionMode(!isSelectionMode);
-  };
-
   const handleSelectAll = () => {
     if (selectedIds.length === filteredPrototypes.length) {
       setSelectedIds([]);
     } else {
       setSelectedIds(filteredPrototypes.map(p => p.id));
     }
+  };
+
+  const handleClearSelection = () => {
+    setSelectedIds([]);
   };
 
   const handleToggleSelect = (id: string) => {
@@ -320,7 +313,6 @@ export function Prototypes() {
       setPrototypes(prev => prev.filter(p => !selectedIds.includes(p.id)));
       showSuccess(`Deleted ${selectedIds.length} prototype(s)`);
       setSelectedIds([]);
-      setIsSelectionMode(false);
     } catch (error) {
       console.error('Batch delete error:', error);
       showError('Failed to delete prototypes');
@@ -362,45 +354,6 @@ export function Prototypes() {
 
   return (
     <Box>
-      {/* Selection mode banner */}
-      <Collapse in={isSelectionMode}>
-        <Alert
-          severity="info"
-          sx={{ mb: 2 }}
-          action={
-            <Box sx={{ display: 'flex', gap: 1 }}>
-              <Button
-                color="error"
-                size="small"
-                startIcon={<Trash size={16} />}
-                disabled={selectedIds.length === 0}
-                onClick={handleBatchDelete}
-              >
-                Delete Selected
-              </Button>
-              <Button
-                size="small"
-                startIcon={<X size={16} />}
-                onClick={handleToggleSelectionMode}
-              >
-                Cancel
-              </Button>
-            </Box>
-          }
-        >
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <Checkbox
-              checked={selectedIds.length === filteredPrototypes.length && filteredPrototypes.length > 0}
-              indeterminate={selectedIds.length > 0 && selectedIds.length < filteredPrototypes.length}
-              onChange={handleSelectAll}
-            />
-            <Typography>
-              {selectedIds.length} of {filteredPrototypes.length} selected
-            </Typography>
-          </Box>
-        </Alert>
-      </Collapse>
-
       {/* Header */}
       <PageHeader
         title="Prototypes"
@@ -449,18 +402,6 @@ export function Prototypes() {
                 <List size={18} />
               </ToggleButton>
             </ToggleButtonGroup>
-            <Tooltip title={isSelectionMode ? 'Exit selection mode' : 'Select multiple'}>
-              <IconButton
-                onClick={handleToggleSelectionMode}
-                color={isSelectionMode ? 'primary' : 'default'}
-                sx={{
-                  transition: 'all 0.2s ease',
-                  '&:hover': { transform: 'scale(1.1)' },
-                }}
-              >
-                <CheckSquare size={20} />
-              </IconButton>
-            </Tooltip>
             <Button
               variant="contained"
               startIcon={<Plus size={18} />}
@@ -561,7 +502,6 @@ export function Prototypes() {
                   color: getStatusColor(prototype.status),
                 }}
                 preview={getPrototypePreview(prototype)}
-                isSelectionMode={isSelectionMode}
                 isSelected={selectedIds.includes(prototype.id)}
                 onSelect={() => handleToggleSelect(prototype.id)}
                 onClick={() => navigate(`/prototypes/${prototype.screenId}/${prototype.id}`)}
@@ -591,7 +531,7 @@ export function Prototypes() {
               borderRadius: '8px 8px 0 0',
             }}
           >
-            {isSelectionMode && <Box sx={{ width: 42 }} />}
+            <Box sx={{ width: 42, flexShrink: 0 }} />
             <Box sx={{ width: 80, flexShrink: 0 }}>
               <Typography variant="caption" color="text.secondary" fontWeight={600}>
                 Preview
@@ -623,7 +563,7 @@ export function Prototypes() {
           {filteredPrototypes.map((prototype, index) => (
             <Box
               key={prototype.id}
-              onClick={() => !isSelectionMode && navigate(`/prototypes/${prototype.screenId}/${prototype.id}`)}
+              onClick={() => navigate(`/prototypes/${prototype.screenId}/${prototype.id}`)}
               sx={{
                 display: 'flex',
                 alignItems: 'center',
@@ -646,22 +586,28 @@ export function Prototypes() {
                   '& .action-button': {
                     opacity: 1,
                   },
+                  '& .hover-checkbox': {
+                    opacity: 1,
+                  },
                 },
                 '&:last-child': {
                   borderRadius: '0 0 8px 8px',
                 },
               }}
             >
-              {isSelectionMode && (
-                <Checkbox
-                  checked={selectedIds.includes(prototype.id)}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleToggleSelect(prototype.id);
-                  }}
-                  sx={{ p: 0.5 }}
-                />
-              )}
+              <Checkbox
+                checked={selectedIds.includes(prototype.id)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleToggleSelect(prototype.id);
+                }}
+                className="hover-checkbox"
+                sx={{
+                  p: 0.5,
+                  opacity: selectedIds.includes(prototype.id) ? 1 : 0,
+                  transition: 'opacity 0.2s ease',
+                }}
+              />
               {/* Thumbnail */}
               <Box
                 sx={{
@@ -895,6 +841,26 @@ export function Prototypes() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Batch Selection Bar */}
+      <Slide direction="up" in={selectedIds.length > 0} mountOnEnter unmountOnExit>
+        <Box sx={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', zIndex: 1200 }}>
+          <BatchSelectionBar
+            selectedCount={selectedIds.length}
+            totalCount={filteredPrototypes.length}
+            onSelectAll={handleSelectAll}
+            onClearSelection={handleClearSelection}
+            actions={[
+              {
+                label: 'Delete',
+                icon: <Trash size={18} />,
+                onClick: handleBatchDelete,
+                color: 'error',
+              },
+            ]}
+          />
+        </Box>
+      </Slide>
     </Box>
   );
 }
