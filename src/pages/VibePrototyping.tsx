@@ -3522,6 +3522,29 @@ export const VibePrototyping: React.FC = () => {
                       sx={{ mr: 1 }}
                     />
                   )}
+                  {/* Mode toggle: Classic vs Interactive */}
+                  <ToggleButtonGroup
+                    value={prototypeMode}
+                    exclusive
+                    onChange={(_, value) => value && setPrototypeMode(value)}
+                    size="small"
+                    sx={{ mr: 1 }}
+                  >
+                    <ToggleButton value="classic">
+                      <Tooltip title="Classic Mode - Standard HTML prototypes">
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <SquaresFour size={16} />
+                        </span>
+                      </Tooltip>
+                    </ToggleButton>
+                    <ToggleButton value="interactive">
+                      <Tooltip title="Interactive Mode - File-based prototypes with state & debugging">
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <Play size={16} />
+                        </span>
+                      </Tooltip>
+                    </ToggleButton>
+                  </ToggleButtonGroup>
                   <Button
                     variant="outlined"
                     onClick={() => handleRepromptWireframes()}
@@ -3537,7 +3560,7 @@ export const VibePrototyping: React.FC = () => {
                     startIcon={error ? <ArrowClockwise size={14} /> : undefined}
                     sx={{ background: config.gradients?.primary || config.colors.primary }}
                   >
-                    {error ? 'Retry Build' : 'Build High-Fidelity'}
+                    {error ? 'Retry Build' : `Build ${prototypeMode === 'interactive' ? 'Interactive' : 'High-Fidelity'}`}
                   </Button>
                 </>
               )}
