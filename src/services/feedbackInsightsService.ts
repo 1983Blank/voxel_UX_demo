@@ -363,17 +363,17 @@ export async function getVariantInsights(sessionId: string): Promise<VariantInsi
  * Fallback method for getting variant insights
  */
 async function getVariantInsightsFallback(sessionId: string): Promise<VariantInsight[]> {
-  // Get variants with their plans and wireframe URLs
+  // Get variants with their plans and wireframe URLs (wireframe_url is on vibe_variant_plans)
   const { data: variants, error } = await supabase
     .from('vibe_variants')
     .select(`
       id,
       variant_index,
       session_id,
-      wireframe_url,
       vibe_variant_plans (
         title,
-        description
+        description,
+        wireframe_url
       )
     `)
     .eq('session_id', sessionId)
@@ -411,11 +411,10 @@ async function getVariantInsightsFallback(sessionId: string): Promise<VariantIns
   // Build variant insights
   const variantInsights: VariantInsight[] = (variants || []).map((variant) => {
     const variantWithPlan = variant as unknown as {
-      vibe_variant_plans: { title: string; description: string } | null;
-      wireframe_url: string | null;
+      vibe_variant_plans: { title: string; description: string; wireframe_url: string | null } | null;
     };
     const plan = variantWithPlan.vibe_variant_plans;
-    const wireframeUrl = variantWithPlan.wireframe_url;
+    const wireframeUrl = plan?.wireframe_url || null;
     const variantIndex = variant.variant_index;
     const label = `Variant ${String.fromCharCode(64 + variantIndex)}`;
 
@@ -505,16 +504,16 @@ export async function getVariantDetailInsight(
       // Find the specific variant from RPC results
       const row = rpcData.find((r: { variant_index: number }) => r.variant_index === variantIndex);
       if (row) {
-        // Fetch wireframe URL separately since RPC doesn't return it
+        // Fetch wireframe URL from vibe_variant_plans (where it's stored by wireframeService)
         let wireframeUrl: string | null = null;
-        const { data: variantData } = await supabase
-          .from('vibe_variants')
+        const { data: planData } = await supabase
+          .from('vibe_variant_plans')
           .select('wireframe_url')
           .eq('session_id', sessionId)
           .eq('variant_index', variantIndex)
           .single();
-        if (variantData) {
-          wireframeUrl = variantData.wireframe_url;
+        if (planData) {
+          wireframeUrl = planData.wireframe_url;
         }
 
         variantInsight = {
