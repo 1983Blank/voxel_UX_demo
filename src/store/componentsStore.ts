@@ -148,7 +148,10 @@ function deduplicateStoredComponents(components: ExtractedComponent[]): Extracte
   const componentMap = new Map<string, ExtractedComponent>();
 
   for (const comp of components) {
-    const signature = `${comp.category}:${comp.name.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+    // Guard against undefined name or category
+    const name = comp.name || 'unnamed';
+    const category = comp.category || 'other';
+    const signature = `${category}:${name.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
 
     if (componentMap.has(signature)) {
       // Merge with existing
