@@ -1661,6 +1661,7 @@ export const VibePrototyping: React.FC = () => {
   const [previewSize, setPreviewSize] = useState<PreviewSize>('desktop');
   const [interactivityEnabled, setInteractivityEnabled] = useState(false); // Enable prototype interactivity
   const [useLLMEnhancement, setUseLLMEnhancement] = useState(true); // Use LLM for smart interactivity (vs quick/default)
+  const [shouldBuildAfterSkip, setShouldBuildAfterSkip] = useState(false); // Trigger build after skipping wireframes
 
   // Screen name editing
   const [isEditingName, setIsEditingName] = useState(false);
@@ -2427,6 +2428,38 @@ export const VibePrototyping: React.FC = () => {
     }
   }, [currentSession, plan, screen, sourceMetadata, screenScreenshot, selectedProvider, selectedModel, selectedVariants, addChatMessage, storeApprovePlan, isCreatingWireframes]);
 
+  // Handle Skip to Build button - skips wireframing and goes directly to building
+  const handleSkipToBuilding = useCallback(async () => {
+    if (!currentSession || !plan || selectedVariants.length === 0) return;
+
+    console.log('[VibePrototyping] Skipping wireframes, going directly to building...');
+    console.log('[VibePrototyping] Session ID:', currentSession.id);
+    console.log('[VibePrototyping] Selected variants:', selectedVariants);
+
+    try {
+      addChatMessage('assistant', 'Skipping wireframes and going directly to high-fidelity prototypes...');
+
+      // Approve the plan first
+      const approvedSession = await approvePlan(currentSession.id);
+      if (approvedSession) {
+        storeApprovePlan();
+      }
+
+      // Transition directly to wireframe_ready (skipping wireframing)
+      // This allows handleBuildHighFidelity to proceed
+      setStatus('wireframe_ready');
+      setWireframes([]); // No wireframes generated
+
+      // Set flag to trigger build via useEffect (avoids circular dependency)
+      setShouldBuildAfterSkip(true);
+    } catch (err) {
+      console.error('Error skipping to build:', err);
+      const errorMsg = err instanceof Error ? err.message : 'Failed to skip to build';
+      showError(errorMsg);
+      setError(errorMsg);
+    }
+  }, [currentSession, plan, selectedVariants, addChatMessage, storeApprovePlan, setStatus, showError, setError]);
+
   // Handle Build High-Fidelity button - transitions from wireframe_ready to generating
   const handleBuildHighFidelity = useCallback(async () => {
     if (!currentSession || !plan) return;
@@ -2673,6 +2706,17 @@ export const VibePrototyping: React.FC = () => {
       setIsRebuilding(false);
     }
   }, [currentSession, plan, isRebuilding, addChatMessage, setStatus, setError, setVariants, handleBuildHighFidelity, showError]);
+
+  // Effect to trigger build after skipping wireframes
+  useEffect(() => {
+    if (shouldBuildAfterSkip && status === 'wireframe_ready') {
+      setShouldBuildAfterSkip(false);
+      // Small delay to ensure UI updates
+      setTimeout(() => {
+        handleBuildHighFidelity();
+      }, 100);
+    }
+  }, [shouldBuildAfterSkip, status, handleBuildHighFidelity]);
 
   // Handle iteration on a variant
   const handleIterate = useCallback(async () => {
@@ -3499,6 +3543,36 @@ export const VibePrototyping: React.FC = () => {
                   <Typography variant="caption" color="text.secondary">
                     {selectedVariants.length}/4 selected
                   </Typography>
+                  {/* Mode toggle: Classic vs Interactive */}
+                  <ToggleButtonGroup
+                    value={prototypeMode}
+                    exclusive
+                    onChange={(_, value) => value && setPrototypeMode(value)}
+                    size="small"
+                  >
+                    <ToggleButton value="classic">
+                      <Tooltip title="Classic Mode - Standard HTML prototypes">
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <SquaresFour size={16} />
+                        </span>
+                      </Tooltip>
+                    </ToggleButton>
+                    <ToggleButton value="interactive">
+                      <Tooltip title="Interactive Mode - File-based prototypes with state & debugging">
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <Play size={16} />
+                        </span>
+                      </Tooltip>
+                    </ToggleButton>
+                  </ToggleButtonGroup>
+                  <Button
+                    variant="outlined"
+                    onClick={handleSkipToBuilding}
+                    disabled={selectedVariants.length === 0 || isCreatingWireframes}
+                    size="small"
+                  >
+                    Skip to Build
+                  </Button>
                   <Button
                     variant="contained"
                     onClick={handleCreateWireframes}
@@ -4422,7 +4496,7 @@ export const VibePrototyping: React.FC = () => {
           )}
 
           {/* Loading/Planning/Wireframing state - 2x2 grid with loading indicators or wireframes */}
-          {(isPlanning || isPlanReady || isWireframing || isWireframeReady || isGenerating) && !focusedVariantIndex && (
+          {(isPlanning || isPlanReady || isWireframing || isWireframeReady) && !focusedVariantIndex && (
             <Box sx={{ flex: 1, p: 2, overflow: 'auto', minHeight: 0 }}>
               <Grid container spacing={2} sx={{ height: '100%', minHeight: 0 }}>
                 {['Variant A', 'Variant B', 'Variant C', 'Variant D'].map((label, idx) => {
@@ -4453,6 +4527,73 @@ export const VibePrototyping: React.FC = () => {
                   );
                 })}
               </Grid>
+            </Box>
+          )}
+
+          {/* Generating state - show original screen with progress overlay (variant cards in chat panel show progress) */}
+          {isGenerating && !focusedVariantIndex && screen?.editedHtml && (
+            <Box sx={{ flex: 1, p: 2, overflow: 'hidden', position: 'relative' }}>
+              <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+                {/* Header with progress info */}
+                <Box sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  px: 2,
+                  py: 1.5,
+                  borderBottom: '1px solid',
+                  borderColor: 'divider',
+                  bgcolor: 'grey.50'
+                }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <CircularProgress size={16} />
+                    <Typography variant="subtitle2" fontWeight={600}>
+                      Building Prototypes
+                    </Typography>
+                  </Box>
+                  <Typography variant="caption" color="text.secondary">
+                    {completedVariantIndices.size}/{selectedVariants.length} variants complete
+                  </Typography>
+                </Box>
+                {/* Original screen preview */}
+                <Box sx={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
+                  <iframe
+                    srcDoc={screen.editedHtml}
+                    title="Original Screen"
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      border: 'none',
+                      opacity: 0.5,
+                    }}
+                  />
+                  {/* Progress overlay */}
+                  <Box
+                    sx={{
+                      position: 'absolute',
+                      inset: 0,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      bgcolor: 'rgba(255,255,255,0.7)',
+                      backdropFilter: 'blur(2px)',
+                    }}
+                  >
+                    <Box sx={{ textAlign: 'center' }}>
+                      <CircularProgress size={48} sx={{ mb: 2 }} />
+                      <Typography variant="body1" fontWeight={600} sx={{ mb: 0.5 }}>
+                        Generating {prototypeMode === 'interactive' ? 'Interactive' : 'High-Fidelity'} Prototypes
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                        {progress?.message || 'Building variants...'}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Click a completed variant card on the left to preview it
+                      </Typography>
+                    </Box>
+                  </Box>
+                </Box>
+              </Card>
             </Box>
           )}
 
