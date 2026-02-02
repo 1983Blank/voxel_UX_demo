@@ -257,8 +257,17 @@ export async function updateComponentsStatus(
   console.log(`[ComponentsPersistence] Updated status to "${status}" for ${ids.length} components`);
 }
 
+// Check if a string is a valid UUID format
+function isValidUUID(id: string): boolean {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(id);
+}
+
 /**
  * Delete multiple components
+ * Note: Only attempts to delete from Supabase for valid UUID IDs.
+ * Legacy IDs (comp_xxx format) are only in localStorage and will be
+ * removed from local state by the store.
  */
 export async function deleteComponents(ids: string[]): Promise<void> {
   if (!isSupabaseConfigured() || ids.length === 0) {
@@ -270,10 +279,23 @@ export async function deleteComponents(ids: string[]): Promise<void> {
     return;
   }
 
+  // Filter to only valid UUIDs - legacy IDs (comp_xxx) don't exist in Supabase
+  const validUUIDs = ids.filter(isValidUUID);
+  const legacyIds = ids.filter(id => !isValidUUID(id));
+
+  if (legacyIds.length > 0) {
+    console.log(`[ComponentsPersistence] Skipping ${legacyIds.length} legacy IDs (not in Supabase)`);
+  }
+
+  if (validUUIDs.length === 0) {
+    console.log('[ComponentsPersistence] No valid UUIDs to delete from Supabase');
+    return;
+  }
+
   const { error } = await supabase
     .from('extracted_components')
     .delete()
-    .in('id', ids)
+    .in('id', validUUIDs)
     .eq('user_id', user.id);
 
   if (error) {
@@ -281,7 +303,7 @@ export async function deleteComponents(ids: string[]): Promise<void> {
     throw error;
   }
 
-  console.log(`[ComponentsPersistence] Deleted ${ids.length} components`);
+  console.log(`[ComponentsPersistence] Deleted ${validUUIDs.length} components from Supabase`);
 }
 
 /**
