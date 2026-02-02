@@ -105,9 +105,9 @@ ${truncatedHtml}
 Return a JSON array of extracted components. Maximum 20 components.`
 }
 
-// Generate component ID
+// Generate component ID (UUID format for database compatibility)
 function generateComponentId(): string {
-  return `comp_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
+  return crypto.randomUUID()
 }
 
 // Strip data URL prefix from base64 string if present

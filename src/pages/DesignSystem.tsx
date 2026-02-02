@@ -98,9 +98,9 @@ const LOADING_MESSAGES = [
   { message: 'Building your design system...', icon: '✨' },
 ];
 
-// Generate unique ID
+// Generate unique ID (UUID format for database compatibility)
 function generateId(): string {
-  return `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+  return crypto.randomUUID();
 }
 
 // Parse CSS color to hex
