@@ -19,6 +19,7 @@ import {
   type EditOperation,
   type ApplyOperationsResult,
 } from './editOperationsService';
+import { logLLMCall, completeLLMCall, failLLMCall } from '@/store/debugStore';
 
 // ============================================================================
 // Types
@@ -120,6 +121,21 @@ export async function generateVariantEditsV2(
 
   console.log('[VariantEditsService V2] Calling:', functionUrl);
 
+  // Start debug logging
+  const debugId = logLLMCall(
+    'generate-variant-edits-v2',
+    functionUrl,
+    {
+      sessionId,
+      plans: plansPayload,
+      elementSummary,
+      screenshotBase64,
+      provider,
+      model,
+    },
+    sessionId
+  );
+
   const response = await fetch(functionUrl, {
     method: 'POST',
     headers: {
@@ -143,19 +159,25 @@ export async function generateVariantEditsV2(
     console.error('[VariantEditsService V2] Failed to parse response:', e);
     const text = await response.text().catch(() => 'Unable to read response');
     console.error('[VariantEditsService V2] Raw response:', text);
+    failLLMCall(debugId, `Failed to parse response: ${text.slice(0, 200)}`);
     throw new Error(`Edge function returned invalid JSON: ${response.status}`);
   }
 
   if (!response.ok) {
     console.error('[VariantEditsService V2] Edge function error:', response.status, data);
+    completeLLMCall(debugId, response.status, false, data, data?.error);
     throw new Error(data?.error || `Edge function failed: ${response.status}`);
   }
 
   if (!data?.success) {
     console.error('[VariantEditsService V2] Generation failed:', data?.error);
     console.error('[VariantEditsService V2] Full response:', data);
+    completeLLMCall(debugId, response.status, false, data, data?.error);
     throw new Error(data?.error || 'Variant edits generation failed');
   }
+
+  // Log successful completion
+  completeLLMCall(debugId, response.status, true, data);
 
   console.log('[VariantEditsService V2] Generated operations for', data.variantEdits?.length, 'variants');
 

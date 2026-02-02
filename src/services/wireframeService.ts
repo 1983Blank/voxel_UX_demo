@@ -7,6 +7,7 @@ import { supabase, isSupabaseConfigured } from './supabase';
 import { compactHtml } from './htmlCompactor';
 import type { UIMetadata } from './screenAnalyzerService';
 import type { VariantPlan } from './variantPlanService';
+import { logLLMCall, completeLLMCall, failLLMCall } from '@/store/debugStore';
 
 // Types
 export interface WireframeResult {
@@ -239,6 +240,24 @@ export async function generateVisualWireframes(
     htmlLength: compactedHtml.length,
   });
 
+  // Start debug logging
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  const debugId = logLLMCall(
+    'generate-visual-wireframes',
+    `${supabaseUrl}/functions/v1/generate-visual-wireframes`,
+    {
+      sessionId,
+      plans: plansPayload,
+      compactedHtml,
+      screenshotBase64,
+      uiMetadata,
+      selectedVariants,
+      provider,
+      model,
+    },
+    sessionId
+  );
+
   // Call Visual Wireframes Edge Function
   const { data, error } = await supabase.functions.invoke('generate-visual-wireframes', {
     body: {
@@ -258,6 +277,7 @@ export async function generateVisualWireframes(
 
   if (error) {
     console.error('[WireframeService] Visual wireframe edge function error:', error);
+    failLLMCall(debugId, error.message || 'Unknown error');
     // Update session status to failed
     await supabase
       .from('vibe_sessions')
@@ -268,12 +288,16 @@ export async function generateVisualWireframes(
 
   if (!data.success) {
     console.error('[WireframeService] Visual wireframe generation failed:', data.error);
+    completeLLMCall(debugId, 200, false, data, data.error);
     await supabase
       .from('vibe_sessions')
       .update({ status: 'failed', error_message: data.error })
       .eq('id', sessionId);
     throw new Error(data.error || 'Visual wireframe generation failed');
   }
+
+  // Log successful completion
+  completeLLMCall(debugId, 200, true, data);
 
   // Progress: Saving
   onProgress?.({

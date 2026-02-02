@@ -6,6 +6,7 @@
 import { supabase, isSupabaseConfigured } from './supabase';
 import { compactHtml } from './htmlCompactor';
 import type { UIMetadata } from './screenAnalyzerService';
+import { logLLMCall, completeLLMCall, failLLMCall } from '@/store/debugStore';
 
 // Types
 export interface VariantPlan {
@@ -217,6 +218,24 @@ export async function generateVariantPlan(
 
   console.log('[VariantPlanService] Calling:', functionUrl);
 
+  // Start debug logging
+  const debugId = logLLMCall(
+    'generate-variant-plan',
+    functionUrl,
+    {
+      sessionId,
+      prompt,
+      compactedHtml,
+      screenshotBase64,
+      uiMetadata,
+      productContext,
+      uxGuidelines,
+      provider,
+      model,
+    },
+    sessionId
+  );
+
   const response = await fetch(functionUrl, {
     method: 'POST',
     headers: {
@@ -243,6 +262,7 @@ export async function generateVariantPlan(
     console.error('[VariantPlanService] Failed to parse response:', e);
     const text = await response.text().catch(() => 'Unable to read response');
     console.error('[VariantPlanService] Raw response:', text);
+    failLLMCall(debugId, `Failed to parse response: ${text.slice(0, 200)}`);
     await supabase
       .from('vibe_sessions')
       .update({ status: 'failed', error_message: 'Edge function returned invalid response' })
@@ -252,6 +272,7 @@ export async function generateVariantPlan(
 
   if (!response.ok) {
     console.error('[VariantPlanService] Edge function error:', response.status, data);
+    completeLLMCall(debugId, response.status, false, data, data?.error);
     await supabase
       .from('vibe_sessions')
       .update({ status: 'failed', error_message: data?.error || `HTTP ${response.status}` })
@@ -260,12 +281,16 @@ export async function generateVariantPlan(
   }
 
   if (!data?.success) {
+    completeLLMCall(debugId, response.status, false, data, data?.error);
     await supabase
       .from('vibe_sessions')
       .update({ status: 'failed', error_message: data?.error })
       .eq('id', sessionId);
     throw new Error(data?.error || 'Plan generation failed');
   }
+
+  // Log successful completion
+  completeLLMCall(debugId, response.status, true, data);
 
   // Progress: Saving
   onProgress?.({

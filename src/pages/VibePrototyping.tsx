@@ -85,6 +85,7 @@ import {
 } from '@phosphor-icons/react';
 
 import { useSnackbar } from '@/components/SnackbarProvider';
+import { LLMDebugPanel, LLMDebugButton } from '@/components/DebugPanel';
 import { useScreensStore } from '@/store/screensStore';
 import { useVibeStore, type ChatMessage } from '@/store/vibeStore';
 import { useContextStore } from '@/store/contextStore';
@@ -5004,6 +5005,10 @@ export const VibePrototyping: React.FC = () => {
           </IconButton>
         </Tooltip>
       )}
+
+      {/* LLM Debug Panel */}
+      <LLMDebugPanel />
+      <LLMDebugButton />
     </Box>
   );
 };
