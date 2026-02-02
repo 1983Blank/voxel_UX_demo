@@ -133,6 +133,9 @@ import {
   generateVariantsFromEdits,
 } from '@/services/variantEditsService';
 import {
+  generateInteractivePrototypes,
+} from '@/services/interactivePrototypeService';
+import {
   generateUnderstanding,
   approveUnderstanding as approveUnderstandingService,
   clarifyRequest,
@@ -2508,45 +2511,87 @@ export const VibePrototyping: React.FC = () => {
         return;
       }
 
-      console.log('[VibePrototyping] Using V2 edit-based generation for UI consistency');
-      addChatMessage('assistant', 'Generating variants using targeted edits to preserve your original design system. This ensures UI consistency across all prototypes.');
+      // Check prototype mode to determine generation approach
+      const currentPrototypeMode = useVibeStore.getState().prototypeMode;
 
-      await generateVariantsFromEdits(
-        currentSession.id,
-        plan.plans,
-        screen.editedHtml,
-        (p) => {
-          setProgress({
-            stage: 'generating',
-            message: p.message,
-            percent: p.percent,
-            variantIndex: p.variantIndex,
-          });
+      if (currentPrototypeMode === 'interactive') {
+        // Interactive Mode: Use file-based Web Components generation
+        console.log('[VibePrototyping] Using Interactive Mode (file-based Web Components)');
+        addChatMessage('assistant', 'Generating interactive prototypes with Web Components. This enables real interactivity, state management, and debugging tools.');
 
-          if (p.variantIndex) {
-            setVariantStartTimes((prev) => {
-              if (!prev[p.variantIndex!]) {
-                return { ...prev, [p.variantIndex!]: Date.now() };
-              }
-              return prev;
+        await generateInteractivePrototypes(
+          currentSession.id,
+          plan.plans,
+          screen.editedHtml,
+          (p) => {
+            setProgress({
+              stage: 'generating',
+              message: p.message,
+              percent: p.percent,
+              variantIndex: p.variantIndex,
             });
-          }
-        },
-        (variantIndex, html) => {
-          // Variant completed - update preview
-          setStreamingHtml((prev) => ({
-            ...prev,
-            [variantIndex]: html,
-          }));
-          setCompletedVariantIndices((prev) => new Set([...prev, variantIndex]));
-        },
-        screenshot,
-        selectedProvider || undefined,
-        selectedModel || undefined
-      );
 
-      // Fetch final variants from database
-      generatedVariants = await getVariants(currentSession.id);
+            if (p.variantIndex) {
+              setVariantStartTimes((prev) => {
+                if (!prev[p.variantIndex!]) {
+                  return { ...prev, [p.variantIndex!]: Date.now() };
+                }
+                return prev;
+              });
+            }
+          },
+          (result) => {
+            // Variant completed - update state
+            setCompletedVariantIndices((prev) => new Set([...prev, result.variantIndex]));
+          },
+          screenshot
+        );
+
+        // For interactive mode, we still fetch from database for UI consistency
+        // The VirtualFS instances are stored in prototypeStore
+        generatedVariants = await getVariants(currentSession.id);
+      } else {
+        // Classic Mode: Use V2 edit-based generation
+        console.log('[VibePrototyping] Using Classic Mode (V2 edit-based generation)');
+        addChatMessage('assistant', 'Generating variants using targeted edits to preserve your original design system. This ensures UI consistency across all prototypes.');
+
+        await generateVariantsFromEdits(
+          currentSession.id,
+          plan.plans,
+          screen.editedHtml,
+          (p) => {
+            setProgress({
+              stage: 'generating',
+              message: p.message,
+              percent: p.percent,
+              variantIndex: p.variantIndex,
+            });
+
+            if (p.variantIndex) {
+              setVariantStartTimes((prev) => {
+                if (!prev[p.variantIndex!]) {
+                  return { ...prev, [p.variantIndex!]: Date.now() };
+                }
+                return prev;
+              });
+            }
+          },
+          (variantIndex, html) => {
+            // Variant completed - update preview
+            setStreamingHtml((prev) => ({
+              ...prev,
+              [variantIndex]: html,
+            }));
+            setCompletedVariantIndices((prev) => new Set([...prev, variantIndex]));
+          },
+          screenshot,
+          selectedProvider || undefined,
+          selectedModel || undefined
+        );
+
+        // Fetch final variants from database
+        generatedVariants = await getVariants(currentSession.id);
+      }
 
       setVariants(generatedVariants);
       setStatus('complete');
