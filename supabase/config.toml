@@ -52,3 +52,9 @@ verify_jwt = false
 
 [functions.understand-request]
 verify_jwt = false
+
+[functions.analyze-screen-for-prototyping]
+verify_jwt = false
+
+[functions.generate-prototype-files]
+verify_jwt = false
