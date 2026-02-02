@@ -136,20 +136,27 @@ export async function generateVariantEditsV2(
     sessionId
   );
 
+  const requestBody = JSON.stringify({
+    sessionId,
+    plans: plansPayload,
+    elementSummary,
+    screenshotBase64,
+    provider,
+    model,
+  });
+
+  console.log('[VariantEditsService V2] Request body size:', Math.round(requestBody.length / 1024), 'KB');
+  console.log('[VariantEditsService V2] - elementSummary:', Math.round(elementSummary.length / 1024), 'KB');
+  console.log('[VariantEditsService V2] - screenshotBase64:', Math.round((screenshotBase64?.length || 0) / 1024), 'KB');
+  console.log('[VariantEditsService V2] - plans:', plansPayload.length, 'plans');
+
   const response = await fetch(functionUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${session.access_token}`,
     },
-    body: JSON.stringify({
-      sessionId,
-      plans: plansPayload,
-      elementSummary,
-      screenshotBase64,
-      provider,
-      model,
-    }),
+    body: requestBody,
   });
 
   let data;
