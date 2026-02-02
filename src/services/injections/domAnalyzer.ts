@@ -47,27 +47,71 @@ export interface AnalysisResult {
 }
 
 /**
+ * Check if a class name is safe to use in a CSS selector
+ * Tailwind CSS v3+ uses arbitrary values with special characters that are invalid in selectors
+ */
+function isSafeClassName(className: string): boolean {
+  // Skip classes with special characters that are invalid in CSS selectors
+  // These include: [ ] / : ! @ $ % ^ & * ( ) + = { } | \ ; " ' < > , ?
+  const unsafePattern = /[\[\]\/\:\!\@\$\%\^\&\*\(\)\+\=\{\}\|\\\;\"\'\<\>\,\?]/;
+  if (unsafePattern.test(className)) {
+    return false;
+  }
+  // Skip state-related classes
+  if (className.match(/^(hover|active|focus|disabled|group|peer)/)) {
+    return false;
+  }
+  // Skip very short classes (often utility prefixes)
+  if (className.length < 2) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Escape special characters in CSS selector
+ */
+function escapeCSS(str: string): string {
+  return str.replace(/([!"#$%&'()*+,./:;<=>?@[\\\]^`{|}~])/g, '\\$1');
+}
+
+/**
  * Generate a unique selector for an element
  */
 function generateSelector(element: Element, index: number): string {
-  // Try ID first
-  if (element.id) {
-    return `#${element.id}`;
+  // Try ID first (must be valid CSS identifier)
+  if (element.id && !element.id.match(/[\s\[\]\/\:]/)) {
+    return `#${escapeCSS(element.id)}`;
   }
 
-  // Try unique class combination
-  const classes = Array.from(element.classList).filter(c => !c.match(/^(hover|active|focus|disabled)/));
+  // Try unique class combination - only use safe class names
+  const classes = Array.from(element.classList).filter(isSafeClassName);
   if (classes.length > 0) {
-    const classSelector = `.${classes.join('.')}`;
+    // Limit to first 3 classes to avoid overly specific selectors
+    const safeClasses = classes.slice(0, 3);
+    const classSelector = `.${safeClasses.map(escapeCSS).join('.')}`;
     return classSelector;
   }
 
-  // Try data attributes
+  // Try data attributes (prefer simple ones)
   const dataAttrs = Array.from(element.attributes)
-    .filter(attr => attr.name.startsWith('data-'))
-    .map(attr => `[${attr.name}="${attr.value}"]`);
+    .filter(attr => attr.name.startsWith('data-') && !attr.value.includes('[') && attr.value.length < 50)
+    .slice(0, 1)
+    .map(attr => `[${attr.name}="${escapeCSS(attr.value)}"]`);
   if (dataAttrs.length > 0) {
     return `${element.tagName.toLowerCase()}${dataAttrs[0]}`;
+  }
+
+  // Try role attribute
+  const role = element.getAttribute('role');
+  if (role) {
+    return `${element.tagName.toLowerCase()}[role="${role}"]`;
+  }
+
+  // Try type attribute for inputs
+  const type = element.getAttribute('type');
+  if (type && element.tagName.toLowerCase() === 'input') {
+    return `input[type="${type}"]:nth-of-type(${index + 1})`;
   }
 
   // Fallback to tag + nth-of-type

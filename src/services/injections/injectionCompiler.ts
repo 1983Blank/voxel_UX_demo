@@ -296,6 +296,25 @@ const RUNTIME_CORE = `
 
     register(injection) {
       this.injections.push(injection);
+    },
+
+    // Safe selector helper - catches invalid CSS selectors
+    safeSelect(selector, parent = document) {
+      try {
+        return Array.from(parent.querySelectorAll(selector));
+      } catch (e) {
+        console.warn('[VoxelRuntime] Invalid selector:', selector, e.message);
+        return [];
+      }
+    },
+
+    safeSelectOne(selector, parent = document) {
+      try {
+        return parent.querySelector(selector);
+      } catch (e) {
+        console.warn('[VoxelRuntime] Invalid selector:', selector, e.message);
+        return null;
+      }
     }
   };
 
@@ -323,7 +342,7 @@ function compileClickFeedback(config: InjectionConfig): string {
   return `
 // Click Feedback: ${config.id}
 (function() {
-  const elements = document.querySelectorAll('${selector}');
+  const elements = VoxelRuntime.safeSelect('${selector}');
   elements.forEach(el => {
     el.addEventListener('click', function(e) {
       ${feedbackType === 'ripple' ? 'VoxelRuntime.addRipple(this, e);' : ''}
@@ -345,7 +364,7 @@ function compileFormSubmit(config: InjectionConfig): string {
   return `
 // Form Submit: ${config.id}
 (function() {
-  const form = document.querySelector('${selector}');
+  const form = VoxelRuntime.safeSelectOne('${selector}');
   if (!form) return;
 
   form.addEventListener('submit', function(e) {
@@ -389,7 +408,7 @@ function compileFormValidation(config: InjectionConfig): string {
   return `
 // Form Validation: ${config.id}
 (function() {
-  const form = document.querySelector('${selector}');
+  const form = VoxelRuntime.safeSelectOne('${selector}');
   if (!form) return;
 
   const rules = ${rulesJson};
@@ -432,13 +451,13 @@ function compileNavigation(config: InjectionConfig): string {
   return `
 // Navigation: ${config.id}
 (function() {
-  const links = document.querySelectorAll('${selector}');
+  const links = VoxelRuntime.safeSelect('${selector}');
   links.forEach(link => {
     link.addEventListener('click', function(e) {
       e.preventDefault();
 
       ${targetSelector ? `
-      const target = document.querySelector('${targetSelector}');
+      const target = VoxelRuntime.safeSelectOne('${targetSelector}');
       if (target) {
         ${showSection ? `
         // Show section if hidden
@@ -451,7 +470,7 @@ function compileNavigation(config: InjectionConfig): string {
       // Try to find target from href
       const href = this.getAttribute('href');
       if (href && href.startsWith('#')) {
-        const target = document.querySelector(href);
+        const target = VoxelRuntime.safeSelectOne(href);
         if (target) {
           target.scrollIntoView({ behavior: '${scrollBehavior}', block: 'start' });
         }
@@ -473,8 +492,8 @@ function compileModalToggle(config: InjectionConfig): string {
   return `
 // Modal Toggle: ${config.id}
 (function() {
-  const triggers = document.querySelectorAll('${selector}');
-  const modal = document.querySelector('${modalSelector}');
+  const triggers = VoxelRuntime.safeSelect('${selector}');
+  const modal = VoxelRuntime.safeSelectOne('${modalSelector}');
 
   if (!modal) return;
 
@@ -494,7 +513,7 @@ function compileModalToggle(config: InjectionConfig): string {
   function closeModal() {
     modal.style.display = 'none';
     modal.removeAttribute('data-voxel-modal-open');
-    document.querySelectorAll('.voxel-modal-backdrop').forEach(b => b.remove());
+    VoxelRuntime.safeSelect('.voxel-modal-backdrop').forEach(b => b.remove());
   }
 
   triggers.forEach(trigger => {
@@ -525,11 +544,11 @@ function compileTabSwitch(config: InjectionConfig): string {
   return `
 // Tab Switch: ${config.id}
 (function() {
-  const tabList = document.querySelector('${selector}');
+  const tabList = VoxelRuntime.safeSelectOne('${selector}');
   if (!tabList) return;
 
   const tabs = tabList.querySelectorAll('[role="tab"], .tab, [class*="tab-item"], li');
-  const panels = document.querySelectorAll('${panelSelector}');
+  const panels = VoxelRuntime.safeSelect('${panelSelector}');
 
   tabs.forEach((tab, index) => {
     tab.addEventListener('click', function(e) {
@@ -567,7 +586,7 @@ function compileDropdownToggle(config: InjectionConfig): string {
   return `
 // Dropdown Toggle: ${config.id}
 (function() {
-  const triggers = document.querySelectorAll('${selector}');
+  const triggers = VoxelRuntime.safeSelect('${selector}');
 
   triggers.forEach(trigger => {
     const dropdown = trigger.closest('.dropdown') || trigger.parentElement;
@@ -582,7 +601,7 @@ function compileDropdownToggle(config: InjectionConfig): string {
       const isOpen = dropdown.classList.contains('voxel-dropdown-open');
 
       // Close all other dropdowns
-      document.querySelectorAll('.voxel-dropdown-open').forEach(d => {
+      VoxelRuntime.safeSelect('.voxel-dropdown-open').forEach(d => {
         d.classList.remove('voxel-dropdown-open');
       });
 
@@ -615,7 +634,7 @@ function compileTableSort(config: InjectionConfig): string {
   return `
 // Table Sort: ${config.id}
 (function() {
-  const table = document.querySelector('${selector}');
+  const table = VoxelRuntime.safeSelectOne('${selector}');
   if (!table) return;
 
   const headers = table.querySelectorAll('th');
@@ -671,7 +690,7 @@ function compileDataPopulate(config: InjectionConfig): string {
   return `
 // Data Populate: ${config.id}
 (function() {
-  const elements = document.querySelectorAll('${selector}');
+  const elements = VoxelRuntime.safeSelect('${selector}');
   const schema = ${JSON.stringify(schema)};
   const count = ${count};
 
@@ -707,7 +726,7 @@ function compileStateToggle(config: InjectionConfig): string {
   return `
 // State Toggle: ${config.id}
 (function() {
-  const elements = document.querySelectorAll('${selector}');
+  const elements = VoxelRuntime.safeSelect('${selector}');
 
   elements.forEach(el => {
     el.addEventListener('click', function() {
