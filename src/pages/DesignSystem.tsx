@@ -750,6 +750,8 @@ export const DesignSystem: React.FC = () => {
   const { screens, initializeScreens } = useScreensStore();
   const {
     tokens,
+    isLoading: isLoadingTokens,
+    isInitialized: isTokensInitialized,
     lastExtractionTime,
     initializeTokens,
     extractTokensFromScreens,
@@ -788,8 +790,12 @@ export const DesignSystem: React.FC = () => {
   }, []);
 
   // Convert stored tokens to design system format for display
+  // Only runs after tokens are initialized from Supabase
   useEffect(() => {
-    if (tokens.length > 0 && !designSystem) {
+    if (!isTokensInitialized) return;
+
+    // If we have tokens, convert them to display format
+    if (tokens.length > 0) {
       const colorTokens = tokens.filter(t => t.category === 'color');
       const typographyTokens = tokens.filter(t => t.category === 'typography');
       const spacingTokens = tokens.filter(t => t.category === 'spacing');
@@ -843,8 +849,18 @@ export const DesignSystem: React.FC = () => {
         shadows: shadowTokens.map(t => t.value),
         lastUpdated: lastExtractionTime || new Date().toISOString(),
       });
+    } else if (!designSystem) {
+      // No tokens exist - set empty design system so we show empty state
+      setDesignSystem({
+        colors: [],
+        fonts: [],
+        spacing: [],
+        borderRadius: [],
+        shadows: [],
+        lastUpdated: new Date().toISOString(),
+      });
     }
-  }, [tokens, lastExtractionTime]);
+  }, [tokens, lastExtractionTime, isTokensInitialized]);
 
   // Extract design system from screens (now uses the store with persistence)
   const extractDesignSystem = useCallback(async () => {
@@ -889,13 +905,6 @@ export const DesignSystem: React.FC = () => {
       setIsExtracting(false);
     }
   }, [screens, showSuccess, showError, extractTokensFromScreens]);
-
-  // Auto-extract on mount if screens exist
-  useEffect(() => {
-    if (screens.length > 0 && !designSystem && !isExtracting) {
-      extractDesignSystem();
-    }
-  }, [screens.length, designSystem, isExtracting, extractDesignSystem]);
 
   // Generate AI labels for colors and fonts
   const handleGenerateAILabels = async () => {
@@ -1179,7 +1188,18 @@ export const DesignSystem: React.FC = () => {
       </Tabs>
 
       {/* Content */}
-      {!designSystem && !isExtracting && screens.length === 0 && (
+      {/* Loading state while tokens are being fetched from Supabase */}
+      {(isLoadingTokens || !isTokensInitialized) && !isExtracting && (
+        <Box sx={{ textAlign: 'center', py: 8 }}>
+          <Sparkle size={48} weight="duotone" style={{ color: config.colors.textSecondary, marginBottom: 16, animation: 'pulse 1.5s ease-in-out infinite' }} />
+          <Typography color="text.secondary">
+            Loading design system...
+          </Typography>
+        </Box>
+      )}
+
+      {/* Empty state - no screens captured */}
+      {isTokensInitialized && !isLoadingTokens && !designSystem && screens.length === 0 && (
         <Box sx={{ textAlign: 'center', py: 8 }}>
           <MagnifyingGlass size={48} weight="light" style={{ color: config.colors.textSecondary, marginBottom: 16 }} />
           <Typography color="text.secondary">
@@ -1188,11 +1208,37 @@ export const DesignSystem: React.FC = () => {
         </Box>
       )}
 
+      {/* Empty state - screens exist but no tokens extracted yet */}
+      {isTokensInitialized && !isLoadingTokens && designSystem &&
+       designSystem.colors.length === 0 && designSystem.fonts.length === 0 &&
+       screens.length > 0 && !isExtracting && (
+        <Box sx={{ textAlign: 'center', py: 8 }}>
+          <Palette size={48} weight="light" style={{ color: config.colors.textSecondary, marginBottom: 16 }} />
+          <Typography color="text.secondary" sx={{ mb: 2 }}>
+            No design tokens extracted yet. Click the button below to analyze your {screens.filter(s => s.editedHtml).length} captured screens.
+          </Typography>
+          <Button
+            variant="contained"
+            startIcon={<Sparkle size={18} />}
+            onClick={extractDesignSystem}
+            sx={{
+              transition: 'all 0.2s ease',
+              '&:hover': {
+                transform: 'translateY(-2px)',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+              },
+            }}
+          >
+            Extract Design System
+          </Button>
+        </Box>
+      )}
+
       {isExtracting && (
         <ExtractionLoader progress={extractionProgress} message={extractionMessage} />
       )}
 
-      {designSystem && !isExtracting && (
+      {isTokensInitialized && designSystem && (designSystem.colors.length > 0 || designSystem.fonts.length > 0) && !isExtracting && (
         <>
           {/* Colors Tab */}
           {activeTab === 0 && (
