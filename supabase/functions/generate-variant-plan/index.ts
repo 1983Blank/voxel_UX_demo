@@ -390,9 +390,39 @@ Deno.serve(async (req) => {
     // Build prompt
     const prompt = buildPlanPrompt(body)
 
-    // Log if screenshot is provided
+    // Log and validate screenshot if provided
+    let validatedScreenshot: string | undefined = undefined
     if (body.screenshotBase64) {
       console.log('[generate-variant-plan] Screenshot provided, size:', Math.round(body.screenshotBase64.length / 1024), 'KB')
+
+      // Validate base64 data
+      let base64Data = body.screenshotBase64
+
+      // Handle data URL format
+      if (base64Data.startsWith('data:')) {
+        const match = base64Data.match(/^data:([^;]+);base64,(.+)$/)
+        if (match) {
+          base64Data = match[2]
+        } else {
+          console.warn('[generate-variant-plan] Invalid data URL format, skipping screenshot')
+          base64Data = ''
+        }
+      }
+
+      // Basic base64 validation - check if it only contains valid base64 characters
+      if (base64Data && base64Data.length > 100) {
+        const base64Regex = /^[A-Za-z0-9+/]+=*$/
+        // Check a sample of the data (first and last 100 chars) to avoid performance issues
+        const sample = base64Data.slice(0, 100) + base64Data.slice(-100)
+        if (base64Regex.test(sample.replace(/\s/g, ''))) {
+          validatedScreenshot = body.screenshotBase64
+          console.log('[generate-variant-plan] Screenshot validated successfully')
+        } else {
+          console.warn('[generate-variant-plan] Invalid base64 characters detected, skipping screenshot')
+        }
+      } else {
+        console.warn('[generate-variant-plan] Screenshot too small or empty, skipping')
+      }
     }
 
     // Generate plan based on provider (with optional screenshot for vision)
@@ -400,13 +430,13 @@ Deno.serve(async (req) => {
 
     switch (keyConfig.provider) {
       case 'anthropic':
-        rawResponse = await generateWithAnthropic(apiKey, modelToUse, prompt, body.screenshotBase64)
+        rawResponse = await generateWithAnthropic(apiKey, modelToUse, prompt, validatedScreenshot)
         break
       case 'openai':
-        rawResponse = await generateWithOpenAI(apiKey, modelToUse, prompt, body.screenshotBase64)
+        rawResponse = await generateWithOpenAI(apiKey, modelToUse, prompt, validatedScreenshot)
         break
       case 'google':
-        rawResponse = await generateWithGoogle(apiKey, modelToUse, prompt, body.screenshotBase64)
+        rawResponse = await generateWithGoogle(apiKey, modelToUse, prompt, validatedScreenshot)
         break
       default:
         throw new Error(`Unsupported provider: ${keyConfig.provider}`)

@@ -1755,7 +1755,31 @@ export const VibePrototyping: React.FC = () => {
           }
 
           // Capture screenshot for LLM vision
+          // Helper to validate and set screenshot
+          const validateAndSetScreenshot = async (base64: string | undefined, source: string) => {
+            if (!base64 || base64.length < 100) {
+              console.warn(`[VibePrototyping] Invalid screenshot from ${source}: too small or empty`);
+              return false;
+            }
+            // Basic validation: check for valid base64 characters
+            const sample = base64.slice(0, 100) + base64.slice(-100);
+            if (!/^[A-Za-z0-9+/=]+$/.test(sample.replace(/\s/g, ''))) {
+              console.warn(`[VibePrototyping] Invalid screenshot from ${source}: invalid base64 characters`);
+              return false;
+            }
+            try {
+              const compressed = await compressScreenshot(base64, 400);
+              setScreenScreenshot(compressed);
+              console.log(`[VibePrototyping] Screenshot from ${source}, size: ${Math.round(compressed.length / 1024)}KB`);
+              return true;
+            } catch (err) {
+              console.warn(`[VibePrototyping] Failed to compress screenshot from ${source}:`, err);
+              return false;
+            }
+          };
+
           // Try to use existing thumbnail URL first, otherwise capture from HTML
+          let screenshotSet = false;
           if (s.thumbnail && s.thumbnail.startsWith('http')) {
             // Fetch thumbnail URL and convert to base64
             try {
@@ -1763,28 +1787,29 @@ export const VibePrototyping: React.FC = () => {
               const blob = await response.blob();
               const reader = new FileReader();
               reader.onloadend = async () => {
-                const base64 = (reader.result as string).split(',')[1];
-                const compressed = await compressScreenshot(base64, 400);
-                setScreenScreenshot(compressed);
-                console.log('[VibePrototyping] Loaded thumbnail, size:', Math.round(compressed.length / 1024), 'KB');
+                const dataUrl = reader.result as string;
+                const base64 = dataUrl?.includes(',') ? dataUrl.split(',')[1] : undefined;
+                const success = await validateAndSetScreenshot(base64, 'thumbnail');
+                if (!success && s.editedHtml) {
+                  // Fallback to HTML capture
+                  const result = await captureHtmlScreenshot(s.editedHtml, { maxWidth: 1280, maxHeight: 800, quality: 0.7 });
+                  if (result) {
+                    await validateAndSetScreenshot(result.base64, 'HTML fallback');
+                  }
+                }
               };
               reader.readAsDataURL(blob);
+              screenshotSet = true; // async, will be set in callback
             } catch (err) {
-              console.warn('[VibePrototyping] Failed to load thumbnail, capturing from HTML:', err);
-              const result = await captureHtmlScreenshot(s.editedHtml, { maxWidth: 1280, maxHeight: 800, quality: 0.7 });
-              if (result) {
-                const compressed = await compressScreenshot(result.base64, 400);
-                setScreenScreenshot(compressed);
-                console.log('[VibePrototyping] Captured screenshot, size:', Math.round(compressed.length / 1024), 'KB');
-              }
+              console.warn('[VibePrototyping] Failed to load thumbnail:', err);
             }
-          } else {
-            // No thumbnail URL, capture from HTML
+          }
+
+          if (!screenshotSet) {
+            // No thumbnail URL or failed, capture from HTML
             const result = await captureHtmlScreenshot(s.editedHtml, { maxWidth: 1280, maxHeight: 800, quality: 0.7 });
             if (result) {
-              const compressed = await compressScreenshot(result.base64, 400);
-              setScreenScreenshot(compressed);
-              console.log('[VibePrototyping] Captured screenshot, size:', Math.round(compressed.length / 1024), 'KB');
+              await validateAndSetScreenshot(result.base64, 'HTML capture');
             }
           }
 
