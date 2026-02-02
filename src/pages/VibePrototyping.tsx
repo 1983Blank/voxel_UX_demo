@@ -82,6 +82,8 @@ import {
   Cube,
   UsersThree,
   Plus,
+  SquaresFour,
+  Play,
 } from '@phosphor-icons/react';
 
 import { useSnackbar } from '@/components/SnackbarProvider';
@@ -147,6 +149,7 @@ import {
 } from '@/services/sharingService';
 import DualModeEditor from '@/components/DualModeEditor';
 import WYSIWYGEditor from '@/components/WYSIWYGEditor';
+import { InteractiveVariantView } from '@/components/Vibe/InteractiveVariantView';
 import { captureHtmlScreenshot, compressScreenshot } from '@/services/screenshotService';
 import { quickEnhance, enhancePrototype, type EnhanceResult } from '@/services/injectionService';
 
@@ -1632,6 +1635,8 @@ export const VibePrototyping: React.FC = () => {
     addMessage,
     getPlanByIndex,
     getVariantByIndex,
+    prototypeMode,
+    setPrototypeMode,
   } = useVibeStore();
 
   // Local state
@@ -4443,41 +4448,79 @@ export const VibePrototyping: React.FC = () => {
           {/* Complete state - 2x2 grid with variants (no focus) */}
           {isComplete && !focusedVariantIndex && (
             <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
-              {/* Header with Rebuild button */}
+              {/* Header with mode toggle and Rebuild button */}
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 2, pt: 2, pb: 1 }}>
                 <Typography variant="subtitle1" fontWeight={600}>
                   All Variants Ready
                 </Typography>
-                <Button
-                  variant="outlined"
-                  onClick={handleRebuild}
-                  disabled={isRebuilding}
-                  size="small"
-                  startIcon={<ArrowClockwise size={14} />}
-                >
-                  {isRebuilding ? 'Rebuilding...' : 'Rebuild Variants'}
-                </Button>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  {/* Mode toggle: Classic vs Interactive */}
+                  <ToggleButtonGroup
+                    value={prototypeMode}
+                    exclusive
+                    onChange={(_, value) => value && setPrototypeMode(value)}
+                    size="small"
+                  >
+                    <ToggleButton value="classic">
+                      <Tooltip title="Classic View (Grid)">
+                        <span style={{ display: 'flex', alignItems: 'center' }}>
+                          <SquaresFour size={16} />
+                        </span>
+                      </Tooltip>
+                    </ToggleButton>
+                    <ToggleButton value="interactive">
+                      <Tooltip title="Interactive View (with debugging)">
+                        <span style={{ display: 'flex', alignItems: 'center' }}>
+                          <Play size={16} />
+                        </span>
+                      </Tooltip>
+                    </ToggleButton>
+                  </ToggleButtonGroup>
+                  <Button
+                    variant="outlined"
+                    onClick={handleRebuild}
+                    disabled={isRebuilding}
+                    size="small"
+                    startIcon={<ArrowClockwise size={14} />}
+                  >
+                    {isRebuilding ? 'Rebuilding...' : 'Rebuild Variants'}
+                  </Button>
+                </Box>
               </Box>
-              <Grid container spacing={2} sx={{ flex: 1, px: 2, pb: 2, minHeight: 0, overflow: 'auto' }}>
-                {['Variant A', 'Variant B', 'Variant C', 'Variant D'].map((label, idx) => {
-                  const variant = getVariantByIndex(idx + 1);
-                  const wireframe = wireframes.find(w => w.variantIndex === idx + 1);
-                  return (
-                    <Grid item xs={6} key={label} sx={{ height: '50%' }}>
-                      <CanvasVariantCard
-                        label={label}
-                        htmlUrl={variant?.html_url}
-                        wireframeUrl={wireframe?.wireframeUrl}
-                        wireframeHtml={wireframe?.wireframeHtml}
-                        onClick={() => handleVariantClick(idx + 1)}
-                        viewMode={viewMode}
-                        enableInteractivity={interactivityEnabled}
-                        useLLMEnhancement={useLLMEnhancement}
-                      />
-                    </Grid>
-                  );
-                })}
-              </Grid>
+
+              {/* Interactive mode - show InteractiveVariantView */}
+              {prototypeMode === 'interactive' ? (
+                <Card sx={{ flex: 1, mx: 2, mb: 2, overflow: 'hidden' }}>
+                  <InteractiveVariantView
+                    plans={plan?.plans || []}
+                    variants={variants}
+                    selectedVariantIndex={focusedVariantIndex}
+                    onSelectVariant={handleVariantClick}
+                  />
+                </Card>
+              ) : (
+                /* Classic mode - existing 2x2 grid */
+                <Grid container spacing={2} sx={{ flex: 1, px: 2, pb: 2, minHeight: 0, overflow: 'auto' }}>
+                  {['Variant A', 'Variant B', 'Variant C', 'Variant D'].map((label, idx) => {
+                    const variant = getVariantByIndex(idx + 1);
+                    const wireframe = wireframes.find(w => w.variantIndex === idx + 1);
+                    return (
+                      <Grid item xs={6} key={label} sx={{ height: '50%' }}>
+                        <CanvasVariantCard
+                          label={label}
+                          htmlUrl={variant?.html_url}
+                          wireframeUrl={wireframe?.wireframeUrl}
+                          wireframeHtml={wireframe?.wireframeHtml}
+                          onClick={() => handleVariantClick(idx + 1)}
+                          viewMode={viewMode}
+                          enableInteractivity={interactivityEnabled}
+                          useLLMEnhancement={useLLMEnhancement}
+                        />
+                      </Grid>
+                    );
+                  })}
+                </Grid>
+              )}
             </Box>
           )}
 
