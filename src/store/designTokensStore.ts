@@ -592,7 +592,9 @@ export const useDesignTokensStore = create<DesignTokensState>()(
             }
 
             const deduped = deduplicateTokens(allTokens);
-            console.log('[DesignTokensStore] Fallback extracted', deduped.length, 'tokens');
+            const colorCount = deduped.filter(t => t.category === 'color').length;
+            const fontCount = deduped.filter(t => t.category === 'typography').length;
+            console.log('[DesignTokensStore] Fallback extracted', deduped.length, 'tokens:', colorCount, 'colors,', fontCount, 'typography');
 
             if (isSupabaseConfigured()) {
               const savedTokens = await replaceAllDesignTokens(deduped);

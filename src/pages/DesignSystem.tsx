@@ -830,23 +830,26 @@ export const DesignSystem: React.FC = () => {
 
       const fonts: ExtractedFont[] = [];
       const fontFamilyMap = new Map<string, ExtractedFont>();
+      console.log('[DesignSystem] Typography tokens:', typographyTokens.length, 'subcategories:', [...new Set(typographyTokens.map(t => t.subcategory))]);
       typographyTokens.forEach(t => {
+        // Show font-family tokens (or tokens without subcategory for backwards compat)
         if (t.subcategory === 'font-family' || !t.subcategory) {
           const family = t.value.split(',')[0].trim();
-          if (!fontFamilyMap.has(family)) {
+          if (family && !fontFamilyMap.has(family)) {
             fontFamilyMap.set(family, {
               id: t.id,
               family,
               weights: [],
               sizes: [],
               count: t.usageCount,
-              label: t.name,
+              label: t.name || family,
               approved: t.status === 'approved',
             });
           }
         }
       });
       fonts.push(...fontFamilyMap.values());
+      console.log('[DesignSystem] Font families found:', fonts.length);
 
       const spacing: ExtractedSpacing[] = spacingTokens.map(t => ({
         id: t.id,
@@ -1216,29 +1219,31 @@ export const DesignSystem: React.FC = () => {
             flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
-            py: 10,
+            py: 8,
             px: 4,
           }}
         >
           <Box
             sx={{
-              width: 80,
-              height: 80,
-              borderRadius: 3,
-              bgcolor: 'grey.100',
+              width: 64,
+              height: 64,
+              borderRadius: 2,
+              bgcolor: config.colors.bgSecondary,
+              border: '1px solid',
+              borderColor: 'divider',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              mb: 3,
+              mb: 2.5,
             }}
           >
-            <MagnifyingGlass size={40} weight="duotone" style={{ color: '#9ca3af' }} />
+            <MagnifyingGlass size={28} weight="regular" style={{ color: config.colors.textSecondary }} />
           </Box>
-          <Typography variant="h6" fontWeight={600} sx={{ mb: 1 }}>
+          <Typography variant="h6" fontWeight={600} sx={{ mb: 0.5 }}>
             No Screens Yet
           </Typography>
-          <Typography color="text.secondary" sx={{ maxWidth: 300, textAlign: 'center' }}>
-            Import screens first to extract and generate your design system.
+          <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 280, textAlign: 'center' }}>
+            Import screens first to extract your design system.
           </Typography>
         </Box>
       )}
@@ -1253,73 +1258,63 @@ export const DesignSystem: React.FC = () => {
             flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
-            py: 10,
+            py: 8,
             px: 4,
           }}
         >
-          {/* Decorative color swatches illustration */}
+          {/* Decorative color swatches - warm Voxel palette */}
           <Box
             sx={{
               display: 'flex',
-              gap: 1,
+              gap: 1.5,
               mb: 4,
-              opacity: 0.8,
             }}
           >
-            {['#6366f1', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#3b82f6'].map((color, i) => (
+            {[
+              config.colors.primary,
+              config.colors.primaryLight,
+              '#D6D3CD',
+              config.colors.success,
+              config.colors.info,
+            ].map((color, i) => (
               <Box
-                key={color}
+                key={i}
                 sx={{
-                  width: 40,
-                  height: 40,
+                  width: 36,
+                  height: 36,
                   bgcolor: color,
-                  borderRadius: 1.5,
-                  transform: `rotate(${(i - 2.5) * 8}deg)`,
-                  boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-                  transition: 'transform 0.3s ease',
+                  borderRadius: 1,
+                  border: '1px solid rgba(0,0,0,0.08)',
+                  transform: `rotate(${(i - 2) * 6}deg)`,
+                  transition: 'transform 0.2s ease',
                   '&:hover': {
-                    transform: `rotate(${(i - 2.5) * 8}deg) scale(1.1)`,
+                    transform: `rotate(${(i - 2) * 6}deg) translateY(-2px)`,
                   },
                 }}
               />
             ))}
           </Box>
 
-          <Typography variant="h5" fontWeight={600} sx={{ mb: 1, color: 'text.primary' }}>
+          <Typography variant="h6" fontWeight={600} sx={{ mb: 1, color: 'text.primary' }}>
             Extract Your Design System
           </Typography>
           <Typography
+            variant="body2"
             color="text.secondary"
-            sx={{ mb: 4, maxWidth: 400, textAlign: 'center', lineHeight: 1.6 }}
+            sx={{ mb: 3, maxWidth: 360, textAlign: 'center', lineHeight: 1.6 }}
           >
-            Analyze {screens.filter(s => s.editedHtml).length} captured screens to automatically extract colors, typography, spacing, and more.
+            Analyze your {screens.filter(s => s.editedHtml).length} captured screens to extract colors, typography, and spacing patterns.
           </Typography>
 
           <Button
             variant="contained"
-            size="large"
-            startIcon={<Sparkle size={20} weight="fill" />}
+            startIcon={<Sparkle size={18} />}
             onClick={extractDesignSystem}
-            sx={{
-              px: 4,
-              py: 1.5,
-              borderRadius: 2,
-              textTransform: 'none',
-              fontSize: '1rem',
-              fontWeight: 600,
-              background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
-              boxShadow: '0 4px 14px rgba(99, 102, 241, 0.4)',
-              transition: 'all 0.2s ease',
-              '&:hover': {
-                transform: 'translateY(-2px)',
-                boxShadow: '0 6px 20px rgba(99, 102, 241, 0.5)',
-              },
-            }}
           >
             Extract Design System
           </Button>
 
-          <Typography variant="caption" color="text.secondary" sx={{ mt: 3 }}>
+          <Typography variant="caption" color="text.secondary" sx={{ mt: 2, opacity: 0.7 }}>
             Uses AI to identify and classify design tokens
           </Typography>
         </Box>
