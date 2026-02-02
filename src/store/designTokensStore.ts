@@ -574,6 +574,46 @@ export const useDesignTokensStore = create<DesignTokensState>()(
           if (classifiedTokens.length > 0) {
             console.log('[DesignTokensStore] Sample token:', JSON.stringify(classifiedTokens[0]));
           }
+
+          // If LLM returned no tokens, fall back to basic extraction
+          if (classifiedTokens.length === 0) {
+            console.warn('[DesignTokensStore] LLM returned 0 tokens, falling back to basic extraction');
+            onProgress?.(80, 'AI classification returned empty, using basic extraction...');
+
+            // Use the basic extraction method instead
+            let allTokens: DesignToken[] = [];
+            for (const screen of screens) {
+              const colors = extractColorsFromHtml(screen.html, screen.id, screen.name);
+              const typography = extractTypographyFromHtml(screen.html, screen.id, screen.name);
+              const spacing = extractSpacingFromHtml(screen.html, screen.id, screen.name);
+              const borderRadius = extractBorderRadiusFromHtml(screen.html, screen.id, screen.name);
+              const shadows = extractShadowsFromHtml(screen.html, screen.id, screen.name);
+              allTokens = [...allTokens, ...colors, ...typography, ...spacing, ...borderRadius, ...shadows];
+            }
+
+            const deduped = deduplicateTokens(allTokens);
+            console.log('[DesignTokensStore] Fallback extracted', deduped.length, 'tokens');
+
+            if (isSupabaseConfigured()) {
+              const savedTokens = await replaceAllDesignTokens(deduped);
+              set({
+                tokens: savedTokens,
+                isExtracting: false,
+                lastExtractionTime: new Date().toISOString(),
+              });
+              onProgress?.(100, 'Done!');
+              return savedTokens;
+            } else {
+              set({
+                tokens: deduped,
+                isExtracting: false,
+                lastExtractionTime: new Date().toISOString(),
+              });
+              onProgress?.(100, 'Done!');
+              return deduped;
+            }
+          }
+
           onProgress?.(80, `Classified ${classifiedTokens.length} tokens, saving...`);
 
           // Step 4: Convert ClassifiedTokens to DesignTokens

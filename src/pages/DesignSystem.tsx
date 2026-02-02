@@ -1210,10 +1210,35 @@ export const DesignSystem: React.FC = () => {
 
       {/* Empty state - no screens captured */}
       {isTokensInitialized && !isLoadingTokens && !designSystem && screens.length === 0 && (
-        <Box sx={{ textAlign: 'center', py: 8 }}>
-          <MagnifyingGlass size={48} weight="light" style={{ color: config.colors.textSecondary, marginBottom: 16 }} />
-          <Typography color="text.secondary">
-            No screens captured yet. Import screens to generate a design system.
+        <Box
+          sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            py: 10,
+            px: 4,
+          }}
+        >
+          <Box
+            sx={{
+              width: 80,
+              height: 80,
+              borderRadius: 3,
+              bgcolor: 'grey.100',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              mb: 3,
+            }}
+          >
+            <MagnifyingGlass size={40} weight="duotone" style={{ color: '#9ca3af' }} />
+          </Box>
+          <Typography variant="h6" fontWeight={600} sx={{ mb: 1 }}>
+            No Screens Yet
+          </Typography>
+          <Typography color="text.secondary" sx={{ maxWidth: 300, textAlign: 'center' }}>
+            Import screens first to extract and generate your design system.
           </Typography>
         </Box>
       )}
@@ -1222,25 +1247,81 @@ export const DesignSystem: React.FC = () => {
       {isTokensInitialized && !isLoadingTokens && designSystem &&
        designSystem.colors.length === 0 && designSystem.fonts.length === 0 &&
        screens.length > 0 && !isExtracting && (
-        <Box sx={{ textAlign: 'center', py: 8 }}>
-          <Palette size={48} weight="light" style={{ color: config.colors.textSecondary, marginBottom: 16 }} />
-          <Typography color="text.secondary" sx={{ mb: 2 }}>
-            No design tokens extracted yet. Click the button below to analyze your {screens.filter(s => s.editedHtml).length} captured screens.
+        <Box
+          sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            py: 10,
+            px: 4,
+          }}
+        >
+          {/* Decorative color swatches illustration */}
+          <Box
+            sx={{
+              display: 'flex',
+              gap: 1,
+              mb: 4,
+              opacity: 0.8,
+            }}
+          >
+            {['#6366f1', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#3b82f6'].map((color, i) => (
+              <Box
+                key={color}
+                sx={{
+                  width: 40,
+                  height: 40,
+                  bgcolor: color,
+                  borderRadius: 1.5,
+                  transform: `rotate(${(i - 2.5) * 8}deg)`,
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                  transition: 'transform 0.3s ease',
+                  '&:hover': {
+                    transform: `rotate(${(i - 2.5) * 8}deg) scale(1.1)`,
+                  },
+                }}
+              />
+            ))}
+          </Box>
+
+          <Typography variant="h5" fontWeight={600} sx={{ mb: 1, color: 'text.primary' }}>
+            Extract Your Design System
           </Typography>
+          <Typography
+            color="text.secondary"
+            sx={{ mb: 4, maxWidth: 400, textAlign: 'center', lineHeight: 1.6 }}
+          >
+            Analyze {screens.filter(s => s.editedHtml).length} captured screens to automatically extract colors, typography, spacing, and more.
+          </Typography>
+
           <Button
             variant="contained"
-            startIcon={<Sparkle size={18} />}
+            size="large"
+            startIcon={<Sparkle size={20} weight="fill" />}
             onClick={extractDesignSystem}
             sx={{
+              px: 4,
+              py: 1.5,
+              borderRadius: 2,
+              textTransform: 'none',
+              fontSize: '1rem',
+              fontWeight: 600,
+              background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+              boxShadow: '0 4px 14px rgba(99, 102, 241, 0.4)',
               transition: 'all 0.2s ease',
               '&:hover': {
                 transform: 'translateY(-2px)',
-                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                boxShadow: '0 6px 20px rgba(99, 102, 241, 0.5)',
               },
             }}
           >
             Extract Design System
           </Button>
+
+          <Typography variant="caption" color="text.secondary" sx={{ mt: 3 }}>
+            Uses AI to identify and classify design tokens
+          </Typography>
         </Box>
       )}
 
