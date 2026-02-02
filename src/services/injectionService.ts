@@ -13,6 +13,7 @@ import type {
   AnalysisResult,
   RuntimeOptions
 } from './injections';
+import { logLLMCall, completeLLMCall, failLLMCall } from '@/store/debugStore';
 
 // ============================================================================
 // Types
@@ -200,20 +201,53 @@ export async function generateSmartInjections(
     throw new Error('Not authenticated');
   }
 
-  const response = await supabase.functions.invoke('generate-injections', {
-    body: {
-      injectionPoints: analysis.injectionPoints,
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  const functionUrl = `${supabaseUrl}/functions/v1/generate-injections`;
+
+  // Start debug logging
+  const debugId = logLLMCall(
+    'other', // Using 'other' since there's no specific stage for injections
+    functionUrl,
+    {
+      injectionPoints: analysis.injectionPoints.slice(0, 10), // Truncate for display
+      injectionPointsCount: analysis.injectionPoints.length,
       userIntent,
       provider,
-      model
+      model,
     }
+  );
+
+  console.log('[InjectionService] Calling generate-injections:', {
+    injectionPointsCount: analysis.injectionPoints.length,
+    userIntent,
   });
 
-  if (response.error) {
-    throw new Error(response.error.message);
-  }
+  try {
+    const response = await supabase.functions.invoke('generate-injections', {
+      body: {
+        injectionPoints: analysis.injectionPoints,
+        userIntent,
+        provider,
+        model
+      }
+    });
 
-  return response.data;
+    if (response.error) {
+      completeLLMCall(debugId, 500, false, null, response.error.message);
+      throw new Error(response.error.message);
+    }
+
+    // Log successful completion
+    completeLLMCall(debugId, 200, true, response.data);
+
+    console.log('[InjectionService] Generated', response.data?.injections?.length, 'smart injections');
+
+    return response.data;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    failLLMCall(debugId, errorMessage);
+    throw error;
+  }
 }
 
 /**

@@ -145,7 +145,7 @@ import {
 import DualModeEditor from '@/components/DualModeEditor';
 import WYSIWYGEditor from '@/components/WYSIWYGEditor';
 import { captureHtmlScreenshot, compressScreenshot } from '@/services/screenshotService';
-import { quickEnhance } from '@/services/injectionService';
+import { quickEnhance, enhancePrototype, type EnhanceResult } from '@/services/injectionService';
 
 // ============== Types ==============
 
@@ -177,6 +177,70 @@ const PREVIEW_SIZES: Record<PreviewSize, { width: number; label: string; icon: R
   tablet: { width: 768, label: 'Tablet', icon: <DeviceTablet size={16} /> },
   mobile: { width: 375, label: 'Mobile', icon: <DeviceMobile size={16} /> },
 };
+
+// ============== Interactivity Enhancement Hook ==============
+
+/**
+ * Custom hook for async LLM-powered interactivity enhancement
+ * Falls back to quick enhance if LLM fails or is disabled
+ */
+function useEnhancedHtml(
+  rawHtml: string | null | undefined,
+  enableInteractivity: boolean,
+  useLLM: boolean = true
+): { enhancedHtml: string | null; isEnhancing: boolean; enhanceResult: EnhanceResult | null } {
+  const [enhancedHtml, setEnhancedHtml] = useState<string | null>(null);
+  const [isEnhancing, setIsEnhancing] = useState(false);
+  const [enhanceResult, setEnhanceResult] = useState<EnhanceResult | null>(null);
+  const enhanceCache = useRef<Map<string, string>>(new Map());
+
+  useEffect(() => {
+    if (!rawHtml || !enableInteractivity) {
+      setEnhancedHtml(rawHtml || null);
+      setEnhanceResult(null);
+      return;
+    }
+
+    // Check cache first
+    const cacheKey = `${rawHtml.slice(0, 100)}-${useLLM}`;
+    if (enhanceCache.current.has(cacheKey)) {
+      setEnhancedHtml(enhanceCache.current.get(cacheKey)!);
+      return;
+    }
+
+    if (useLLM) {
+      // Try LLM enhancement with fallback
+      setIsEnhancing(true);
+      enhancePrototype(rawHtml, { useLLM: true, enableAnalytics: true })
+        .then((result) => {
+          console.log('[useEnhancedHtml] LLM enhancement successful:', {
+            injectionsCount: result.injections.length,
+            summary: result.summary,
+          });
+          setEnhancedHtml(result.html);
+          setEnhanceResult(result);
+          enhanceCache.current.set(cacheKey, result.html);
+        })
+        .catch((error) => {
+          console.warn('[useEnhancedHtml] LLM enhancement failed, using quick enhance:', error);
+          // Fallback to quick enhance
+          const quickHtml = quickEnhance(rawHtml);
+          setEnhancedHtml(quickHtml);
+          enhanceCache.current.set(cacheKey, quickHtml);
+        })
+        .finally(() => {
+          setIsEnhancing(false);
+        });
+    } else {
+      // Use quick enhance (synchronous)
+      const quickHtml = quickEnhance(rawHtml);
+      setEnhancedHtml(quickHtml);
+      enhanceCache.current.set(cacheKey, quickHtml);
+    }
+  }, [rawHtml, enableInteractivity, useLLM]);
+
+  return { enhancedHtml, isEnhancing, enhanceResult };
+}
 
 // ============== Helper Components ==============
 
@@ -907,12 +971,14 @@ function FetchedHtmlIframe({
   title,
   style,
   enableInteractivity = false,
+  useLLMEnhancement = true,
 }: {
   url?: string | null;
   fallbackHtml?: string | null;
   title: string;
   style?: React.CSSProperties;
   enableInteractivity?: boolean;
+  useLLMEnhancement?: boolean;
 }) {
   const [html, setHtml] = useState<string | null>(null);
   const [isFetching, setIsFetching] = useState(false);
@@ -940,20 +1006,43 @@ function FetchedHtmlIframe({
   }, [url]);
 
   const rawHtml = html || fallbackHtml;
-  // Optionally enhance with interactivity runtime
-  const effectiveHtml = rawHtml && enableInteractivity ? quickEnhance(rawHtml) : rawHtml;
+  // Use LLM-powered enhancement hook for interactivity
+  const { enhancedHtml, isEnhancing } = useEnhancedHtml(rawHtml, enableInteractivity, useLLMEnhancement);
 
-  if (effectiveHtml) {
+  if (enhancedHtml) {
     return (
-      <iframe
-        srcDoc={effectiveHtml}
-        title={title}
-        style={style}
-      />
+      <Box sx={{ position: 'relative', width: '100%', height: '100%' }}>
+        <iframe
+          srcDoc={enhancedHtml}
+          title={title}
+          style={style}
+        />
+        {isEnhancing && (
+          <Box
+            sx={{
+              position: 'absolute',
+              top: 4,
+              right: 4,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 0.5,
+              bgcolor: 'rgba(0,0,0,0.6)',
+              color: 'white',
+              px: 1,
+              py: 0.5,
+              borderRadius: 1,
+              fontSize: 11,
+            }}
+          >
+            <CircularProgress size={12} sx={{ color: 'white' }} />
+            Enhancing...
+          </Box>
+        )}
+      </Box>
     );
   }
 
-  if (isFetching) {
+  if (isFetching || isEnhancing) {
     return (
       <Box
         sx={{
@@ -985,6 +1074,7 @@ function CanvasVariantCard({
   onClick,
   viewMode = 'prototypes',
   enableInteractivity = false,
+  useLLMEnhancement = true,
 }: {
   label: string;
   isLoading?: boolean;
@@ -996,6 +1086,7 @@ function CanvasVariantCard({
   onClick?: () => void;
   viewMode?: 'wireframes' | 'prototypes';
   enableInteractivity?: boolean;
+  useLLMEnhancement?: boolean;
 }) {
   // Show streaming preview if available during loading
   const showStreamingPreview = isLoading && streamingHtml && streamingHtml.length > 100;
@@ -1128,6 +1219,7 @@ function CanvasVariantCard({
                 url={htmlUrl!}
                 title={label}
                 enableInteractivity={enableInteractivity}
+                useLLMEnhancement={useLLMEnhancement}
                 style={{
                   width: '200%',
                   height: '200%',
@@ -1211,6 +1303,7 @@ function InlineExpansionGrid({
   getVariantByIndex,
   viewMode = 'prototypes',
   enableInteractivity = false,
+  useLLMEnhancement = true,
 }: {
   wireframes: Array<{ variantIndex: number; wireframeUrl: string; wireframeHtml?: string }>;
   focusedIndex: number;
@@ -1219,6 +1312,7 @@ function InlineExpansionGrid({
   getVariantByIndex: (index: number) => { html_url?: string; status: string; iteration_count?: number } | undefined;
   viewMode?: 'wireframes' | 'prototypes';
   enableInteractivity?: boolean;
+  useLLMEnhancement?: boolean;
 }) {
   const { config } = useThemeStore();
   const labels = ['Variant A', 'Variant B', 'Variant C', 'Variant D'];
@@ -1284,8 +1378,14 @@ function InlineExpansionGrid({
   // Always use srcDoc to bypass Supabase Storage's CSP headers that block scripts
   // Priority: fetched HTML > wireframe HTML body > null
   const rawHtml = fetchedHtml || focusedHtml;
-  // Optionally enhance with interactivity runtime (only for prototypes, not wireframes)
-  const effectiveHtml = rawHtml && enableInteractivity && !isWireframe ? quickEnhance(rawHtml) : rawHtml;
+  // Use LLM-powered enhancement for interactivity (only for prototypes, not wireframes)
+  const shouldEnhance = enableInteractivity && !isWireframe;
+  const { enhancedHtml, isEnhancing, enhanceResult } = useEnhancedHtml(
+    rawHtml,
+    shouldEnhance,
+    useLLMEnhancement
+  );
+  const effectiveHtml = shouldEnhance ? enhancedHtml : rawHtml;
 
   return (
     <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', p: 2, minHeight: 0 }}>
@@ -1370,17 +1470,61 @@ function InlineExpansionGrid({
         }}
       >
         {effectiveHtml ? (
-          <iframe
-            key={`html-${focusedIndex}-${effectiveHtml.length}`}
-            srcDoc={effectiveHtml}
-            title={labels[focusedIndex - 1]}
-            style={{
-              width: '100%',
-              height: '100%',
-              border: 'none',
-            }}
-          />
-        ) : isFetching ? (
+          <Box sx={{ position: 'relative', width: '100%', height: '100%' }}>
+            <iframe
+              key={`html-${focusedIndex}-${effectiveHtml.length}`}
+              srcDoc={effectiveHtml}
+              title={labels[focusedIndex - 1]}
+              style={{
+                width: '100%',
+                height: '100%',
+                border: 'none',
+              }}
+            />
+            {isEnhancing && (
+              <Box
+                sx={{
+                  position: 'absolute',
+                  top: 8,
+                  right: 8,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 1,
+                  bgcolor: 'rgba(0,0,0,0.7)',
+                  color: 'white',
+                  px: 1.5,
+                  py: 0.75,
+                  borderRadius: 2,
+                  fontSize: 12,
+                }}
+              >
+                <CircularProgress size={14} sx={{ color: 'white' }} />
+                Adding interactivity...
+              </Box>
+            )}
+            {enhanceResult && !isEnhancing && shouldEnhance && (
+              <Box
+                sx={{
+                  position: 'absolute',
+                  bottom: 8,
+                  right: 8,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 0.5,
+                  bgcolor: 'rgba(16, 185, 129, 0.9)',
+                  color: 'white',
+                  px: 1,
+                  py: 0.5,
+                  borderRadius: 1,
+                  fontSize: 11,
+                }}
+              >
+                <Lightning size={12} weight="fill" />
+                {enhanceResult.injections.length} interactions
+              </Box>
+            )}
+          </Box>
+        ) : isFetching || isEnhancing ? (
           <Box
             sx={{
               width: '100%',
@@ -1508,6 +1652,7 @@ export const VibePrototyping: React.FC = () => {
   const [breadcrumbAnchorEl, setBreadcrumbAnchorEl] = useState<null | HTMLElement>(null);
   const [previewSize, setPreviewSize] = useState<PreviewSize>('desktop');
   const [interactivityEnabled, setInteractivityEnabled] = useState(false); // Enable prototype interactivity
+  const [useLLMEnhancement, setUseLLMEnhancement] = useState(true); // Use LLM for smart interactivity (vs quick/default)
 
   // Screen name editing
   const [isEditingName, setIsEditingName] = useState(false);
@@ -4007,22 +4152,44 @@ export const VibePrototyping: React.FC = () => {
 
               <Divider orientation="vertical" flexItem />
 
-              {/* Interactivity Toggle */}
-              <Tooltip title={interactivityEnabled ? 'Disable Interactivity' : 'Enable Interactivity (buttons, forms, modals)'}>
-                <IconButton
-                  size="small"
-                  onClick={() => setInteractivityEnabled(!interactivityEnabled)}
-                  sx={{
-                    bgcolor: interactivityEnabled ? 'primary.main' : 'transparent',
-                    color: interactivityEnabled ? 'white' : 'inherit',
-                    '&:hover': {
-                      bgcolor: interactivityEnabled ? 'primary.dark' : 'action.hover',
-                    },
-                  }}
-                >
-                  <Lightning size={18} weight={interactivityEnabled ? 'fill' : 'regular'} />
-                </IconButton>
-              </Tooltip>
+              {/* Interactivity Toggle with LLM option */}
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <Tooltip title={interactivityEnabled ? 'Disable Interactivity' : 'Enable Interactivity (buttons, forms, modals)'}>
+                  <IconButton
+                    size="small"
+                    onClick={() => setInteractivityEnabled(!interactivityEnabled)}
+                    sx={{
+                      bgcolor: interactivityEnabled ? 'primary.main' : 'transparent',
+                      color: interactivityEnabled ? 'white' : 'inherit',
+                      '&:hover': {
+                        bgcolor: interactivityEnabled ? 'primary.dark' : 'action.hover',
+                      },
+                    }}
+                  >
+                    <Lightning size={18} weight={interactivityEnabled ? 'fill' : 'regular'} />
+                  </IconButton>
+                </Tooltip>
+                {interactivityEnabled && (
+                  <Tooltip title={useLLMEnhancement ? 'Using AI-powered smart interactions' : 'Using basic interactions (click to enable AI)'}>
+                    <Chip
+                      label={useLLMEnhancement ? 'AI' : 'Basic'}
+                      size="small"
+                      onClick={() => setUseLLMEnhancement(!useLLMEnhancement)}
+                      sx={{
+                        height: 22,
+                        fontSize: 11,
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        bgcolor: useLLMEnhancement ? 'rgba(118, 75, 162, 0.15)' : 'grey.200',
+                        color: useLLMEnhancement ? '#764ba2' : 'text.secondary',
+                        '&:hover': {
+                          bgcolor: useLLMEnhancement ? 'rgba(118, 75, 162, 0.25)' : 'grey.300',
+                        },
+                      }}
+                    />
+                  </Tooltip>
+                )}
+              </Box>
 
               <Divider orientation="vertical" flexItem />
 
@@ -4177,6 +4344,7 @@ export const VibePrototyping: React.FC = () => {
                         onClick={canClick ? () => handleVariantClick(idx + 1) : undefined}
                         viewMode={viewMode}
                         enableInteractivity={interactivityEnabled}
+                        useLLMEnhancement={useLLMEnhancement}
                       />
                     </Grid>
                   );
@@ -4193,6 +4361,7 @@ export const VibePrototyping: React.FC = () => {
               getVariantByIndex={getVariantByIndex}
               viewMode={viewMode}
               enableInteractivity={interactivityEnabled}
+                        useLLMEnhancement={useLLMEnhancement}
             />
           )}
 
@@ -4228,6 +4397,7 @@ export const VibePrototyping: React.FC = () => {
                         onClick={() => handleVariantClick(idx + 1)}
                         viewMode={viewMode}
                         enableInteractivity={interactivityEnabled}
+                        useLLMEnhancement={useLLMEnhancement}
                       />
                     </Grid>
                   );
@@ -4247,6 +4417,7 @@ export const VibePrototyping: React.FC = () => {
               getVariantByIndex={getVariantByIndex}
               viewMode={viewMode}
               enableInteractivity={interactivityEnabled}
+                        useLLMEnhancement={useLLMEnhancement}
             />
           )}
 
