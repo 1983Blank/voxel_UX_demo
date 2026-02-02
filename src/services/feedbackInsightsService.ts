@@ -47,6 +47,7 @@ export interface VariantInsight {
   isTopPerformer: boolean;
   viewers: Viewer[];
   wireframeUrl: string | null;
+  htmlUrl: string | null; // URL to generated variant HTML for iframe preview
 }
 
 export interface FeedbackComment {
@@ -339,6 +340,7 @@ export async function getVariantInsights(sessionId: string): Promise<VariantInsi
         lastSeen: v.viewedAt,
       })),
       wireframeUrl: null, // RPC doesn't return this, will be fetched separately if needed
+      htmlUrl: null, // RPC doesn't return this, will be fetched separately if needed
     }));
 
     // Mark top performer
@@ -370,6 +372,7 @@ async function getVariantInsightsFallback(sessionId: string): Promise<VariantIns
       id,
       variant_index,
       session_id,
+      html_url,
       vibe_variant_plans (
         title,
         description,
@@ -412,9 +415,11 @@ async function getVariantInsightsFallback(sessionId: string): Promise<VariantIns
   const variantInsights: VariantInsight[] = (variants || []).map((variant) => {
     const variantWithPlan = variant as unknown as {
       vibe_variant_plans: { title: string; description: string; wireframe_url: string | null } | null;
+      html_url: string | null;
     };
     const plan = variantWithPlan.vibe_variant_plans;
     const wireframeUrl = plan?.wireframe_url || null;
+    const htmlUrl = variantWithPlan.html_url || null;
     const variantIndex = variant.variant_index;
     const label = `Variant ${String.fromCharCode(64 + variantIndex)}`;
 
@@ -463,6 +468,7 @@ async function getVariantInsightsFallback(sessionId: string): Promise<VariantIns
       isTopPerformer: false,
       viewers,
       wireframeUrl,
+      htmlUrl,
     };
   });
 
@@ -506,6 +512,8 @@ export async function getVariantDetailInsight(
       if (row) {
         // Fetch wireframe URL from vibe_variant_plans (where it's stored by wireframeService)
         let wireframeUrl: string | null = null;
+        let htmlUrl: string | null = null;
+
         const { data: planData } = await supabase
           .from('vibe_variant_plans')
           .select('wireframe_url')
@@ -514,6 +522,17 @@ export async function getVariantDetailInsight(
           .single();
         if (planData) {
           wireframeUrl = planData.wireframe_url;
+        }
+
+        // Fetch html_url from vibe_variants for iframe preview
+        const { data: variantData } = await supabase
+          .from('vibe_variants')
+          .select('html_url')
+          .eq('session_id', sessionId)
+          .eq('variant_index', variantIndex)
+          .single();
+        if (variantData) {
+          htmlUrl = variantData.html_url;
         }
 
         variantInsight = {
@@ -538,6 +557,7 @@ export async function getVariantDetailInsight(
             totalDuration: v.duration || 0,
           })),
           wireframeUrl,
+          htmlUrl,
         };
 
         // Extract comments from RPC result
