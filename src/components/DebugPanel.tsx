@@ -1,7 +1,7 @@
 /**
  * Debug Panel
  * Displays LLM request/response data for debugging the vibe prototyping pipeline
- * Styled to match the app's modern gradient theme
+ * Light themed floating panel design
  */
 
 import { useState } from 'react';
@@ -25,7 +25,6 @@ import Tab from '@mui/material/Tab';
 import Tooltip from '@mui/material/Tooltip';
 import {
   X,
-  Bug,
   Trash,
   CheckCircle,
   XCircle,
@@ -37,20 +36,25 @@ import {
 import { useDebugStore, type DebugEntry, type DebugStage } from '@/store/debugStore';
 import { modernColors } from '@/theme/modernGradientTheme';
 
-// Theme colors for the debug panel
+// Light theme colors
 const panelColors = {
-  bg: '#1E1B4B', // Deep indigo (void)
-  bgLight: '#312E81', // Indigo 900
-  surface: 'rgba(79, 70, 229, 0.15)', // Subtle indigo surface
-  surfaceHover: 'rgba(79, 70, 229, 0.25)',
-  border: 'rgba(99, 102, 241, 0.3)', // Indigo border
-  text: '#E0E7FF', // Indigo 100
-  textSecondary: '#A5B4FC', // Indigo 300
-  textMuted: '#818CF8', // Indigo 400
-  success: '#34D399', // Mint
-  error: '#F87171', // Red 400
-  warning: '#FBBF24', // Amber 400
-  codeBlock: '#0f0e1a', // Near black with indigo tint
+  bg: '#FFFFFF',
+  bgSecondary: '#F8FAFC', // Slate 50
+  surface: '#F1F5F9', // Slate 100
+  surfaceHover: '#E2E8F0', // Slate 200
+  border: '#E2E8F0', // Slate 200
+  borderLight: '#F1F5F9',
+  text: '#1E293B', // Slate 800
+  textSecondary: '#475569', // Slate 600
+  textMuted: '#94A3B8', // Slate 400
+  success: '#059669', // Emerald 600
+  successBg: '#D1FAE5',
+  error: '#DC2626', // Red 600
+  errorBg: '#FEE2E2',
+  warning: '#D97706', // Amber 600
+  warningBg: '#FEF3C7',
+  codeBlock: '#1E293B', // Slate 800
+  codeText: '#E2E8F0',
 };
 
 const STAGE_LABELS: Record<DebugStage, string> = {
@@ -65,14 +69,14 @@ const STAGE_LABELS: Record<DebugStage, string> = {
 };
 
 const STAGE_COLORS: Record<DebugStage, { bg: string; text: string }> = {
-  'understand-request': { bg: 'rgba(99, 102, 241, 0.3)', text: '#A5B4FC' }, // Indigo
-  'generate-variant-plan': { bg: 'rgba(139, 92, 246, 0.3)', text: '#C4B5FD' }, // Violet
-  'generate-visual-wireframes': { bg: 'rgba(236, 72, 153, 0.3)', text: '#F9A8D4' }, // Pink
-  'generate-variant-edits-v2': { bg: 'rgba(245, 158, 11, 0.3)', text: '#FCD34D' }, // Amber
-  'generate-variant-code': { bg: 'rgba(52, 211, 153, 0.3)', text: '#6EE7B7' }, // Mint
-  'extract-components': { bg: 'rgba(6, 182, 212, 0.3)', text: '#67E8F9' }, // Cyan
-  'iterate-variant': { bg: 'rgba(79, 70, 229, 0.3)', text: '#818CF8' }, // Indigo bright
-  'other': { bg: 'rgba(100, 116, 139, 0.3)', text: '#94A3B8' }, // Slate
+  'understand-request': { bg: '#EEF2FF', text: '#4F46E5' }, // Indigo
+  'generate-variant-plan': { bg: '#F3E8FF', text: '#7C3AED' }, // Violet
+  'generate-visual-wireframes': { bg: '#FCE7F3', text: '#DB2777' }, // Pink
+  'generate-variant-edits-v2': { bg: '#FEF3C7', text: '#D97706' }, // Amber
+  'generate-variant-code': { bg: '#D1FAE5', text: '#059669' }, // Emerald
+  'extract-components': { bg: '#CFFAFE', text: '#0891B2' }, // Cyan
+  'iterate-variant': { bg: '#E0E7FF', text: '#4338CA' }, // Indigo dark
+  'other': { bg: '#F1F5F9', text: '#64748B' }, // Slate
 };
 
 function JsonViewer({ data, maxHeight = 400 }: { data: unknown; maxHeight?: number }) {
@@ -97,11 +101,10 @@ function JsonViewer({ data, maxHeight = 400 }: { data: unknown; maxHeight?: numb
             top: 8,
             right: 8,
             zIndex: 1,
-            color: panelColors.textMuted,
-            backgroundColor: 'rgba(79, 70, 229, 0.2)',
+            color: panelColors.codeText,
+            backgroundColor: 'rgba(255, 255, 255, 0.1)',
             '&:hover': {
-              backgroundColor: 'rgba(79, 70, 229, 0.4)',
-              color: panelColors.text,
+              backgroundColor: 'rgba(255, 255, 255, 0.2)',
             },
           }}
         >
@@ -112,17 +115,16 @@ function JsonViewer({ data, maxHeight = 400 }: { data: unknown; maxHeight?: numb
         component="pre"
         sx={{
           backgroundColor: panelColors.codeBlock,
-          color: panelColors.textSecondary,
+          color: panelColors.codeText,
           p: 2,
           pt: 2.5,
           borderRadius: 2,
-          border: `1px solid ${panelColors.border}`,
           overflow: 'auto',
           maxHeight,
           fontSize: 11,
           lineHeight: 1.5,
           m: 0,
-          fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+          fontFamily: "'JetBrains Mono', 'Fira Code', 'SF Mono', monospace",
           '&::-webkit-scrollbar': {
             width: 6,
             height: 6,
@@ -131,7 +133,7 @@ function JsonViewer({ data, maxHeight = 400 }: { data: unknown; maxHeight?: numb
             backgroundColor: 'transparent',
           },
           '&::-webkit-scrollbar-thumb': {
-            backgroundColor: panelColors.border,
+            backgroundColor: 'rgba(255, 255, 255, 0.2)',
             borderRadius: 3,
           },
         }}
@@ -159,7 +161,6 @@ function EntryDetail({ entry }: { entry: DebugEntry }) {
             fontWeight: 600,
             fontSize: 11,
             height: 24,
-            border: `1px solid ${stageColor.text}30`,
           }}
         />
         {entry.status === 'success' && (
@@ -191,7 +192,7 @@ function EntryDetail({ entry }: { entry: DebugEntry }) {
             label={`${entry.durationMs}ms`}
             size="small"
             sx={{
-              backgroundColor: 'rgba(52, 211, 153, 0.15)',
+              backgroundColor: panelColors.successBg,
               color: panelColors.success,
               fontSize: 10,
               fontWeight: 600,
@@ -207,17 +208,16 @@ function EntryDetail({ entry }: { entry: DebugEntry }) {
         sx={{
           mb: 2.5,
           display: 'flex',
-          gap: 2,
+          gap: 3,
           flexWrap: 'wrap',
           p: 1.5,
           backgroundColor: panelColors.surface,
           borderRadius: 1.5,
-          border: `1px solid ${panelColors.border}`,
         }}
       >
         {entry.sessionId && (
           <Box>
-            <Typography variant="caption" sx={{ color: panelColors.textMuted, display: 'block', fontSize: 10 }}>
+            <Typography variant="caption" sx={{ color: panelColors.textMuted, display: 'block', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.5 }}>
               Session
             </Typography>
             <Typography variant="caption" sx={{ color: panelColors.text, fontFamily: 'monospace', fontSize: 11 }}>
@@ -227,7 +227,7 @@ function EntryDetail({ entry }: { entry: DebugEntry }) {
         )}
         {entry.variantIndex !== undefined && (
           <Box>
-            <Typography variant="caption" sx={{ color: panelColors.textMuted, display: 'block', fontSize: 10 }}>
+            <Typography variant="caption" sx={{ color: panelColors.textMuted, display: 'block', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.5 }}>
               Variant
             </Typography>
             <Typography variant="caption" sx={{ color: panelColors.text, fontSize: 11 }}>
@@ -236,7 +236,7 @@ function EntryDetail({ entry }: { entry: DebugEntry }) {
           </Box>
         )}
         <Box>
-          <Typography variant="caption" sx={{ color: panelColors.textMuted, display: 'block', fontSize: 10 }}>
+          <Typography variant="caption" sx={{ color: panelColors.textMuted, display: 'block', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.5 }}>
             Timestamp
           </Typography>
           <Typography variant="caption" sx={{ color: panelColors.text, fontSize: 11 }}>
@@ -263,7 +263,7 @@ function EntryDetail({ entry }: { entry: DebugEntry }) {
             minHeight: 36,
             textTransform: 'none',
             '&.Mui-selected': {
-              color: panelColors.text,
+              color: modernColors.primary,
             },
           },
         }}
@@ -285,6 +285,7 @@ function EntryDetail({ entry }: { entry: DebugEntry }) {
               fontWeight: 600,
               display: 'block',
               mb: 1,
+              fontSize: 10,
             }}
           >
             Endpoint
@@ -293,18 +294,19 @@ function EntryDetail({ entry }: { entry: DebugEntry }) {
             sx={{
               mb: 2.5,
               p: 1.5,
-              backgroundColor: panelColors.codeBlock,
+              backgroundColor: panelColors.surface,
               borderRadius: 1.5,
-              border: `1px solid ${panelColors.border}`,
               fontFamily: "'JetBrains Mono', monospace",
               fontSize: 12,
-              color: panelColors.textSecondary,
+              color: panelColors.text,
             }}
           >
             <Box component="span" sx={{ color: panelColors.success, fontWeight: 600 }}>
               {entry.request.method}
             </Box>{' '}
-            {entry.request.endpoint}
+            <Box component="span" sx={{ color: panelColors.textSecondary }}>
+              {entry.request.endpoint}
+            </Box>
           </Box>
 
           <Typography
@@ -316,6 +318,7 @@ function EntryDetail({ entry }: { entry: DebugEntry }) {
               fontWeight: 600,
               display: 'block',
               mb: 1,
+              fontSize: 10,
             }}
           >
             Request Body
@@ -332,11 +335,8 @@ function EntryDetail({ entry }: { entry: DebugEntry }) {
                 sx={{
                   mb: 2,
                   p: 1.5,
-                  backgroundColor: entry.response.success
-                    ? 'rgba(52, 211, 153, 0.1)'
-                    : 'rgba(248, 113, 113, 0.1)',
+                  backgroundColor: entry.response.success ? panelColors.successBg : panelColors.errorBg,
                   borderRadius: 1.5,
-                  border: `1px solid ${entry.response.success ? panelColors.success : panelColors.error}40`,
                 }}
               >
                 <Typography
@@ -356,9 +356,9 @@ function EntryDetail({ entry }: { entry: DebugEntry }) {
                   sx={{
                     p: 2,
                     mb: 2,
-                    backgroundColor: 'rgba(248, 113, 113, 0.15)',
+                    backgroundColor: panelColors.errorBg,
                     borderRadius: 1.5,
-                    border: `1px solid ${panelColors.error}40`,
+                    border: `1px solid ${panelColors.error}20`,
                   }}
                 >
                   <Typography variant="body2" sx={{ color: panelColors.error, fontSize: 12 }}>
@@ -378,6 +378,7 @@ function EntryDetail({ entry }: { entry: DebugEntry }) {
                       fontWeight: 600,
                       display: 'block',
                       mb: 1,
+                      fontSize: 10,
                     }}
                   >
                     Response Data
@@ -391,13 +392,12 @@ function EntryDetail({ entry }: { entry: DebugEntry }) {
               sx={{
                 p: 3,
                 textAlign: 'center',
-                backgroundColor: panelColors.surface,
+                backgroundColor: panelColors.warningBg,
                 borderRadius: 2,
-                border: `1px dashed ${panelColors.border}`,
               }}
             >
               <Clock size={32} color={panelColors.warning} weight="duotone" />
-              <Typography sx={{ color: panelColors.textMuted, mt: 1, fontSize: 13 }}>
+              <Typography sx={{ color: panelColors.warning, mt: 1, fontSize: 13, fontWeight: 500 }}>
                 Waiting for response...
               </Typography>
             </Box>
@@ -416,6 +416,7 @@ function EntryDetail({ entry }: { entry: DebugEntry }) {
               fontWeight: 600,
               display: 'block',
               mb: 1,
+              fontSize: 10,
             }}
           >
             Raw LLM Response
@@ -424,10 +425,9 @@ function EntryDetail({ entry }: { entry: DebugEntry }) {
             component="pre"
             sx={{
               backgroundColor: panelColors.codeBlock,
-              color: panelColors.textSecondary,
+              color: panelColors.codeText,
               p: 2,
               borderRadius: 2,
-              border: `1px solid ${panelColors.border}`,
               overflow: 'auto',
               maxHeight: 400,
               fontSize: 11,
@@ -440,7 +440,7 @@ function EntryDetail({ entry }: { entry: DebugEntry }) {
                 width: 6,
               },
               '&::-webkit-scrollbar-thumb': {
-                backgroundColor: panelColors.border,
+                backgroundColor: 'rgba(255, 255, 255, 0.2)',
                 borderRadius: 3,
               },
             }}
@@ -481,7 +481,7 @@ export function LLMDebugPanel() {
         sx: {
           width: { xs: '100%', sm: 600, md: 800 },
           backgroundColor: panelColors.bg,
-          backgroundImage: 'none',
+          boxShadow: '-4px 0 24px rgba(0, 0, 0, 0.12)',
         },
       }}
     >
@@ -494,7 +494,7 @@ export function LLMDebugPanel() {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            background: `linear-gradient(180deg, ${panelColors.bgLight} 0%, ${panelColors.bg} 100%)`,
+            backgroundColor: panelColors.bg,
           }}
         >
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
@@ -503,13 +503,13 @@ export function LLMDebugPanel() {
                 width: 36,
                 height: 36,
                 borderRadius: 2,
-                backgroundColor: 'rgba(79, 70, 229, 0.3)',
+                backgroundColor: modernColors.infoBg,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
               }}
             >
-              <Terminal size={20} color={panelColors.textSecondary} weight="duotone" />
+              <Terminal size={20} color={modernColors.primary} weight="duotone" />
             </Box>
             <Box>
               <Typography
@@ -530,17 +530,7 @@ export function LLMDebugPanel() {
                   checked={isEnabled}
                   onChange={(e) => setEnabled(e.target.checked)}
                   size="small"
-                  sx={{
-                    '& .MuiSwitch-track': {
-                      backgroundColor: panelColors.border,
-                    },
-                    '& .MuiSwitch-thumb': {
-                      backgroundColor: isEnabled ? modernColors.primary : panelColors.textMuted,
-                    },
-                    '& .Mui-checked + .MuiSwitch-track': {
-                      backgroundColor: `${modernColors.primary}60 !important`,
-                    },
-                  }}
+                  color="primary"
                 />
               }
               label={
@@ -556,7 +546,7 @@ export function LLMDebugPanel() {
                 size="small"
                 sx={{
                   color: panelColors.textMuted,
-                  '&:hover': { backgroundColor: 'rgba(248, 113, 113, 0.2)', color: panelColors.error },
+                  '&:hover': { backgroundColor: panelColors.errorBg, color: panelColors.error },
                 }}
               >
                 <Trash size={18} />
@@ -575,63 +565,19 @@ export function LLMDebugPanel() {
         </Box>
 
         {/* Filter */}
-        <Box sx={{ p: 2, borderBottom: `1px solid ${panelColors.border}` }}>
-          <FormControl
-            size="small"
-            fullWidth
-            sx={{
-              '& .MuiOutlinedInput-root': {
-                backgroundColor: panelColors.surface,
-                color: panelColors.text,
-                '& fieldset': {
-                  borderColor: panelColors.border,
-                },
-                '&:hover fieldset': {
-                  borderColor: modernColors.primary,
-                },
-                '&.Mui-focused fieldset': {
-                  borderColor: modernColors.primary,
-                },
-              },
-              '& .MuiInputLabel-root': {
-                color: panelColors.textMuted,
-                '&.Mui-focused': {
-                  color: modernColors.primaryBright,
-                },
-              },
-              '& .MuiSelect-icon': {
-                color: panelColors.textMuted,
-              },
-            }}
-          >
+        <Box sx={{ p: 2, borderBottom: `1px solid ${panelColors.border}`, backgroundColor: panelColors.bgSecondary }}>
+          <FormControl size="small" fullWidth>
             <InputLabel>Filter by Stage</InputLabel>
             <Select
               value={filterStage}
               label="Filter by Stage"
               onChange={(e) => setFilterStage(e.target.value as DebugStage | 'all')}
-              MenuProps={{
-                PaperProps: {
-                  sx: {
-                    backgroundColor: panelColors.bgLight,
-                    border: `1px solid ${panelColors.border}`,
-                    '& .MuiMenuItem-root': {
-                      color: panelColors.text,
-                      '&:hover': {
-                        backgroundColor: panelColors.surface,
-                      },
-                      '&.Mui-selected': {
-                        backgroundColor: 'rgba(79, 70, 229, 0.3)',
-                        '&:hover': {
-                          backgroundColor: 'rgba(79, 70, 229, 0.4)',
-                        },
-                      },
-                    },
-                  },
-                },
+              sx={{
+                backgroundColor: panelColors.bg,
               }}
             >
               <MenuItem value="all">All Stages</MenuItem>
-              <Divider sx={{ borderColor: panelColors.border }} />
+              <Divider />
               {Object.entries(STAGE_LABELS).map(([stage, label]) => (
                 <MenuItem key={stage} value={stage}>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -659,7 +605,7 @@ export function LLMDebugPanel() {
               width: 260,
               borderRight: `1px solid ${panelColors.border}`,
               overflow: 'auto',
-              backgroundColor: 'rgba(0, 0, 0, 0.15)',
+              backgroundColor: panelColors.bgSecondary,
               '&::-webkit-scrollbar': {
                 width: 6,
               },
@@ -671,7 +617,7 @@ export function LLMDebugPanel() {
           >
             {filteredEntries.length === 0 ? (
               <Box sx={{ p: 3, textAlign: 'center' }}>
-                <Bug size={40} color={panelColors.textMuted} weight="duotone" />
+                <Terminal size={40} color={panelColors.textMuted} weight="duotone" />
                 <Typography sx={{ color: panelColors.textMuted, mt: 1.5, fontSize: 13 }}>
                   No debug entries yet
                 </Typography>
@@ -691,15 +637,15 @@ export function LLMDebugPanel() {
                         sx={{
                           py: 1.5,
                           px: 2,
-                          borderBottom: `1px solid ${panelColors.border}`,
+                          borderBottom: `1px solid ${panelColors.borderLight}`,
                           '&:hover': {
-                            backgroundColor: panelColors.surface,
+                            backgroundColor: panelColors.bg,
                           },
                           '&.Mui-selected': {
-                            backgroundColor: 'rgba(79, 70, 229, 0.2)',
+                            backgroundColor: panelColors.bg,
                             borderLeft: `3px solid ${modernColors.primary}`,
                             '&:hover': {
-                              backgroundColor: 'rgba(79, 70, 229, 0.25)',
+                              backgroundColor: panelColors.bg,
                             },
                           },
                         }}
@@ -717,10 +663,6 @@ export function LLMDebugPanel() {
                                     : entry.status === 'error'
                                       ? panelColors.error
                                       : panelColors.warning,
-                                boxShadow:
-                                  entry.status === 'pending'
-                                    ? `0 0 6px ${panelColors.warning}`
-                                    : 'none',
                               }}
                             />
                             <Typography
@@ -743,7 +685,7 @@ export function LLMDebugPanel() {
                               {entry.durationMs && (
                                 <Box
                                   component="span"
-                                  sx={{ color: panelColors.success, ml: 0.5 }}
+                                  sx={{ color: panelColors.success, ml: 0.5, fontWeight: 500 }}
                                 >
                                   {entry.durationMs}ms
                                 </Box>
@@ -765,6 +707,7 @@ export function LLMDebugPanel() {
             sx={{
               flex: 1,
               overflow: 'auto',
+              backgroundColor: panelColors.bg,
               '&::-webkit-scrollbar': {
                 width: 6,
               },
@@ -834,15 +777,15 @@ export function LLMDebugButton() {
           height: 48,
           backgroundColor: panelColors.bg,
           border: `1px solid ${panelColors.border}`,
-          boxShadow: '0 4px 20px rgba(0, 0, 0, 0.3)',
+          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
           '&:hover': {
-            backgroundColor: panelColors.bgLight,
-            boxShadow: `0 4px 20px rgba(79, 70, 229, 0.4)`,
+            backgroundColor: panelColors.surface,
+            boxShadow: '0 6px 16px rgba(0, 0, 0, 0.15)',
           },
           zIndex: 1000,
         }}
       >
-        <Terminal size={22} color={panelColors.textSecondary} weight="duotone" />
+        <Terminal size={22} color={modernColors.primary} weight="duotone" />
         {(pendingCount > 0 || errorCount > 0) && (
           <Box
             sx={{
@@ -854,13 +797,12 @@ export function LLMDebugButton() {
               borderRadius: 9,
               px: 0.5,
               backgroundColor: errorCount > 0 ? panelColors.error : panelColors.warning,
-              color: '#1E1B4B',
+              color: '#FFFFFF',
               fontSize: 10,
               fontWeight: 700,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              boxShadow: `0 2px 8px ${errorCount > 0 ? panelColors.error : panelColors.warning}60`,
             }}
           >
             {errorCount || pendingCount}
