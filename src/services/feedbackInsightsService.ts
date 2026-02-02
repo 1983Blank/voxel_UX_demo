@@ -48,6 +48,7 @@ export interface VariantInsight {
   viewers: Viewer[];
   wireframeUrl: string | null;
   htmlUrl: string | null; // URL to generated variant HTML for iframe preview
+  screenshotUrl: string | null; // URL to variant screenshot image
 }
 
 export interface FeedbackComment {
@@ -341,6 +342,7 @@ export async function getVariantInsights(sessionId: string): Promise<VariantInsi
       })),
       wireframeUrl: null, // RPC doesn't return this, will be fetched separately if needed
       htmlUrl: null, // RPC doesn't return this, will be fetched separately if needed
+      screenshotUrl: null, // RPC doesn't return this, will be fetched separately if needed
     }));
 
     // Mark top performer
@@ -373,6 +375,7 @@ async function getVariantInsightsFallback(sessionId: string): Promise<VariantIns
       variant_index,
       session_id,
       html_url,
+      screenshot_url,
       vibe_variant_plans (
         title,
         description,
@@ -416,10 +419,12 @@ async function getVariantInsightsFallback(sessionId: string): Promise<VariantIns
     const variantWithPlan = variant as unknown as {
       vibe_variant_plans: { title: string; description: string; wireframe_url: string | null } | null;
       html_url: string | null;
+      screenshot_url: string | null;
     };
     const plan = variantWithPlan.vibe_variant_plans;
     const wireframeUrl = plan?.wireframe_url || null;
     const htmlUrl = variantWithPlan.html_url || null;
+    const screenshotUrl = variantWithPlan.screenshot_url || null;
     const variantIndex = variant.variant_index;
     const label = `Variant ${String.fromCharCode(64 + variantIndex)}`;
 
@@ -469,6 +474,7 @@ async function getVariantInsightsFallback(sessionId: string): Promise<VariantIns
       viewers,
       wireframeUrl,
       htmlUrl,
+      screenshotUrl,
     };
   });
 
@@ -524,16 +530,17 @@ export async function getVariantDetailInsight(
           wireframeUrl = planData.wireframe_url;
         }
 
-        // Fetch html_url from vibe_variants for iframe preview
+        // Fetch html_url and screenshot_url from vibe_variants
         const { data: variantData } = await supabase
           .from('vibe_variants')
-          .select('html_url')
+          .select('html_url, screenshot_url')
           .eq('session_id', sessionId)
           .eq('variant_index', variantIndex)
           .single();
         if (variantData) {
           htmlUrl = variantData.html_url;
         }
+        const screenshotUrl = variantData?.screenshot_url || null;
 
         variantInsight = {
           variantIndex: row.variant_index,
@@ -558,6 +565,7 @@ export async function getVariantDetailInsight(
           })),
           wireframeUrl,
           htmlUrl,
+          screenshotUrl,
         };
 
         // Extract comments from RPC result

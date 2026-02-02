@@ -10,6 +10,7 @@ import type { UIMetadata } from '../services/screenAnalyzerService';
 import type { VibeSession, VariantPlan } from '../services/variantPlanService';
 import type { VibeVariant } from '../services/variantCodeService';
 import type { UnderstandingResponse } from '../services/understandingService';
+import { captureAndSaveVariantScreenshot } from '../services/screenshotService';
 
 // Chat message for the vibe coding interface
 export interface ChatMessage {
@@ -127,6 +128,7 @@ interface VibeState {
   setVariants: (variants: VibeVariant[], skipStatusUpdate?: boolean) => void;
   updateVariant: (variantIndex: number, updates: Partial<VibeVariant>) => void;
   addVariant: (variant: VibeVariant) => void;
+  captureVariantScreenshots: () => Promise<void>;
 
   // Actions - Status & progress
   setStatus: (status: VibeStatus) => void;
@@ -413,6 +415,8 @@ export const useVibeStore = create<VibeState>()(
     const allComplete = updatedVariants.length === 4 && updatedVariants.every((v) => v.status === 'complete');
     if (allComplete) {
       set({ status: 'complete', progress: null });
+      // Capture screenshots in background
+      setTimeout(() => get().captureVariantScreenshots(), 1000);
     }
   },
 
@@ -435,6 +439,60 @@ export const useVibeStore = create<VibeState>()(
     const allComplete = allVariants.length === 4 && allVariants.every((v) => v.status === 'complete');
     if (allComplete) {
       set({ status: 'complete', progress: null });
+      // Capture screenshots in background
+      setTimeout(() => get().captureVariantScreenshots(), 1000);
+    }
+  },
+
+  captureVariantScreenshots: async () => {
+    const { currentSession, variants } = get();
+    if (!currentSession) {
+      console.warn('[VibeStore] No session for screenshot capture');
+      return;
+    }
+
+    // Find variants that are complete but don't have screenshots
+    const variantsToCapture = variants.filter(
+      (v) => v.status === 'complete' && !v.screenshot_url && v.html_url
+    );
+
+    if (variantsToCapture.length === 0) {
+      console.log('[VibeStore] No variants need screenshot capture');
+      return;
+    }
+
+    console.log('[VibeStore] Capturing screenshots for', variantsToCapture.length, 'variants');
+
+    for (const variant of variantsToCapture) {
+      try {
+        // Fetch HTML from storage
+        const response = await fetch(variant.html_url);
+        if (!response.ok) {
+          console.error('[VibeStore] Failed to fetch HTML for variant', variant.variant_index);
+          continue;
+        }
+        const html = await response.text();
+
+        // Capture and save screenshot
+        const screenshotUrl = await captureAndSaveVariantScreenshot(
+          currentSession.id,
+          variant.variant_index,
+          html
+        );
+
+        if (screenshotUrl) {
+          // Update local state with screenshot URL
+          const updatedVariants = get().variants.map((v) =>
+            v.variant_index === variant.variant_index
+              ? { ...v, screenshot_url: screenshotUrl }
+              : v
+          );
+          set({ variants: updatedVariants });
+          console.log('[VibeStore] Screenshot captured for variant', variant.variant_index);
+        }
+      } catch (error) {
+        console.error('[VibeStore] Error capturing screenshot for variant', variant.variant_index, error);
+      }
     }
   },
 

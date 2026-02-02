@@ -675,30 +675,26 @@ function VariantView({ projectId, variantId }: { projectId: string; variantId: s
         {/* Variant Thumbnail / Actions */}
         <Grid item xs={12} md={4}>
           <Card variant="outlined" sx={{ height: '100%', minHeight: 180, overflow: 'hidden' }}>
-            {detail.htmlUrl ? (
+            {detail.screenshotUrl ? (
               <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
                 <Box
                   sx={{
                     flex: 1,
                     minHeight: 120,
                     backgroundColor: '#f5f5f5',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
                     overflow: 'hidden',
-                    position: 'relative',
                   }}
                 >
-                  <iframe
-                    src={detail.htmlUrl}
-                    title={detail.label}
+                  <img
+                    src={detail.screenshotUrl}
+                    alt={detail.label}
                     style={{
-                      width: '400%',
-                      height: '400%',
-                      transform: 'scale(0.25)',
-                      transformOrigin: 'top left',
-                      border: 'none',
-                      pointerEvents: 'none',
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
+                      maxWidth: '100%',
+                      maxHeight: '100%',
+                      objectFit: 'contain',
                     }}
                   />
                 </Box>

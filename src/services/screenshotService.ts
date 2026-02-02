@@ -4,6 +4,7 @@
  */
 
 import html2canvas from 'html2canvas';
+import { supabase, isSupabaseConfigured } from './supabase';
 
 export interface ScreenshotResult {
   base64: string;
@@ -174,4 +175,132 @@ export async function compressScreenshot(
     img.onerror = () => resolve(inputDataUrl);
     img.src = inputDataUrl;
   });
+}
+
+/**
+ * Capture and save a variant screenshot to Supabase storage
+ * Returns the public URL of the saved screenshot
+ */
+export async function captureAndSaveVariantScreenshot(
+  sessionId: string,
+  variantIndex: number,
+  html: string,
+  options?: {
+    maxWidth?: number;
+    maxHeight?: number;
+    quality?: number;
+  }
+): Promise<string | null> {
+  if (!isSupabaseConfigured()) {
+    console.warn('[ScreenshotService] Supabase not configured');
+    return null;
+  }
+
+  const { maxWidth = 1280, maxHeight = 800, quality = 0.85 } = options || {};
+
+  try {
+    // Get current user
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      console.warn('[ScreenshotService] No authenticated user');
+      return null;
+    }
+
+    console.log('[ScreenshotService] Capturing variant screenshot:', { sessionId, variantIndex });
+
+    // Capture screenshot from HTML
+    const screenshot = await captureHtmlScreenshot(html, {
+      maxWidth,
+      maxHeight,
+      quality,
+      format: 'jpeg',
+    });
+
+    if (!screenshot) {
+      console.error('[ScreenshotService] Failed to capture screenshot');
+      return null;
+    }
+
+    console.log('[ScreenshotService] Screenshot captured:', {
+      width: screenshot.width,
+      height: screenshot.height,
+      sizeKB: Math.round(screenshot.sizeBytes / 1024),
+    });
+
+    // Convert base64 to blob
+    const base64Data = screenshot.base64.split(',')[1];
+    const binaryData = atob(base64Data);
+    const bytes = new Uint8Array(binaryData.length);
+    for (let i = 0; i < binaryData.length; i++) {
+      bytes[i] = binaryData.charCodeAt(i);
+    }
+    const blob = new Blob([bytes], { type: screenshot.mimeType });
+
+    // Upload to storage
+    const screenshotPath = `${user.id}/${sessionId}/variant_${variantIndex}_screenshot.jpg`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('vibe-files')
+      .upload(screenshotPath, blob, {
+        contentType: screenshot.mimeType,
+        upsert: true,
+      });
+
+    if (uploadError) {
+      console.error('[ScreenshotService] Upload error:', uploadError);
+      return null;
+    }
+
+    // Get public URL
+    const { data: urlData } = supabase.storage
+      .from('vibe-files')
+      .getPublicUrl(screenshotPath);
+
+    const screenshotUrl = urlData.publicUrl;
+    console.log('[ScreenshotService] Screenshot uploaded:', screenshotUrl);
+
+    // Update variant with screenshot URL
+    const { error: updateError } = await supabase
+      .from('vibe_variants')
+      .update({
+        screenshot_path: screenshotPath,
+        screenshot_url: screenshotUrl,
+      })
+      .eq('session_id', sessionId)
+      .eq('variant_index', variantIndex);
+
+    if (updateError) {
+      console.error('[ScreenshotService] Error updating variant:', updateError);
+      // Still return URL even if update fails
+    }
+
+    return screenshotUrl;
+  } catch (error) {
+    console.error('[ScreenshotService] Error capturing/saving screenshot:', error);
+    return null;
+  }
+}
+
+/**
+ * Capture screenshots for all variants in a session
+ * Useful for batch processing after generation completes
+ */
+export async function captureAllVariantScreenshots(
+  sessionId: string,
+  variants: Array<{ variantIndex: number; html: string }>
+): Promise<Map<number, string>> {
+  const results = new Map<number, string>();
+
+  for (const variant of variants) {
+    const url = await captureAndSaveVariantScreenshot(
+      sessionId,
+      variant.variantIndex,
+      variant.html
+    );
+    if (url) {
+      results.set(variant.variantIndex, url);
+    }
+  }
+
+  return results;
 }
