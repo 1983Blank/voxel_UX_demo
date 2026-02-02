@@ -674,6 +674,7 @@ export function Prototypes() {
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
+                  position: 'relative',
                 }}
               >
                 {(() => {
@@ -689,6 +690,9 @@ export function Prototypes() {
                           transformOrigin: 'top left',
                           border: 'none',
                           pointerEvents: 'none',
+                          position: 'absolute',
+                          top: 0,
+                          left: 0,
                         }}
                         title={prototype.name}
                       />
@@ -705,6 +709,9 @@ export function Prototypes() {
                           transformOrigin: 'top left',
                           border: 'none',
                           pointerEvents: 'none',
+                          position: 'absolute',
+                          top: 0,
+                          left: 0,
                         }}
                         title={prototype.name}
                       />

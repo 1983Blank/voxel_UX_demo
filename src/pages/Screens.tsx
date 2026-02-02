@@ -465,6 +465,7 @@ export function Screens() {
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
+                  position: 'relative',
                 }}
               >
                 {screen.editedHtml || screen.filePath ? (
@@ -478,6 +479,9 @@ export function Screens() {
                       transformOrigin: 'top left',
                       border: 'none',
                       pointerEvents: 'none',
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
                     }}
                     title={screen.name}
                   />
