@@ -752,6 +752,7 @@ export const DesignSystem: React.FC = () => {
     tokens,
     isLoading: isLoadingTokens,
     isInitialized: isTokensInitialized,
+    isExtracting: isStoreExtracting,
     lastExtractionTime,
     initializeTokens,
     extractTokensFromScreens,
@@ -790,8 +791,10 @@ export const DesignSystem: React.FC = () => {
   }, []);
 
   // Convert stored tokens to design system format for display
-  // Runs after tokens are initialized from Supabase or after extraction
+  // Runs after tokens are initialized from Supabase or after extraction completes
   useEffect(() => {
+    // Skip while extracting or loading
+    if (isLoadingTokens || isStoreExtracting) return;
     if (!isTokensInitialized) return;
 
     // If we have tokens, convert them to display format
@@ -861,7 +864,7 @@ export const DesignSystem: React.FC = () => {
         lastUpdated: new Date().toISOString(),
       });
     }
-  }, [tokens, lastExtractionTime, isTokensInitialized]);
+  }, [tokens, lastExtractionTime, isTokensInitialized, isLoadingTokens, isStoreExtracting]);
 
   // Extract design system from screens (now uses the store with persistence)
   const extractDesignSystem = useCallback(async () => {

@@ -69,34 +69,141 @@ interface DesignTokensState {
 }
 
 // Token extraction utilities
+
+// Check if a color string is a valid actual color (not a CSS variable reference)
+function isValidColor(color: string): boolean {
+  // Skip CSS variable references like hsl(var(--primary))
+  if (color.includes('var(')) return false;
+  // Skip incomplete/invalid hex codes
+  if (color.startsWith('#') && (color.length < 4 || color === '#0000')) return false;
+  // Skip transparent/inherit values
+  if (color === 'transparent' || color === 'inherit') return false;
+  return true;
+}
+
+// Normalize hex color to 6-digit format
+function normalizeHex(hex: string): string {
+  if (!hex.startsWith('#')) return hex;
+  // Convert 3-digit to 6-digit
+  if (hex.length === 4) {
+    return `#${hex[1]}${hex[1]}${hex[2]}${hex[2]}${hex[3]}${hex[3]}`;
+  }
+  // Remove alpha channel if present (8-digit hex)
+  if (hex.length === 9) {
+    return hex.slice(0, 7);
+  }
+  return hex;
+}
+
+// Convert HSL to hex for deduplication
+function hslToHex(hslString: string): string | null {
+  const match = hslString.match(/hsl[a]?\(\s*(\d+)\s*,\s*(\d+)%\s*,\s*(\d+)%/i);
+  if (!match) return null;
+
+  const h = parseInt(match[1]) / 360;
+  const s = parseInt(match[2]) / 100;
+  const l = parseInt(match[3]) / 100;
+
+  const hue2rgb = (p: number, q: number, t: number) => {
+    if (t < 0) t += 1;
+    if (t > 1) t -= 1;
+    if (t < 1/6) return p + (q - p) * 6 * t;
+    if (t < 1/2) return q;
+    if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+    return p;
+  };
+
+  let r, g, b;
+  if (s === 0) {
+    r = g = b = l;
+  } else {
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+    r = hue2rgb(p, q, h + 1/3);
+    g = hue2rgb(p, q, h);
+    b = hue2rgb(p, q, h - 1/3);
+  }
+
+  const toHex = (x: number) => {
+    const hex = Math.round(x * 255).toString(16);
+    return hex.length === 1 ? '0' + hex : hex;
+  };
+
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+// Convert RGB to hex
+function rgbToHex(rgbString: string): string | null {
+  const match = rgbString.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
+  if (!match) return null;
+
+  const toHex = (x: string) => {
+    const hex = parseInt(x).toString(16);
+    return hex.length === 1 ? '0' + hex : hex;
+  };
+
+  return `#${toHex(match[1])}${toHex(match[2])}${toHex(match[3])}`;
+}
+
+// Get a normalized hex value for any color format
+function getNormalizedHex(color: string): string | null {
+  if (color.startsWith('#')) {
+    return normalizeHex(color).toLowerCase();
+  }
+  if (color.startsWith('rgb')) {
+    return rgbToHex(color)?.toLowerCase() || null;
+  }
+  if (color.startsWith('hsl')) {
+    return hslToHex(color)?.toLowerCase() || null;
+  }
+  return null;
+}
+
 function extractColorsFromHtml(html: string, screenId: string, screenName: string): DesignToken[] {
   const tokens: DesignToken[] = [];
-  const colorRegex = /#([0-9A-Fa-f]{3,8})\b|rgb\([^)]+\)|rgba\([^)]+\)|hsl\([^)]+\)|hsla\([^)]+\)/g;
-  const colorCounts = new Map<string, number>();
+  // Match hex, rgb, rgba, hsl, hsla colors
+  const colorRegex = /#([0-9A-Fa-f]{3,8})\b|rgb\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*\)|rgba\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*[\d.]+\s*\)|hsl\(\s*\d+\s*,\s*\d+%?\s*,\s*\d+%?\s*\)|hsla\(\s*\d+\s*,\s*\d+%?\s*,\s*\d+%?\s*,\s*[\d.]+\s*\)/gi;
+  const colorCounts = new Map<string, { original: string; count: number }>();
 
   let match;
   while ((match = colorRegex.exec(html)) !== null) {
-    const color = match[0].toLowerCase();
-    colorCounts.set(color, (colorCounts.get(color) || 0) + 1);
+    const color = match[0];
+
+    // Skip invalid/variable colors
+    if (!isValidColor(color)) continue;
+
+    // Normalize to hex for deduplication
+    const hex = getNormalizedHex(color);
+    if (!hex) continue;
+
+    const existing = colorCounts.get(hex);
+    if (existing) {
+      existing.count++;
+    } else {
+      colorCounts.set(hex, { original: hex, count: 1 });
+    }
   }
 
-  colorCounts.forEach((count, color) => {
-    if (count >= 2) {
-      // Only include colors used multiple times
-      tokens.push({
-        id: uuidv4(),
-        name: color,
-        category: 'color',
-        value: color,
-        valueType: 'color',
-        usageCount: count,
-        sourceScreenIds: [screenId],
-        sourceScreenNames: [screenName],
-        status: 'pending',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      });
-    }
+  // Sort by usage count and take top 20
+  const sortedColors = Array.from(colorCounts.entries())
+    .filter(([_, data]) => data.count >= 2) // Only colors used multiple times
+    .sort((a, b) => b[1].count - a[1].count)
+    .slice(0, 20);
+
+  sortedColors.forEach(([hex, data]) => {
+    tokens.push({
+      id: uuidv4(),
+      name: hex,
+      category: 'color',
+      value: hex,
+      valueType: 'color',
+      usageCount: data.count,
+      sourceScreenIds: [screenId],
+      sourceScreenNames: [screenName],
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
   });
 
   return tokens;
