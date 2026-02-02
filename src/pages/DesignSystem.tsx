@@ -790,11 +790,12 @@ export const DesignSystem: React.FC = () => {
   }, []);
 
   // Convert stored tokens to design system format for display
-  // Only runs after tokens are initialized from Supabase
+  // Runs after tokens are initialized from Supabase or after extraction
   useEffect(() => {
     if (!isTokensInitialized) return;
 
     // If we have tokens, convert them to display format
+    // Always rebuild to ensure we show current state from store
     if (tokens.length > 0) {
       const colorTokens = tokens.filter(t => t.category === 'color');
       const typographyTokens = tokens.filter(t => t.category === 'typography');
@@ -849,7 +850,7 @@ export const DesignSystem: React.FC = () => {
         shadows: shadowTokens.map(t => t.value),
         lastUpdated: lastExtractionTime || new Date().toISOString(),
       });
-    } else if (!designSystem) {
+    } else {
       // No tokens exist - set empty design system so we show empty state
       setDesignSystem({
         colors: [],
@@ -888,7 +889,8 @@ export const DesignSystem: React.FC = () => {
         setExtractionMessage(message);
       });
 
-      // Also extract and persist to the store (Supabase)
+      // Extract and persist to the store (Supabase)
+      // The useEffect will update designSystem from the store's tokens
       const screenInputs = screensWithHtml.map(s => ({
         id: s.id,
         name: s.name,
@@ -896,7 +898,8 @@ export const DesignSystem: React.FC = () => {
       }));
       await extractTokensFromScreens(screenInputs);
 
-      setDesignSystem(data);
+      // Clear local designSystem so it gets rebuilt from store tokens
+      setDesignSystem(null);
       showSuccess(`Design system extracted from ${screensWithHtml.length} screens and saved`);
     } catch (error) {
       console.error('Extraction error:', error);

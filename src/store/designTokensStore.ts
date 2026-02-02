@@ -332,8 +332,10 @@ export const useDesignTokensStore = create<DesignTokensState>()(
 
       initializeTokens: async () => {
         const state = get();
-        if (state.isInitialized || state.isLoading) return;
+        if (state.isLoading) return;
 
+        // Always fetch from Supabase to ensure fresh data
+        // (localStorage cache from persist middleware might be stale)
         set({ isLoading: true });
 
         try {
@@ -342,6 +344,7 @@ export const useDesignTokensStore = create<DesignTokensState>()(
             set({ tokens, isInitialized: true, isLoading: false });
             console.log(`[DesignTokensStore] Loaded ${tokens.length} tokens from Supabase`);
           } else {
+            // Local only - use what's in localStorage (from persist)
             set({ isInitialized: true, isLoading: false });
           }
         } catch (error) {
