@@ -478,21 +478,32 @@ Deno.serve(async (req) => {
       )
     }
 
-    // Get API key from user's settings
+    // Get API key from Vault using RPC function (same as other edge functions)
     const provider = request.provider || 'anthropic'
-    const { data: apiKeyData } = await supabaseClient
-      .from('user_api_keys')
-      .select('encrypted_key')
-      .eq('user_id', user.id)
-      .eq('provider', provider)
-      .single()
+    console.log('[generate-prototype-files] Getting API key for provider:', provider)
 
-    if (!apiKeyData?.encrypted_key) {
+    const { data: apiKey, error: apiKeyError } = await supabaseClient.rpc('get_api_key', {
+      p_user_id: user.id,
+      p_provider: provider,
+    })
+
+    if (apiKeyError) {
+      console.error('[generate-prototype-files] Error getting API key:', apiKeyError)
       return new Response(
-        JSON.stringify({ error: `No ${provider} API key configured` }),
+        JSON.stringify({ error: `Failed to get ${provider} API key: ${apiKeyError.message}` }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
+
+    if (!apiKey) {
+      console.error('[generate-prototype-files] No API key found for provider:', provider)
+      return new Response(
+        JSON.stringify({ error: `No ${provider} API key configured. Please add your API key in Settings.` }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    console.log('[generate-prototype-files] Successfully retrieved API key')
 
     // Build prompt
     const prompt = buildGenerationPrompt(request)
@@ -502,7 +513,7 @@ Deno.serve(async (req) => {
     switch (provider) {
       case 'openai':
         rawResponse = await generateWithOpenAI(
-          apiKeyData.encrypted_key,
+          apiKey,
           request.model || 'gpt-4o',
           prompt,
           request.screenshotBase64
@@ -510,7 +521,7 @@ Deno.serve(async (req) => {
         break
       case 'google':
         rawResponse = await generateWithGoogle(
-          apiKeyData.encrypted_key,
+          apiKey,
           request.model || 'gemini-2.0-flash',
           prompt,
           request.screenshotBase64
@@ -519,7 +530,7 @@ Deno.serve(async (req) => {
       case 'anthropic':
       default:
         rawResponse = await generateWithAnthropic(
-          apiKeyData.encrypted_key,
+          apiKey,
           request.model || 'claude-sonnet-4-20250514',
           prompt,
           request.screenshotBase64
