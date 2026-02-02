@@ -28,6 +28,9 @@ import {
 import { useAuthStore } from '@/store/authStore';
 import { useThemeStore } from '@/store/themeStore';
 
+// Load storage diagnostics for console debugging (window.storageDiagnostics)
+import '@/services/storageDiagnostics';
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
