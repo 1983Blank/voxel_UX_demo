@@ -105,8 +105,19 @@ export async function generateInteractivePrototypes(
     const variantId = Object.keys(prototypeStore.variants).find(
       id => prototypeStore.variants[id].approach === approach
     );
+
+    console.log('[InteractivePrototypeService] Looking for variant with approach:', approach);
+    console.log('[InteractivePrototypeService] Available variants:', Object.keys(prototypeStore.variants).map(id => ({
+      id,
+      approach: prototypeStore.variants[id].approach,
+      status: prototypeStore.variants[id].status
+    })));
+    console.log('[InteractivePrototypeService] Found variantId:', variantId);
+
     if (variantId) {
       prototypeStore.setVariantGenerating(variantId);
+    } else {
+      console.warn('[InteractivePrototypeService] No variant found in store for approach:', approach);
     }
 
     try {
@@ -230,6 +241,10 @@ async function callGeneratePrototypeFiles(
 
   let response: Response;
   try {
+    // Add timeout to prevent hanging (45 seconds - edge functions timeout at ~60s)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 45000);
+
     response = await fetch(functionUrl, {
       method: 'POST',
       headers: {
@@ -237,10 +252,20 @@ async function callGeneratePrototypeFiles(
         'Authorization': `Bearer ${accessToken}`,
       },
       body: requestBody,
+      signal: controller.signal,
     });
+
+    clearTimeout(timeoutId);
   } catch (networkError) {
-    console.error('[InteractivePrototypeService] Network error:', networkError);
-    // Generate fallback files when edge function is unavailable
+    const errorMessage = networkError instanceof Error ? networkError.message : 'Unknown error';
+    console.error('[InteractivePrototypeService] Network/timeout error:', errorMessage);
+
+    // Check if it was a timeout
+    if (errorMessage.includes('abort')) {
+      console.log('[InteractivePrototypeService] Request timed out, using fallback');
+    }
+
+    // Generate fallback files when edge function is unavailable or times out
     return generateFallbackFiles(plan, approach, originalHtml);
   }
 
