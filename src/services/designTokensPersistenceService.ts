@@ -388,25 +388,23 @@ export async function replaceAllDesignTokens(
       ...toDbFormat(t, user.id),
       extraction_session_id: options?.extractionSessionId || null,
     }));
-    console.log(`[DesignTokensPersistence] Insert payload ready, first item:`, JSON.stringify(inserts[0]));
 
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from('design_tokens')
-      .insert(inserts)
-      .select();
+      .insert(inserts);
 
     if (error) {
       console.error('[DesignTokensPersistence] Error inserting tokens:', error);
       throw error;
     }
 
-    console.log(`[DesignTokensPersistence] Insert response - data length: ${data?.length || 0}`);
-    if (data && data.length > 0) {
-      console.log(`[DesignTokensPersistence] First returned row:`, JSON.stringify(data[0]));
-    }
-    const result = (data || []).map(fromDbFormat);
-    console.log(`[DesignTokensPersistence] Converted result length: ${result.length}`);
-    return result;
+    console.log(`[DesignTokensPersistence] Insert successful, fetching tokens...`);
+
+    // Fetch the tokens we just inserted to get them with proper IDs
+    // This works around RLS issues where insert().select() may return empty
+    const freshTokens = await fetchDesignTokens();
+    console.log(`[DesignTokensPersistence] Fetched ${freshTokens.length} tokens after insert`);
+    return freshTokens;
   }
 
   return [];
