@@ -881,10 +881,11 @@ export const DesignSystem: React.FC = () => {
 
       const htmlStrings = screensWithHtml.map((s) => s.editedHtml!);
 
-      // Simulate async processing with progress for local extraction display
+      // Simulate async processing with progress display
       await new Promise((resolve) => setTimeout(resolve, 500));
 
-      const data = extractDesignTokens(htmlStrings, (progress, message) => {
+      // Show progress during local parsing (for UX feedback)
+      extractDesignTokens(htmlStrings, (progress, message) => {
         setExtractionProgress(progress);
         setExtractionMessage(message);
       });
