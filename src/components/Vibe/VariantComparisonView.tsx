@@ -23,8 +23,11 @@ import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
 import CheckIcon from '@mui/icons-material/Check';
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
 import OpenInFullIcon from '@mui/icons-material/OpenInFull';
+import CodeIcon from '@mui/icons-material/Code';
+import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import { EmptyState } from '@/components';
-import { getVibeVariantColor, getVibeVariantLabel } from '../../store/vibeStore';
+import { getVibeVariantColor, getVibeVariantLabel, useVibeStore } from '../../store/vibeStore';
+import { InteractiveVariantView } from './InteractiveVariantView';
 import type { VibeVariant } from '../../services/variantCodeService';
 import type { VariantPlan } from '../../services/variantPlanService';
 
@@ -197,6 +200,10 @@ export const VariantComparisonView: React.FC<VariantComparisonViewProps> = ({
 }) => {
   const [splitPair, setSplitPair] = useState<[number, number]>([1, 2]);
 
+  // Get prototype mode from store
+  const prototypeMode = useVibeStore((state) => state.prototypeMode);
+  const setPrototypeMode = useVibeStore((state) => state.setPrototypeMode);
+
   // Build variant map
   const variantMap = new Map(variants.map((v) => [v.variant_index, v]));
 
@@ -217,6 +224,55 @@ export const VariantComparisonView: React.FC<VariantComparisonViewProps> = ({
     );
   }
 
+  // Interactive mode - show new file-based prototype viewer
+  if (prototypeMode === 'interactive') {
+    return (
+      <Box>
+        {/* Header with mode toggle */}
+        <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Box>
+            <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+              <PlayArrowIcon />
+              Interactive Prototypes
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              {completedVariants.length} of 4 variants ready • Explore with debugging tools
+            </Typography>
+          </Box>
+
+          <ToggleButtonGroup
+            value={prototypeMode}
+            exclusive
+            onChange={(_, value) => value && setPrototypeMode(value)}
+            size="small"
+          >
+            <ToggleButton value="classic">
+              <Tooltip title="Classic View (Grid/Split)">
+                <GridViewOutlinedIcon />
+              </Tooltip>
+            </ToggleButton>
+            <ToggleButton value="interactive">
+              <Tooltip title="Interactive View (with debugging)">
+                <CodeIcon />
+              </Tooltip>
+            </ToggleButton>
+          </ToggleButtonGroup>
+        </Box>
+
+        {/* Interactive Variant View */}
+        <Card sx={{ height: 600 }}>
+          <InteractiveVariantView
+            plans={plans}
+            variants={variants}
+            selectedVariantIndex={selectedVariantIndex}
+            onSelectVariant={onSelectVariant}
+          />
+        </Card>
+      </Box>
+    );
+  }
+
+  // Classic mode - existing grid/split view
   return (
     <Box>
       {/* Header */}
@@ -231,22 +287,44 @@ export const VariantComparisonView: React.FC<VariantComparisonViewProps> = ({
           </Typography>
         </Box>
 
-        <ToggleButtonGroup
-          value={comparisonMode}
-          exclusive
-          onChange={(_, value) => value && onChangeMode(value as ComparisonMode)}
-          size="small"
-        >
-          <ToggleButton value="grid">
-            <Tooltip title="Grid"><GridViewOutlinedIcon /></Tooltip>
-          </ToggleButton>
-          <ToggleButton value="split">
-            <Tooltip title="Split"><VerticalSplitIcon /></Tooltip>
-          </ToggleButton>
-          <ToggleButton value="overlay" disabled>
-            <Tooltip title="Overlay (coming soon)"><LayersIcon /></Tooltip>
-          </ToggleButton>
-        </ToggleButtonGroup>
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          {/* Mode toggle */}
+          <ToggleButtonGroup
+            value={prototypeMode}
+            exclusive
+            onChange={(_, value) => value && setPrototypeMode(value)}
+            size="small"
+          >
+            <ToggleButton value="classic">
+              <Tooltip title="Classic View (Grid/Split)">
+                <GridViewOutlinedIcon />
+              </Tooltip>
+            </ToggleButton>
+            <ToggleButton value="interactive">
+              <Tooltip title="Interactive View (with debugging)">
+                <CodeIcon />
+              </Tooltip>
+            </ToggleButton>
+          </ToggleButtonGroup>
+
+          {/* Comparison mode toggle (only in classic mode) */}
+          <ToggleButtonGroup
+            value={comparisonMode}
+            exclusive
+            onChange={(_, value) => value && onChangeMode(value as ComparisonMode)}
+            size="small"
+          >
+            <ToggleButton value="grid">
+              <Tooltip title="Grid"><GridViewOutlinedIcon /></Tooltip>
+            </ToggleButton>
+            <ToggleButton value="split">
+              <Tooltip title="Split"><VerticalSplitIcon /></Tooltip>
+            </ToggleButton>
+            <ToggleButton value="overlay" disabled>
+              <Tooltip title="Overlay (coming soon)"><LayersIcon /></Tooltip>
+            </ToggleButton>
+          </ToggleButtonGroup>
+        </Box>
       </Box>
 
       {/* Grid View */}

@@ -69,6 +69,7 @@ export type VibeStatus =
   | 'complete'
   | 'failed';
 export type ComparisonMode = 'grid' | 'split' | 'overlay';
+export type PrototypeMode = 'classic' | 'interactive';
 
 interface VibeState {
   // Current session data
@@ -93,6 +94,7 @@ interface VibeState {
   // UI state
   selectedVariantIndex: number | null;
   comparisonMode: ComparisonMode;
+  prototypeMode: PrototypeMode;
   previewVariantIndex: number | null;
   previewTab: 'source' | 1 | 2 | 3 | 4;
 
@@ -138,6 +140,7 @@ interface VibeState {
   // Actions - UI state
   selectVariant: (index: number | null) => void;
   setComparisonMode: (mode: ComparisonMode) => void;
+  setPrototypeMode: (mode: PrototypeMode) => void;
   setPreviewVariant: (index: number | null) => void;
   setPreviewTab: (tab: 'source' | 1 | 2 | 3 | 4) => void;
 
@@ -172,6 +175,7 @@ export const useVibeStore = create<VibeState>()(
 
   selectedVariantIndex: null,
   comparisonMode: 'grid',
+  prototypeMode: 'classic',
   previewVariantIndex: null,
   previewTab: 'source',
 
@@ -522,6 +526,10 @@ export const useVibeStore = create<VibeState>()(
     set({ comparisonMode: mode });
   },
 
+  setPrototypeMode: (mode) => {
+    set({ prototypeMode: mode });
+  },
+
   setPreviewVariant: (index) => {
     set({ previewVariantIndex: index });
   },
@@ -594,6 +602,7 @@ export const useVibeStore = create<VibeState>()(
         status: state.status,
         selectedVariantIndex: state.selectedVariantIndex,
         comparisonMode: state.comparisonMode,
+        prototypeMode: state.prototypeMode,
         // Don't persist progress or error - these are transient
       }),
     }
