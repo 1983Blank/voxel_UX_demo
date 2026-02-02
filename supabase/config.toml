@@ -17,6 +17,9 @@ verify_jwt = false
 [functions.extract-components]
 verify_jwt = false
 
+[functions.extract-design-tokens]
+verify_jwt = false
+
 [functions.generate-html]
 verify_jwt = false
 
