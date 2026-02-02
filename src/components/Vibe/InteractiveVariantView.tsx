@@ -147,8 +147,32 @@ export function InteractiveVariantView({
   const activePlan = plans.find((p) => p.variant_index === activeVariantIndex);
   const isComplete = activeVariant?.status === 'complete';
 
-  // Get VirtualFS for active variant (if available in prototype store)
-  const virtualFS = getVirtualFS(`variant-${activeVariantIndex}`);
+  // Map variant index to approach for looking up in prototypeStore
+  const indexToApproach: Record<number, string> = {
+    1: 'minimal',
+    2: 'feature-rich',
+    3: 'gamified',
+    4: 'accessible',
+  };
+
+  // Get all prototype store variants to find the right one
+  const prototypeVariants = usePrototypeStore((state) => state.variants);
+
+  // Find the VirtualFS by matching the approach
+  const virtualFS = useMemo(() => {
+    const approach = indexToApproach[activeVariantIndex];
+    if (!approach) return null;
+
+    // Find variant ID by approach
+    const variantId = Object.keys(prototypeVariants).find(
+      (id) => prototypeVariants[id].approach === approach
+    );
+
+    if (variantId) {
+      return getVirtualFS(variantId);
+    }
+    return null;
+  }, [activeVariantIndex, prototypeVariants, getVirtualFS]);
 
   // Get files from VirtualFS or create mock when in classic mode
   const files = useMemo(() => {

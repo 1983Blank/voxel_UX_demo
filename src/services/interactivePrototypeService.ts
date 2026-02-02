@@ -260,12 +260,17 @@ async function callGeneratePrototypeFiles(
 
   const data = await response.json();
 
-  if (!data?.success || !data?.files) {
+  // Edge function returns { files: [...], previewInstructions, componentsUsed, warnings }
+  // Check for files array (success field is not returned)
+  if (!data?.files || !Array.isArray(data.files) || data.files.length === 0) {
     console.warn('[InteractivePrototypeService] No files in response, using fallback');
+    console.warn('[InteractivePrototypeService] Response data:', data);
     return generateFallbackFiles(plan, approach, originalHtml);
   }
 
   console.log('[InteractivePrototypeService] Generated files:', data.files.length);
+  console.log('[InteractivePrototypeService] Components used:', data.componentsUsed);
+  console.log('[InteractivePrototypeService] Preview instructions:', data.previewInstructions);
 
   return data.files;
 }
