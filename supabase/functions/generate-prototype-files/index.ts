@@ -306,12 +306,28 @@ async function generateWithAnthropic(
   const content: Array<{ type: string; text?: string; source?: { type: string; media_type: string; data: string } }> = []
 
   if (screenshotBase64) {
+    // Extract media type from data URL or default to png
+    let mediaType = 'image/png'
+    let imageData = screenshotBase64
+
+    const dataUrlMatch = screenshotBase64.match(/^data:(image\/\w+);base64,(.+)$/)
+    if (dataUrlMatch) {
+      mediaType = dataUrlMatch[1]
+      imageData = dataUrlMatch[2]
+    } else if (screenshotBase64.startsWith('data:')) {
+      // Has data: prefix but didn't match - strip it
+      imageData = screenshotBase64.replace(/^data:image\/\w+;base64,/, '')
+    }
+    // If no data: prefix, assume it's raw base64
+
+    console.log('[generate-prototype-files] Image media type:', mediaType)
+
     content.push({
       type: 'image',
       source: {
         type: 'base64',
-        media_type: 'image/png',
-        data: screenshotBase64.replace(/^data:image\/\w+;base64,/, ''),
+        media_type: mediaType,
+        data: imageData,
       },
     })
   }
@@ -403,10 +419,22 @@ async function generateWithGoogle(
   parts.push({ text: SYSTEM_PROMPT + '\n\n' + prompt })
 
   if (screenshotBase64) {
+    // Extract media type from data URL or default to png
+    let mimeType = 'image/png'
+    let imageData = screenshotBase64
+
+    const dataUrlMatch = screenshotBase64.match(/^data:(image\/\w+);base64,(.+)$/)
+    if (dataUrlMatch) {
+      mimeType = dataUrlMatch[1]
+      imageData = dataUrlMatch[2]
+    } else if (screenshotBase64.startsWith('data:')) {
+      imageData = screenshotBase64.replace(/^data:image\/\w+;base64,/, '')
+    }
+
     parts.push({
       inlineData: {
-        mimeType: 'image/png',
-        data: screenshotBase64.replace(/^data:image\/\w+;base64,/, ''),
+        mimeType,
+        data: imageData,
       },
     })
   }
