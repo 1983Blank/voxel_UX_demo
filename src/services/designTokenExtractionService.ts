@@ -189,6 +189,11 @@ export async function classifyTokensWithLLM(
     throw new Error('Not authenticated');
   }
 
+  const accessToken = session.access_token;
+  if (!accessToken) {
+    throw new Error('No access token available');
+  }
+
   console.log('[DesignTokenExtraction] Calling extract-design-tokens function');
   console.log('[DesignTokenExtraction] Raw tokens:', rawTokens.length);
 
@@ -202,6 +207,9 @@ export async function classifyTokensWithLLM(
         rawTokens,
         provider: options?.provider,
         model: options?.model,
+      },
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
       },
     }
   );
