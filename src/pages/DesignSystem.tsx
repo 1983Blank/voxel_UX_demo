@@ -39,7 +39,6 @@ import {
   CheckCircle,
   Sparkle,
   MagnifyingGlass,
-  Robot,
 } from '@phosphor-icons/react';
 import { useThemeStore } from '@/store/themeStore';
 import { useScreensStore } from '@/store/screensStore';
@@ -48,11 +47,6 @@ import { useSnackbar } from '@/components/SnackbarProvider';
 import { PageHeader } from '@/components/PageHeader';
 import { BatchSelectionBar } from '@/components/BatchSelectionBar';
 import { CheckCircle as CheckCircleIcon, Trash as TrashIcon } from '@phosphor-icons/react';
-import {
-  labelColorsWithLLM,
-  labelFontsWithLLM,
-  isLLMLabelingAvailable,
-} from '@/services/designSystemLabelingService';
 import { captureHtmlScreenshot, compressScreenshot } from '@/services/screenshotService';
 import { isLLMExtractionAvailable } from '@/services/designTokenExtractionService';
 
@@ -777,13 +771,6 @@ export const DesignSystem: React.FC = () => {
   const [designSystem, setDesignSystem] = useState<DesignSystemData | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{ type: 'color' | 'font' | 'spacing'; id: string } | null>(null);
-  const [isLabeling, setIsLabeling] = useState(false);
-  const [llmAvailable, setLlmAvailable] = useState(false);
-
-  // Check LLM availability on mount
-  useEffect(() => {
-    isLLMLabelingAvailable().then(setLlmAvailable);
-  }, []);
 
   // Initialize screens and tokens on mount
   useEffect(() => {
@@ -966,48 +953,6 @@ export const DesignSystem: React.FC = () => {
     }
   }, [screens, showSuccess, showError, extractTokensFromScreens, extractTokensWithLLM]);
 
-  // Generate AI labels for colors and fonts
-  const handleGenerateAILabels = async () => {
-    if (!designSystem) return;
-
-    setIsLabeling(true);
-    try {
-      // Label colors
-      const colorInputs = designSystem.colors.map((c) => ({
-        hex: c.hex,
-        usage: c.usage,
-      }));
-      const labeledColors = await labelColorsWithLLM(colorInputs);
-
-      // Label fonts
-      const fontInputs = designSystem.fonts.map((f) => ({
-        family: f.family,
-        weights: f.weights,
-      }));
-      const labeledFonts = await labelFontsWithLLM(fontInputs);
-
-      // Update design system with new labels
-      setDesignSystem({
-        ...designSystem,
-        colors: designSystem.colors.map((c) => {
-          const labeled = labeledColors.find((lc) => lc.hex.toLowerCase() === c.hex.toLowerCase());
-          return labeled ? { ...c, label: labeled.label } : c;
-        }),
-        fonts: designSystem.fonts.map((f) => {
-          const labeled = labeledFonts.find((lf) => lf.family.toLowerCase() === f.family.toLowerCase());
-          return labeled ? { ...f, label: labeled.label } : f;
-        }),
-      });
-
-      showSuccess('AI labels generated successfully');
-    } catch (error) {
-      console.error('AI labeling error:', error);
-      showError('Failed to generate AI labels');
-    } finally {
-      setIsLabeling(false);
-    }
-  };
-
   // Handle actions
   const handleCopyToken = (value: string) => {
     showSuccess(`Copied: ${value}`);
@@ -1180,25 +1125,6 @@ export const DesignSystem: React.FC = () => {
         subtitle={`Auto-generated from ${screens.filter(s => s.editedHtml).length} captured screens${designSystem?.lastUpdated ? ` · Last updated: ${new Date(designSystem.lastUpdated).toLocaleString()}` : ''}`}
         actions={
           <>
-            {llmAvailable && designSystem && (
-              <Tooltip title="Use AI to generate semantic labels for colors and fonts">
-                <Button
-                  variant="outlined"
-                  startIcon={<Robot size={18} />}
-                  onClick={handleGenerateAILabels}
-                  disabled={isLabeling || isExtracting}
-                  sx={{
-                    transition: 'all 0.2s ease',
-                    '&:hover': {
-                      transform: 'translateY(-2px)',
-                      boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-                    },
-                  }}
-                >
-                  {isLabeling ? 'Labeling...' : 'AI Labels'}
-                </Button>
-              </Tooltip>
-            )}
             <Button
               variant="contained"
               startIcon={<ArrowClockwise size={18} />}
