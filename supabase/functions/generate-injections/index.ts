@@ -245,38 +245,41 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Determine provider
-    const selectedProvider = provider || 'anthropic';
-    const selectedModel = model || (selectedProvider === 'anthropic' ? 'claude-sonnet-4-20250514' : 'gpt-4o');
-
-    // Get API key from vault
-    const providerName = selectedProvider === 'anthropic' ? 'anthropic' : 'openai';
-
-    const { data: keyRef, error: keyRefError } = await supabase
+    // Get user's API key - query for any active key, optionally filtered by provider
+    const requestedProvider = provider;
+    let keyQuery = supabase
       .from('user_api_key_refs')
-      .select('secret_id')
+      .select('*')
       .eq('user_id', user.id)
-      .eq('provider', providerName)
-      .single();
+      .eq('is_active', true);
 
-    if (keyRefError || !keyRef) {
+    if (requestedProvider) {
+      keyQuery = keyQuery.eq('provider', requestedProvider);
+    }
+
+    const { data: keyConfigs, error: keyError } = await keyQuery.limit(1);
+    const keyConfig = keyConfigs?.[0];
+
+    if (keyError || !keyConfig) {
       return new Response(
-        JSON.stringify({ error: `No ${providerName} API key configured` }),
+        JSON.stringify({ error: 'No API key configured. Please add your API key in Settings.' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const { data: apiKeyData, error: apiKeyError } = await supabase
-      .rpc('get_api_key', { secret_id: keyRef.secret_id });
+    const selectedProvider = keyConfig.provider;
+    const selectedModel = model || keyConfig.model || (selectedProvider === 'anthropic' ? 'claude-sonnet-4-20250514' : 'gpt-4o');
 
-    if (apiKeyError || !apiKeyData) {
+    // Get decrypted API key using correct RPC parameters
+    const { data: apiKey, error: apiKeyError } = await supabase
+      .rpc('get_api_key', { p_user_id: user.id, p_provider: keyConfig.provider });
+
+    if (apiKeyError || !apiKey) {
       return new Response(
         JSON.stringify({ error: 'Failed to retrieve API key' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
-
-    const apiKey = apiKeyData;
 
     // Build prompt and call LLM
     const prompt = buildPrompt(injectionPoints, userIntent);
