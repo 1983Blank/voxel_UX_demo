@@ -41,6 +41,7 @@ import {
 } from '@phosphor-icons/react';
 import { useThemeStore } from '@/store/themeStore';
 import { useScreensStore } from '@/store/screensStore';
+import { useDesignTokensStore } from '@/store/designTokensStore';
 import { useSnackbar } from '@/components/SnackbarProvider';
 import { PageHeader } from '@/components/PageHeader';
 import {
@@ -705,6 +706,12 @@ function ExtractionLoader({ progress, message }: { progress: number; message: st
 export const DesignSystem: React.FC = () => {
   const { config } = useThemeStore();
   const { screens, initializeScreens } = useScreensStore();
+  const {
+    tokens,
+    lastExtractionTime,
+    initializeTokens,
+    extractTokensFromScreens,
+  } = useDesignTokensStore();
   const { showSuccess, showError } = useSnackbar();
 
   const [activeTab, setActiveTab] = useState(0);
@@ -722,14 +729,74 @@ export const DesignSystem: React.FC = () => {
     isLLMLabelingAvailable().then(setLlmAvailable);
   }, []);
 
-  // Initialize screens on mount
+  // Initialize screens and tokens on mount
   useEffect(() => {
     if (screens.length === 0) {
       initializeScreens();
     }
+    initializeTokens();
   }, []);
 
-  // Extract design system from screens
+  // Convert stored tokens to design system format for display
+  useEffect(() => {
+    if (tokens.length > 0 && !designSystem) {
+      const colorTokens = tokens.filter(t => t.category === 'color');
+      const typographyTokens = tokens.filter(t => t.category === 'typography');
+      const spacingTokens = tokens.filter(t => t.category === 'spacing');
+      const borderRadiusTokens = tokens.filter(t => t.category === 'border-radius');
+      const shadowTokens = tokens.filter(t => t.category === 'shadow');
+
+      // Map tokens to legacy format for backward compatibility
+      const colors: ExtractedColor[] = colorTokens.map(t => ({
+        id: t.id,
+        hex: t.value,
+        rgb: `rgb(${parseInt(t.value.slice(1, 3), 16)}, ${parseInt(t.value.slice(3, 5), 16)}, ${parseInt(t.value.slice(5, 7), 16)})`,
+        count: t.usageCount,
+        usage: 'text' as const,
+        label: t.name,
+        approved: t.status === 'approved',
+      }));
+
+      const fonts: ExtractedFont[] = [];
+      const fontFamilyMap = new Map<string, ExtractedFont>();
+      typographyTokens.forEach(t => {
+        if (t.subcategory === 'font-family' || !t.subcategory) {
+          const family = t.value.split(',')[0].trim();
+          if (!fontFamilyMap.has(family)) {
+            fontFamilyMap.set(family, {
+              id: t.id,
+              family,
+              weights: [],
+              sizes: [],
+              count: t.usageCount,
+              label: t.name,
+              approved: t.status === 'approved',
+            });
+          }
+        }
+      });
+      fonts.push(...fontFamilyMap.values());
+
+      const spacing: ExtractedSpacing[] = spacingTokens.map(t => ({
+        id: t.id,
+        value: t.value,
+        count: t.usageCount,
+        context: t.subcategory || 'spacing',
+        approved: t.status === 'approved',
+      }));
+
+      setDesignSystem({
+        colors,
+        fonts,
+        spacing,
+        borderRadius: borderRadiusTokens.map(t => t.value),
+        shadows: shadowTokens.map(t => t.value),
+        lastUpdated: lastExtractionTime || new Date().toISOString(),
+      });
+    }
+  }, [tokens, lastExtractionTime]);
+
+  // Extract design system from screens (now uses the store with persistence)
   const extractDesignSystem = useCallback(async () => {
     setIsExtracting(true);
     setExtractionProgress(0);
@@ -747,7 +814,7 @@ export const DesignSystem: React.FC = () => {
 
       const htmlStrings = screensWithHtml.map((s) => s.editedHtml!);
 
-      // Simulate async processing with progress
+      // Simulate async processing with progress for local extraction display
       await new Promise((resolve) => setTimeout(resolve, 500));
 
       const data = extractDesignTokens(htmlStrings, (progress, message) => {
@@ -755,15 +822,23 @@ export const DesignSystem: React.FC = () => {
         setExtractionMessage(message);
       });
 
+      // Also extract and persist to the store (Supabase)
+      const screenInputs = screensWithHtml.map(s => ({
+        id: s.id,
+        name: s.name,
+        html: s.editedHtml!,
+      }));
+      await extractTokensFromScreens(screenInputs);
+
       setDesignSystem(data);
-      showSuccess(`Design system extracted from ${screensWithHtml.length} screens`);
+      showSuccess(`Design system extracted from ${screensWithHtml.length} screens and saved`);
     } catch (error) {
       console.error('Extraction error:', error);
       showError('Failed to extract design system');
     } finally {
       setIsExtracting(false);
     }
-  }, [screens, showSuccess, showError]);
+  }, [screens, showSuccess, showError, extractTokensFromScreens]);
 
   // Auto-extract on mount if screens exist
   useEffect(() => {

@@ -8,6 +8,15 @@ import {
   type ExtractionProgress,
   CATEGORY_INFO,
 } from '@/services/componentExtractionService';
+import {
+  fetchComponents,
+  saveComponents,
+  updateComponent as updateComponentDb,
+  updateComponentsStatus,
+  deleteComponents,
+  clearAllComponents,
+} from '@/services/componentsPersistenceService';
+import { isSupabaseConfigured } from '@/services/supabase';
 
 export type ComponentStatus = 'pending' | 'approved' | 'rejected' | 'needs-fix';
 
@@ -44,10 +53,16 @@ interface ComponentsState {
   lastExtractionProvider: string | null;
   lastExtractionModel: string | null;
 
+  // Loading/sync state
+  isLoading: boolean;
+  isInitialized: boolean;
+  isSyncing: boolean;
+
   // Batch selection state
   selectedIds: string[];
 
   // Actions
+  initializeComponents: () => Promise<void>;
   setSearchQuery: (query: string) => void;
   setSelectedCategory: (category: string | null) => void;
   toggleTag: (tag: string) => void;
@@ -66,7 +81,7 @@ interface ComponentsState {
     failedScreens: number;
     errors: Array<{ screenId: string; error: string }>;
   } | undefined>;
-  clearComponents: () => void;
+  clearComponents: () => Promise<void>;
 
   // Batch selection actions
   toggleComponentSelection: (id: string) => void;
@@ -74,11 +89,11 @@ interface ComponentsState {
   clearSelection: () => void;
 
   // Batch operations
-  deleteSelectedComponents: () => void;
-  approveSelectedComponents: () => void;
-  rejectSelectedComponents: () => void;
-  markSelectedAsNeedsFix: () => void;
-  updateComponentStatus: (id: string, status: ComponentStatus) => void;
+  deleteSelectedComponents: () => Promise<void>;
+  approveSelectedComponents: () => Promise<void>;
+  rejectSelectedComponents: () => Promise<void>;
+  markSelectedAsNeedsFix: () => Promise<void>;
+  updateComponentStatus: (id: string, status: ComponentStatus) => Promise<void>;
 }
 
 // Convert LLM extracted component to store component
@@ -190,8 +205,33 @@ export const useComponentsStore = create<ComponentsState>()(
       lastExtractionProvider: null,
       lastExtractionModel: null,
 
+      // Loading/sync state
+      isLoading: false,
+      isInitialized: false,
+      isSyncing: false,
+
       // Batch selection state
       selectedIds: [],
+
+      initializeComponents: async () => {
+        const state = get();
+        if (state.isInitialized || state.isLoading) return;
+
+        set({ isLoading: true });
+
+        try {
+          if (isSupabaseConfigured()) {
+            const components = await fetchComponents();
+            set({ components, isInitialized: true, isLoading: false });
+            console.log(`[ComponentsStore] Loaded ${components.length} components from Supabase`);
+          } else {
+            set({ isInitialized: true, isLoading: false });
+          }
+        } catch (error) {
+          console.error('[ComponentsStore] Error loading components:', error);
+          set({ isInitialized: true, isLoading: false });
+        }
+      },
 
       setSearchQuery: (query) => set({ searchQuery: query }),
 
@@ -272,10 +312,31 @@ export const useComponentsStore = create<ComponentsState>()(
           // Components already deduplicated progressively - just finalize state
           const finalComponents = get().components;
 
+          // Save to Supabase
+          if (isSupabaseConfigured() && finalComponents.length > 0) {
+            set({ isSyncing: true });
+            try {
+              // Clear existing components in DB first
+              await clearAllComponents();
+              // Save new components
+              const savedComponents = await saveComponents(finalComponents, {
+                generationModel: options?.model,
+                generationProvider: options?.provider,
+              });
+              set({ components: savedComponents, isSyncing: false });
+              console.log(`[ComponentsStore] Saved ${savedComponents.length} components to Supabase`);
+            } catch (error) {
+              console.error('[ComponentsStore] Error saving to Supabase:', error);
+              set({ isSyncing: false });
+            }
+          }
+
           set({
             isExtracting: false,
             extractionProgress: null,
             lastExtractionTime: new Date().toISOString(),
+            lastExtractionProvider: options?.provider || null,
+            lastExtractionModel: options?.model || null,
           });
 
           // Log any errors and return result for caller to handle
@@ -299,14 +360,29 @@ export const useComponentsStore = create<ComponentsState>()(
         }
       },
 
-      clearComponents: () =>
+      clearComponents: async () => {
+        const previousComponents = get().components;
+
+        // Optimistic update
         set({
           components: [],
           lastExtractionTime: null,
           lastExtractionProvider: null,
           lastExtractionModel: null,
           selectedIds: [],
-        }),
+        });
+
+        // Persist to Supabase
+        if (isSupabaseConfigured()) {
+          try {
+            await clearAllComponents();
+          } catch (error) {
+            console.error('[ComponentsStore] Error clearing from Supabase:', error);
+            // Rollback on error
+            set({ components: previousComponents });
+          }
+        }
+      },
 
       // Batch selection actions
       toggleComponentSelection: (id) =>
@@ -321,13 +397,34 @@ export const useComponentsStore = create<ComponentsState>()(
       clearSelection: () => set({ selectedIds: [] }),
 
       // Batch operations
-      deleteSelectedComponents: () =>
+      deleteSelectedComponents: async () => {
+        const { selectedIds, components } = get();
+        const toDelete = components.filter((c) => selectedIds.includes(c.id));
+
+        // Optimistic update
         set((state) => ({
           components: state.components.filter((c) => !state.selectedIds.includes(c.id)),
           selectedIds: [],
-        })),
+        }));
 
-      approveSelectedComponents: () =>
+        // Persist to Supabase
+        if (isSupabaseConfigured()) {
+          try {
+            await deleteComponents(selectedIds);
+          } catch (error) {
+            console.error('[ComponentsStore] Error deleting from Supabase:', error);
+            // Rollback
+            set((state) => ({
+              components: [...state.components, ...toDelete],
+            }));
+          }
+        }
+      },
+
+      approveSelectedComponents: async () => {
+        const { selectedIds } = get();
+
+        // Optimistic update
         set((state) => ({
           components: state.components.map((c) =>
             state.selectedIds.includes(c.id)
@@ -335,9 +432,22 @@ export const useComponentsStore = create<ComponentsState>()(
               : c
           ),
           selectedIds: [],
-        })),
+        }));
 
-      rejectSelectedComponents: () =>
+        // Persist to Supabase
+        if (isSupabaseConfigured()) {
+          try {
+            await updateComponentsStatus(selectedIds, 'approved');
+          } catch (error) {
+            console.error('[ComponentsStore] Error updating status in Supabase:', error);
+          }
+        }
+      },
+
+      rejectSelectedComponents: async () => {
+        const { selectedIds } = get();
+
+        // Optimistic update
         set((state) => ({
           components: state.components.map((c) =>
             state.selectedIds.includes(c.id)
@@ -345,9 +455,22 @@ export const useComponentsStore = create<ComponentsState>()(
               : c
           ),
           selectedIds: [],
-        })),
+        }));
 
-      markSelectedAsNeedsFix: () =>
+        // Persist to Supabase
+        if (isSupabaseConfigured()) {
+          try {
+            await updateComponentsStatus(selectedIds, 'rejected');
+          } catch (error) {
+            console.error('[ComponentsStore] Error updating status in Supabase:', error);
+          }
+        }
+      },
+
+      markSelectedAsNeedsFix: async () => {
+        const { selectedIds } = get();
+
+        // Optimistic update
         set((state) => ({
           components: state.components.map((c) =>
             state.selectedIds.includes(c.id)
@@ -355,16 +478,37 @@ export const useComponentsStore = create<ComponentsState>()(
               : c
           ),
           selectedIds: [],
-        })),
+        }));
 
-      updateComponentStatus: (id, status) =>
+        // Persist to Supabase
+        if (isSupabaseConfigured()) {
+          try {
+            await updateComponentsStatus(selectedIds, 'needs-fix');
+          } catch (error) {
+            console.error('[ComponentsStore] Error updating status in Supabase:', error);
+          }
+        }
+      },
+
+      updateComponentStatus: async (id, status) => {
+        // Optimistic update
         set((state) => ({
           components: state.components.map((c) =>
             c.id === id
               ? { ...c, status, ...(status === 'approved' ? { approvedAt: new Date().toISOString() } : {}) }
               : c
           ),
-        })),
+        }));
+
+        // Persist to Supabase
+        if (isSupabaseConfigured()) {
+          try {
+            await updateComponentDb(id, { status });
+          } catch (error) {
+            console.error('[ComponentsStore] Error updating component in Supabase:', error);
+          }
+        }
+      },
     }),
     {
       name: 'voxel-components-store',
