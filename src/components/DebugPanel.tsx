@@ -1,6 +1,7 @@
 /**
  * Debug Panel
  * Displays LLM request/response data for debugging the vibe prototyping pipeline
+ * Styled to match the app's modern gradient theme
  */
 
 import { useState } from 'react';
@@ -30,9 +31,27 @@ import {
   XCircle,
   Clock,
   Copy,
-  ArrowRight,
+  CaretRight,
+  Terminal,
 } from '@phosphor-icons/react';
 import { useDebugStore, type DebugEntry, type DebugStage } from '@/store/debugStore';
+import { modernColors } from '@/theme/modernGradientTheme';
+
+// Theme colors for the debug panel
+const panelColors = {
+  bg: '#1E1B4B', // Deep indigo (void)
+  bgLight: '#312E81', // Indigo 900
+  surface: 'rgba(79, 70, 229, 0.15)', // Subtle indigo surface
+  surfaceHover: 'rgba(79, 70, 229, 0.25)',
+  border: 'rgba(99, 102, 241, 0.3)', // Indigo border
+  text: '#E0E7FF', // Indigo 100
+  textSecondary: '#A5B4FC', // Indigo 300
+  textMuted: '#818CF8', // Indigo 400
+  success: '#34D399', // Mint
+  error: '#F87171', // Red 400
+  warning: '#FBBF24', // Amber 400
+  codeBlock: '#0f0e1a', // Near black with indigo tint
+};
 
 const STAGE_LABELS: Record<DebugStage, string> = {
   'understand-request': 'Understanding',
@@ -45,15 +64,15 @@ const STAGE_LABELS: Record<DebugStage, string> = {
   'other': 'Other',
 };
 
-const STAGE_COLORS: Record<DebugStage, string> = {
-  'understand-request': '#3b82f6',
-  'generate-variant-plan': '#8b5cf6',
-  'generate-visual-wireframes': '#ec4899',
-  'generate-variant-edits-v2': '#f59e0b',
-  'generate-variant-code': '#10b981',
-  'extract-components': '#06b6d4',
-  'iterate-variant': '#6366f1',
-  'other': '#64748b',
+const STAGE_COLORS: Record<DebugStage, { bg: string; text: string }> = {
+  'understand-request': { bg: 'rgba(99, 102, 241, 0.3)', text: '#A5B4FC' }, // Indigo
+  'generate-variant-plan': { bg: 'rgba(139, 92, 246, 0.3)', text: '#C4B5FD' }, // Violet
+  'generate-visual-wireframes': { bg: 'rgba(236, 72, 153, 0.3)', text: '#F9A8D4' }, // Pink
+  'generate-variant-edits-v2': { bg: 'rgba(245, 158, 11, 0.3)', text: '#FCD34D' }, // Amber
+  'generate-variant-code': { bg: 'rgba(52, 211, 153, 0.3)', text: '#6EE7B7' }, // Mint
+  'extract-components': { bg: 'rgba(6, 182, 212, 0.3)', text: '#67E8F9' }, // Cyan
+  'iterate-variant': { bg: 'rgba(79, 70, 229, 0.3)', text: '#818CF8' }, // Indigo bright
+  'other': { bg: 'rgba(100, 116, 139, 0.3)', text: '#94A3B8' }, // Slate
 };
 
 function JsonViewer({ data, maxHeight = 400 }: { data: unknown; maxHeight?: number }) {
@@ -69,34 +88,52 @@ function JsonViewer({ data, maxHeight = 400 }: { data: unknown; maxHeight?: numb
 
   return (
     <Box sx={{ position: 'relative' }}>
-      <IconButton
-        size="small"
-        onClick={handleCopy}
-        sx={{ position: 'absolute', top: 4, right: 4, zIndex: 1 }}
-      >
-        <Copy size={16} />
-      </IconButton>
-      {copied && (
-        <Typography
-          variant="caption"
-          sx={{ position: 'absolute', top: 8, right: 36, color: 'success.main' }}
+      <Tooltip title={copied ? 'Copied!' : 'Copy to clipboard'}>
+        <IconButton
+          size="small"
+          onClick={handleCopy}
+          sx={{
+            position: 'absolute',
+            top: 8,
+            right: 8,
+            zIndex: 1,
+            color: panelColors.textMuted,
+            backgroundColor: 'rgba(79, 70, 229, 0.2)',
+            '&:hover': {
+              backgroundColor: 'rgba(79, 70, 229, 0.4)',
+              color: panelColors.text,
+            },
+          }}
         >
-          Copied!
-        </Typography>
-      )}
+          <Copy size={14} weight={copied ? 'fill' : 'regular'} />
+        </IconButton>
+      </Tooltip>
       <Box
         component="pre"
         sx={{
-          backgroundColor: '#1e1e1e',
-          color: '#d4d4d4',
+          backgroundColor: panelColors.codeBlock,
+          color: panelColors.textSecondary,
           p: 2,
-          borderRadius: 1,
+          pt: 2.5,
+          borderRadius: 2,
+          border: `1px solid ${panelColors.border}`,
           overflow: 'auto',
           maxHeight,
-          fontSize: 12,
-          lineHeight: 1.4,
+          fontSize: 11,
+          lineHeight: 1.5,
           m: 0,
-          fontFamily: 'Monaco, Menlo, monospace',
+          fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+          '&::-webkit-scrollbar': {
+            width: 6,
+            height: 6,
+          },
+          '&::-webkit-scrollbar-track': {
+            backgroundColor: 'transparent',
+          },
+          '&::-webkit-scrollbar-thumb': {
+            backgroundColor: panelColors.border,
+            borderRadius: 3,
+          },
         }}
       >
         {jsonString}
@@ -107,67 +144,180 @@ function JsonViewer({ data, maxHeight = 400 }: { data: unknown; maxHeight?: numb
 
 function EntryDetail({ entry }: { entry: DebugEntry }) {
   const [tabValue, setTabValue] = useState(0);
+  const stageColor = STAGE_COLORS[entry.stage];
 
   return (
-    <Box sx={{ p: 2 }}>
+    <Box sx={{ p: 2.5 }}>
       {/* Header */}
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2.5 }}>
         <Chip
           label={STAGE_LABELS[entry.stage]}
           size="small"
-          sx={{ backgroundColor: STAGE_COLORS[entry.stage], color: 'white' }}
+          sx={{
+            backgroundColor: stageColor.bg,
+            color: stageColor.text,
+            fontWeight: 600,
+            fontSize: 11,
+            height: 24,
+            border: `1px solid ${stageColor.text}30`,
+          }}
         />
         {entry.status === 'success' && (
-          <CheckCircle size={20} color="#10b981" weight="fill" />
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            <CheckCircle size={18} color={panelColors.success} weight="fill" />
+            <Typography variant="caption" sx={{ color: panelColors.success, fontWeight: 500 }}>
+              Success
+            </Typography>
+          </Box>
         )}
         {entry.status === 'error' && (
-          <XCircle size={20} color="#ef4444" weight="fill" />
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            <XCircle size={18} color={panelColors.error} weight="fill" />
+            <Typography variant="caption" sx={{ color: panelColors.error, fontWeight: 500 }}>
+              Error
+            </Typography>
+          </Box>
         )}
         {entry.status === 'pending' && (
-          <Clock size={20} color="#f59e0b" weight="fill" />
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            <Clock size={18} color={panelColors.warning} weight="fill" />
+            <Typography variant="caption" sx={{ color: panelColors.warning, fontWeight: 500 }}>
+              Pending
+            </Typography>
+          </Box>
         )}
         {entry.durationMs && (
-          <Typography variant="caption" color="text.secondary">
-            {entry.durationMs}ms
-          </Typography>
+          <Chip
+            label={`${entry.durationMs}ms`}
+            size="small"
+            sx={{
+              backgroundColor: 'rgba(52, 211, 153, 0.15)',
+              color: panelColors.success,
+              fontSize: 10,
+              fontWeight: 600,
+              height: 20,
+              ml: 'auto',
+            }}
+          />
         )}
       </Box>
 
       {/* Metadata */}
-      <Box sx={{ mb: 2, display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+      <Box
+        sx={{
+          mb: 2.5,
+          display: 'flex',
+          gap: 2,
+          flexWrap: 'wrap',
+          p: 1.5,
+          backgroundColor: panelColors.surface,
+          borderRadius: 1.5,
+          border: `1px solid ${panelColors.border}`,
+        }}
+      >
         {entry.sessionId && (
-          <Typography variant="caption" color="text.secondary">
-            Session: {entry.sessionId.slice(0, 8)}...
-          </Typography>
+          <Box>
+            <Typography variant="caption" sx={{ color: panelColors.textMuted, display: 'block', fontSize: 10 }}>
+              Session
+            </Typography>
+            <Typography variant="caption" sx={{ color: panelColors.text, fontFamily: 'monospace', fontSize: 11 }}>
+              {entry.sessionId.slice(0, 8)}...
+            </Typography>
+          </Box>
         )}
-        {entry.variantIndex && (
-          <Typography variant="caption" color="text.secondary">
-            Variant: {entry.variantIndex}
-          </Typography>
+        {entry.variantIndex !== undefined && (
+          <Box>
+            <Typography variant="caption" sx={{ color: panelColors.textMuted, display: 'block', fontSize: 10 }}>
+              Variant
+            </Typography>
+            <Typography variant="caption" sx={{ color: panelColors.text, fontSize: 11 }}>
+              #{entry.variantIndex}
+            </Typography>
+          </Box>
         )}
-        <Typography variant="caption" color="text.secondary">
-          {new Date(entry.timestamp).toLocaleTimeString()}
-        </Typography>
+        <Box>
+          <Typography variant="caption" sx={{ color: panelColors.textMuted, display: 'block', fontSize: 10 }}>
+            Timestamp
+          </Typography>
+          <Typography variant="caption" sx={{ color: panelColors.text, fontSize: 11 }}>
+            {new Date(entry.timestamp).toLocaleTimeString()}
+          </Typography>
+        </Box>
       </Box>
 
       {/* Tabs */}
-      <Tabs value={tabValue} onChange={(_, v) => setTabValue(v)} sx={{ mb: 2 }}>
+      <Tabs
+        value={tabValue}
+        onChange={(_, v) => setTabValue(v)}
+        sx={{
+          mb: 2,
+          minHeight: 36,
+          '& .MuiTabs-indicator': {
+            backgroundColor: modernColors.primary,
+            height: 2,
+          },
+          '& .MuiTab-root': {
+            color: panelColors.textMuted,
+            fontSize: 12,
+            fontWeight: 500,
+            minHeight: 36,
+            textTransform: 'none',
+            '&.Mui-selected': {
+              color: panelColors.text,
+            },
+          },
+        }}
+      >
         <Tab label="Request" />
         <Tab label="Response" />
-        {entry.response?.rawText && <Tab label="Raw Response" />}
+        {entry.response?.rawText && <Tab label="Raw" />}
       </Tabs>
 
       {/* Tab Content */}
       {tabValue === 0 && (
         <Box>
-          <Typography variant="subtitle2" gutterBottom>
+          <Typography
+            variant="caption"
+            sx={{
+              color: panelColors.textMuted,
+              textTransform: 'uppercase',
+              letterSpacing: 0.5,
+              fontWeight: 600,
+              display: 'block',
+              mb: 1,
+            }}
+          >
             Endpoint
           </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2, fontFamily: 'monospace' }}>
-            {entry.request.method} {entry.request.endpoint}
-          </Typography>
+          <Box
+            sx={{
+              mb: 2.5,
+              p: 1.5,
+              backgroundColor: panelColors.codeBlock,
+              borderRadius: 1.5,
+              border: `1px solid ${panelColors.border}`,
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: 12,
+              color: panelColors.textSecondary,
+            }}
+          >
+            <Box component="span" sx={{ color: panelColors.success, fontWeight: 600 }}>
+              {entry.request.method}
+            </Box>{' '}
+            {entry.request.endpoint}
+          </Box>
 
-          <Typography variant="subtitle2" gutterBottom>
+          <Typography
+            variant="caption"
+            sx={{
+              color: panelColors.textMuted,
+              textTransform: 'uppercase',
+              letterSpacing: 0.5,
+              fontWeight: 600,
+              display: 'block',
+              mb: 1,
+            }}
+          >
             Request Body
           </Typography>
           <JsonViewer data={entry.request.body} />
@@ -178,27 +328,58 @@ function EntryDetail({ entry }: { entry: DebugEntry }) {
         <Box>
           {entry.response ? (
             <>
-              <Typography variant="subtitle2" gutterBottom>
-                Status: {entry.response.status} ({entry.response.success ? 'Success' : 'Error'})
-              </Typography>
+              <Box
+                sx={{
+                  mb: 2,
+                  p: 1.5,
+                  backgroundColor: entry.response.success
+                    ? 'rgba(52, 211, 153, 0.1)'
+                    : 'rgba(248, 113, 113, 0.1)',
+                  borderRadius: 1.5,
+                  border: `1px solid ${entry.response.success ? panelColors.success : panelColors.error}40`,
+                }}
+              >
+                <Typography
+                  variant="body2"
+                  sx={{
+                    color: entry.response.success ? panelColors.success : panelColors.error,
+                    fontWeight: 600,
+                    fontSize: 13,
+                  }}
+                >
+                  Status: {entry.response.status} ({entry.response.success ? 'Success' : 'Error'})
+                </Typography>
+              </Box>
 
               {entry.response.error && (
                 <Box
                   sx={{
                     p: 2,
                     mb: 2,
-                    backgroundColor: 'error.light',
-                    borderRadius: 1,
-                    color: 'error.contrastText',
+                    backgroundColor: 'rgba(248, 113, 113, 0.15)',
+                    borderRadius: 1.5,
+                    border: `1px solid ${panelColors.error}40`,
                   }}
                 >
-                  <Typography variant="body2">{entry.response.error}</Typography>
+                  <Typography variant="body2" sx={{ color: panelColors.error, fontSize: 12 }}>
+                    {entry.response.error}
+                  </Typography>
                 </Box>
               )}
 
               {entry.response.data && (
                 <>
-                  <Typography variant="subtitle2" gutterBottom>
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      color: panelColors.textMuted,
+                      textTransform: 'uppercase',
+                      letterSpacing: 0.5,
+                      fontWeight: 600,
+                      display: 'block',
+                      mb: 1,
+                    }}
+                  >
                     Response Data
                   </Typography>
                   <JsonViewer data={entry.response.data} />
@@ -206,30 +387,62 @@ function EntryDetail({ entry }: { entry: DebugEntry }) {
               )}
             </>
           ) : (
-            <Typography color="text.secondary">No response yet (pending)</Typography>
+            <Box
+              sx={{
+                p: 3,
+                textAlign: 'center',
+                backgroundColor: panelColors.surface,
+                borderRadius: 2,
+                border: `1px dashed ${panelColors.border}`,
+              }}
+            >
+              <Clock size={32} color={panelColors.warning} weight="duotone" />
+              <Typography sx={{ color: panelColors.textMuted, mt: 1, fontSize: 13 }}>
+                Waiting for response...
+              </Typography>
+            </Box>
           )}
         </Box>
       )}
 
       {tabValue === 2 && entry.response?.rawText && (
         <Box>
-          <Typography variant="subtitle2" gutterBottom>
+          <Typography
+            variant="caption"
+            sx={{
+              color: panelColors.textMuted,
+              textTransform: 'uppercase',
+              letterSpacing: 0.5,
+              fontWeight: 600,
+              display: 'block',
+              mb: 1,
+            }}
+          >
             Raw LLM Response
           </Typography>
           <Box
             component="pre"
             sx={{
-              backgroundColor: '#1e1e1e',
-              color: '#d4d4d4',
+              backgroundColor: panelColors.codeBlock,
+              color: panelColors.textSecondary,
               p: 2,
-              borderRadius: 1,
+              borderRadius: 2,
+              border: `1px solid ${panelColors.border}`,
               overflow: 'auto',
               maxHeight: 400,
-              fontSize: 12,
-              lineHeight: 1.4,
+              fontSize: 11,
+              lineHeight: 1.5,
               m: 0,
               whiteSpace: 'pre-wrap',
               wordBreak: 'break-word',
+              fontFamily: "'JetBrains Mono', monospace",
+              '&::-webkit-scrollbar': {
+                width: 6,
+              },
+              '&::-webkit-scrollbar-thumb': {
+                backgroundColor: panelColors.border,
+                borderRadius: 3,
+              },
             }}
           >
             {entry.response.rawText}
@@ -265,7 +478,11 @@ export function LLMDebugPanel() {
       open={isPanelOpen}
       onClose={() => setPanelOpen(false)}
       PaperProps={{
-        sx: { width: { xs: '100%', sm: 600, md: 800 } },
+        sx: {
+          width: { xs: '100%', sm: 600, md: 800 },
+          backgroundColor: panelColors.bg,
+          backgroundImage: 'none',
+        },
       }}
     >
       <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -273,16 +490,38 @@ export function LLMDebugPanel() {
         <Box
           sx={{
             p: 2,
-            borderBottom: '1px solid',
-            borderColor: 'divider',
+            borderBottom: `1px solid ${panelColors.border}`,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
+            background: `linear-gradient(180deg, ${panelColors.bgLight} 0%, ${panelColors.bg} 100%)`,
           }}
         >
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Bug size={24} />
-            <Typography variant="h6">LLM Debug Panel</Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <Box
+              sx={{
+                width: 36,
+                height: 36,
+                borderRadius: 2,
+                backgroundColor: 'rgba(79, 70, 229, 0.3)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Terminal size={20} color={panelColors.textSecondary} weight="duotone" />
+            </Box>
+            <Box>
+              <Typography
+                variant="subtitle1"
+                sx={{ color: panelColors.text, fontWeight: 600, lineHeight: 1.2 }}
+              >
+                LLM Debug Panel
+              </Typography>
+              <Typography variant="caption" sx={{ color: panelColors.textMuted, fontSize: 11 }}>
+                {entries.length} {entries.length === 1 ? 'entry' : 'entries'}
+              </Typography>
+            </Box>
           </Box>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <FormControlLabel
@@ -291,35 +530,121 @@ export function LLMDebugPanel() {
                   checked={isEnabled}
                   onChange={(e) => setEnabled(e.target.checked)}
                   size="small"
+                  sx={{
+                    '& .MuiSwitch-track': {
+                      backgroundColor: panelColors.border,
+                    },
+                    '& .MuiSwitch-thumb': {
+                      backgroundColor: isEnabled ? modernColors.primary : panelColors.textMuted,
+                    },
+                    '& .Mui-checked + .MuiSwitch-track': {
+                      backgroundColor: `${modernColors.primary}60 !important`,
+                    },
+                  }}
                 />
               }
-              label="Enabled"
+              label={
+                <Typography variant="caption" sx={{ color: panelColors.textSecondary, fontSize: 11 }}>
+                  Recording
+                </Typography>
+              }
+              sx={{ mr: 1 }}
             />
             <Tooltip title="Clear all entries">
-              <IconButton onClick={clearEntries} size="small">
+              <IconButton
+                onClick={clearEntries}
+                size="small"
+                sx={{
+                  color: panelColors.textMuted,
+                  '&:hover': { backgroundColor: 'rgba(248, 113, 113, 0.2)', color: panelColors.error },
+                }}
+              >
                 <Trash size={18} />
               </IconButton>
             </Tooltip>
-            <IconButton onClick={() => setPanelOpen(false)}>
+            <IconButton
+              onClick={() => setPanelOpen(false)}
+              sx={{
+                color: panelColors.textMuted,
+                '&:hover': { backgroundColor: panelColors.surface, color: panelColors.text },
+              }}
+            >
               <X size={20} />
             </IconButton>
           </Box>
         </Box>
 
         {/* Filter */}
-        <Box sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
-          <FormControl size="small" fullWidth>
+        <Box sx={{ p: 2, borderBottom: `1px solid ${panelColors.border}` }}>
+          <FormControl
+            size="small"
+            fullWidth
+            sx={{
+              '& .MuiOutlinedInput-root': {
+                backgroundColor: panelColors.surface,
+                color: panelColors.text,
+                '& fieldset': {
+                  borderColor: panelColors.border,
+                },
+                '&:hover fieldset': {
+                  borderColor: modernColors.primary,
+                },
+                '&.Mui-focused fieldset': {
+                  borderColor: modernColors.primary,
+                },
+              },
+              '& .MuiInputLabel-root': {
+                color: panelColors.textMuted,
+                '&.Mui-focused': {
+                  color: modernColors.primaryBright,
+                },
+              },
+              '& .MuiSelect-icon': {
+                color: panelColors.textMuted,
+              },
+            }}
+          >
             <InputLabel>Filter by Stage</InputLabel>
             <Select
               value={filterStage}
               label="Filter by Stage"
               onChange={(e) => setFilterStage(e.target.value as DebugStage | 'all')}
+              MenuProps={{
+                PaperProps: {
+                  sx: {
+                    backgroundColor: panelColors.bgLight,
+                    border: `1px solid ${panelColors.border}`,
+                    '& .MuiMenuItem-root': {
+                      color: panelColors.text,
+                      '&:hover': {
+                        backgroundColor: panelColors.surface,
+                      },
+                      '&.Mui-selected': {
+                        backgroundColor: 'rgba(79, 70, 229, 0.3)',
+                        '&:hover': {
+                          backgroundColor: 'rgba(79, 70, 229, 0.4)',
+                        },
+                      },
+                    },
+                  },
+                },
+              }}
             >
               <MenuItem value="all">All Stages</MenuItem>
-              <Divider />
+              <Divider sx={{ borderColor: panelColors.border }} />
               {Object.entries(STAGE_LABELS).map(([stage, label]) => (
                 <MenuItem key={stage} value={stage}>
-                  {label}
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Box
+                      sx={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: '50%',
+                        backgroundColor: STAGE_COLORS[stage as DebugStage].text,
+                      }}
+                    />
+                    {label}
+                  </Box>
                 </MenuItem>
               ))}
             </Select>
@@ -331,62 +656,124 @@ export function LLMDebugPanel() {
           {/* Entry List */}
           <Box
             sx={{
-              width: 280,
-              borderRight: '1px solid',
-              borderColor: 'divider',
+              width: 260,
+              borderRight: `1px solid ${panelColors.border}`,
               overflow: 'auto',
+              backgroundColor: 'rgba(0, 0, 0, 0.15)',
+              '&::-webkit-scrollbar': {
+                width: 6,
+              },
+              '&::-webkit-scrollbar-thumb': {
+                backgroundColor: panelColors.border,
+                borderRadius: 3,
+              },
             }}
           >
             {filteredEntries.length === 0 ? (
-              <Box sx={{ p: 2, textAlign: 'center' }}>
-                <Typography color="text.secondary" variant="body2">
-                  No debug entries yet.
-                  <br />
-                  Run an LLM operation to see data here.
+              <Box sx={{ p: 3, textAlign: 'center' }}>
+                <Bug size={40} color={panelColors.textMuted} weight="duotone" />
+                <Typography sx={{ color: panelColors.textMuted, mt: 1.5, fontSize: 13 }}>
+                  No debug entries yet
+                </Typography>
+                <Typography sx={{ color: panelColors.textMuted, fontSize: 11, mt: 0.5, opacity: 0.7 }}>
+                  Run an LLM operation to see data here
                 </Typography>
               </Box>
             ) : (
               <List dense disablePadding>
-                {filteredEntries.map((entry) => (
-                  <ListItem key={entry.id} disablePadding>
-                    <ListItemButton
-                      selected={entry.id === selectedEntryId}
-                      onClick={() => selectEntry(entry.id)}
-                    >
-                      <Box sx={{ width: '100%' }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
-                          <Box
-                            sx={{
-                              width: 8,
-                              height: 8,
-                              borderRadius: '50%',
-                              backgroundColor:
-                                entry.status === 'success'
-                                  ? '#10b981'
-                                  : entry.status === 'error'
-                                    ? '#ef4444'
-                                    : '#f59e0b',
-                            }}
-                          />
-                          <Typography variant="caption" fontWeight={600}>
-                            {STAGE_LABELS[entry.stage]}
-                          </Typography>
+                {filteredEntries.map((entry) => {
+                  const stageColor = STAGE_COLORS[entry.stage];
+                  return (
+                    <ListItem key={entry.id} disablePadding>
+                      <ListItemButton
+                        selected={entry.id === selectedEntryId}
+                        onClick={() => selectEntry(entry.id)}
+                        sx={{
+                          py: 1.5,
+                          px: 2,
+                          borderBottom: `1px solid ${panelColors.border}`,
+                          '&:hover': {
+                            backgroundColor: panelColors.surface,
+                          },
+                          '&.Mui-selected': {
+                            backgroundColor: 'rgba(79, 70, 229, 0.2)',
+                            borderLeft: `3px solid ${modernColors.primary}`,
+                            '&:hover': {
+                              backgroundColor: 'rgba(79, 70, 229, 0.25)',
+                            },
+                          },
+                        }}
+                      >
+                        <Box sx={{ width: '100%' }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                            <Box
+                              sx={{
+                                width: 8,
+                                height: 8,
+                                borderRadius: '50%',
+                                backgroundColor:
+                                  entry.status === 'success'
+                                    ? panelColors.success
+                                    : entry.status === 'error'
+                                      ? panelColors.error
+                                      : panelColors.warning,
+                                boxShadow:
+                                  entry.status === 'pending'
+                                    ? `0 0 6px ${panelColors.warning}`
+                                    : 'none',
+                              }}
+                            />
+                            <Typography
+                              variant="caption"
+                              sx={{
+                                color: stageColor.text,
+                                fontWeight: 600,
+                                fontSize: 11,
+                              }}
+                            >
+                              {STAGE_LABELS[entry.stage]}
+                            </Typography>
+                          </Box>
+                          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <Typography
+                              variant="caption"
+                              sx={{ color: panelColors.textMuted, fontSize: 10 }}
+                            >
+                              {new Date(entry.timestamp).toLocaleTimeString()}
+                              {entry.durationMs && (
+                                <Box
+                                  component="span"
+                                  sx={{ color: panelColors.success, ml: 0.5 }}
+                                >
+                                  {entry.durationMs}ms
+                                </Box>
+                              )}
+                            </Typography>
+                            <CaretRight size={14} color={panelColors.textMuted} />
+                          </Box>
                         </Box>
-                        <Typography variant="caption" color="text.secondary">
-                          {new Date(entry.timestamp).toLocaleTimeString()}
-                          {entry.durationMs && ` · ${entry.durationMs}ms`}
-                        </Typography>
-                      </Box>
-                      <ArrowRight size={16} />
-                    </ListItemButton>
-                  </ListItem>
-                ))}
+                      </ListItemButton>
+                    </ListItem>
+                  );
+                })}
               </List>
             )}
           </Box>
 
           {/* Detail View */}
-          <Box sx={{ flex: 1, overflow: 'auto' }}>
+          <Box
+            sx={{
+              flex: 1,
+              overflow: 'auto',
+              '&::-webkit-scrollbar': {
+                width: 6,
+              },
+              '&::-webkit-scrollbar-thumb': {
+                backgroundColor: panelColors.border,
+                borderRadius: 3,
+              },
+            }}
+          >
             {selectedEntry ? (
               <EntryDetail entry={selectedEntry} />
             ) : (
@@ -394,11 +781,27 @@ export function LLMDebugPanel() {
                 sx={{
                   height: '100%',
                   display: 'flex',
+                  flexDirection: 'column',
                   alignItems: 'center',
                   justifyContent: 'center',
+                  p: 3,
                 }}
               >
-                <Typography color="text.secondary">
+                <Box
+                  sx={{
+                    width: 64,
+                    height: 64,
+                    borderRadius: 3,
+                    backgroundColor: panelColors.surface,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    mb: 2,
+                  }}
+                >
+                  <CaretRight size={28} color={panelColors.textMuted} weight="duotone" />
+                </Box>
+                <Typography sx={{ color: panelColors.textMuted, fontSize: 14 }}>
                   Select an entry to view details
                 </Typography>
               </Box>
@@ -425,30 +828,39 @@ export function LLMDebugButton() {
         onClick={togglePanel}
         sx={{
           position: 'fixed',
-          bottom: 16,
-          right: 16,
-          backgroundColor: 'background.paper',
-          boxShadow: 2,
-          '&:hover': { backgroundColor: 'action.hover' },
+          bottom: 20,
+          right: 20,
+          width: 48,
+          height: 48,
+          backgroundColor: panelColors.bg,
+          border: `1px solid ${panelColors.border}`,
+          boxShadow: '0 4px 20px rgba(0, 0, 0, 0.3)',
+          '&:hover': {
+            backgroundColor: panelColors.bgLight,
+            boxShadow: `0 4px 20px rgba(79, 70, 229, 0.4)`,
+          },
           zIndex: 1000,
         }}
       >
-        <Bug size={24} />
+        <Terminal size={22} color={panelColors.textSecondary} weight="duotone" />
         {(pendingCount > 0 || errorCount > 0) && (
           <Box
             sx={{
               position: 'absolute',
               top: -4,
               right: -4,
-              width: 18,
+              minWidth: 18,
               height: 18,
-              borderRadius: '50%',
-              backgroundColor: errorCount > 0 ? 'error.main' : 'warning.main',
-              color: 'white',
+              borderRadius: 9,
+              px: 0.5,
+              backgroundColor: errorCount > 0 ? panelColors.error : panelColors.warning,
+              color: '#1E1B4B',
               fontSize: 10,
+              fontWeight: 700,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
+              boxShadow: `0 2px 8px ${errorCount > 0 ? panelColors.error : panelColors.warning}60`,
             }}
           >
             {errorCount || pendingCount}
