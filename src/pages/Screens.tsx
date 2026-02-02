@@ -6,16 +6,13 @@ import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import InputAdornment from '@mui/material/InputAdornment';
 import Checkbox from '@mui/material/Checkbox';
-import Tooltip from '@mui/material/Tooltip';
 import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
 import ListItemIcon from '@mui/material/ListItemIcon';
-import Alert from '@mui/material/Alert';
 import CircularProgress from '@mui/material/CircularProgress';
 import Skeleton from '@mui/material/Skeleton';
 import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
-import Collapse from '@mui/material/Collapse';
 import Fade from '@mui/material/Fade';
 import {
   MagnifyingGlass,
@@ -25,8 +22,6 @@ import {
   Trash,
   Copy,
   Sparkle,
-  CheckSquare,
-  X,
   PencilSimple,
   DotsThreeVertical,
 } from '@phosphor-icons/react';
@@ -39,7 +34,7 @@ import {
   DialogContent,
   DialogActions,
 } from '@/components/ui';
-import { EmptyState, ThumbnailCard } from '@/components';
+import { EmptyState, ThumbnailCard, BatchSelectionBar } from '@/components';
 import { PageHeader } from '@/components/PageHeader';
 import { FileUpload } from '@/components/FileUpload';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -75,7 +70,6 @@ export function Screens() {
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [uploadingFiles, setUploadingFiles] = useState<File[]>([]);
   const [isUploading, setIsUploading] = useState(false);
-  const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [tags, setTags] = useState('');
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [menuScreen, setMenuScreen] = useState<CapturedScreen | null>(null);
@@ -187,16 +181,9 @@ export function Screens() {
 
   const handleBatchDelete = async () => {
     if (selectedIds.length === 0) return;
+    const count = selectedIds.length;
     await removeScreens(selectedIds);
-    setIsSelectionMode(false);
-    showSuccess(`Deleted ${selectedIds.length} screen(s)`);
-  };
-
-  const handleToggleSelectionMode = () => {
-    if (isSelectionMode) {
-      clearSelection();
-    }
-    setIsSelectionMode(!isSelectionMode);
+    showSuccess(`Deleted ${count} screen(s)`);
   };
 
   const handleSelectAll = () => {
@@ -253,47 +240,6 @@ export function Screens() {
 
   return (
     <Box>
-      {/* Selection mode banner */}
-      <Collapse in={isSelectionMode}>
-        <Alert
-          severity="info"
-          sx={{
-            mb: 2,
-          }}
-          action={
-            <Box sx={{ display: 'flex', gap: 1 }}>
-              <Button
-                color="error"
-                size="small"
-                startIcon={<Trash size={16} />}
-                disabled={selectedIds.length === 0}
-                onClick={handleBatchDelete}
-              >
-                Delete Selected
-              </Button>
-              <Button
-                size="small"
-                startIcon={<X size={16} />}
-                onClick={handleToggleSelectionMode}
-              >
-                Cancel
-              </Button>
-            </Box>
-          }
-        >
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <Checkbox
-              checked={selectedIds.length === filteredScreens.length && filteredScreens.length > 0}
-              indeterminate={selectedIds.length > 0 && selectedIds.length < filteredScreens.length}
-              onChange={handleSelectAll}
-            />
-            <Typography>
-              {selectedIds.length} of {filteredScreens.length} selected
-            </Typography>
-          </Box>
-        </Alert>
-      </Collapse>
-
       {/* Header */}
       <PageHeader
         title="Captured Screens"
@@ -342,18 +288,6 @@ export function Screens() {
                 <List size={18} />
               </ToggleButton>
             </ToggleButtonGroup>
-            <Tooltip title={isSelectionMode ? 'Exit selection mode' : 'Select multiple'}>
-              <IconButton
-                onClick={handleToggleSelectionMode}
-                color={isSelectionMode ? 'primary' : 'default'}
-                sx={{
-                  transition: 'all 0.2s ease',
-                  '&:hover': { transform: 'scale(1.1)' },
-                }}
-              >
-                <CheckSquare size={20} />
-              </IconButton>
-            </Tooltip>
             <Button
               variant="contained"
               startIcon={<UploadSimple size={18} />}
@@ -418,7 +352,6 @@ export function Screens() {
                   type: screen.editedHtml ? 'html' : screen.filePath ? 'url' : 'placeholder',
                   content: screen.editedHtml || screen.filePath,
                 }}
-                isSelectionMode={isSelectionMode}
                 isSelected={selectedIds.includes(screen.id)}
                 onSelect={() => toggleSelectScreen(screen.id)}
                 onClick={() => navigate(`/prototypes/${screen.id}`)}
@@ -448,7 +381,7 @@ export function Screens() {
               borderRadius: '8px 8px 0 0',
             }}
           >
-            {isSelectionMode && <Box sx={{ width: 42 }} />}
+            <Box sx={{ width: 42 }} />
             <Box sx={{ width: 80, flexShrink: 0 }}>
               <Typography variant="caption" color="text.secondary" fontWeight={600}>
                 Preview
@@ -498,22 +431,28 @@ export function Screens() {
                   '& .action-button': {
                     opacity: 1,
                   },
+                  '& .hover-checkbox': {
+                    opacity: 1,
+                  },
                 },
                 '&:last-child': {
                   borderRadius: '0 0 8px 8px',
                 },
               }}
             >
-              {isSelectionMode && (
-                <Checkbox
-                  checked={selectedIds.includes(screen.id)}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleSelectScreen(screen.id);
-                  }}
-                  sx={{ p: 0.5 }}
-                />
-              )}
+              <Checkbox
+                className="hover-checkbox"
+                checked={selectedIds.includes(screen.id)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleSelectScreen(screen.id);
+                }}
+                sx={{
+                  p: 0.5,
+                  opacity: selectedIds.includes(screen.id) ? 1 : 0,
+                  transition: 'opacity 0.2s ease',
+                }}
+              />
               {/* Thumbnail */}
               <Box
                 sx={{
@@ -779,6 +718,22 @@ export function Screens() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Floating Batch Selection Bar */}
+      <BatchSelectionBar
+        selectedCount={selectedIds.length}
+        totalCount={filteredScreens.length}
+        onSelectAll={handleSelectAll}
+        onClearSelection={clearSelection}
+        actions={[
+          {
+            label: 'Delete',
+            icon: <Trash size={18} weight="fill" />,
+            color: 'error',
+            onClick: handleBatchDelete,
+          },
+        ]}
+      />
     </Box>
   );
 }

@@ -3,7 +3,7 @@
  * Provides consistent styling, animations, and responsive behavior
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
@@ -11,6 +11,7 @@ import Typography from '@mui/material/Typography';
 import Chip from '@mui/material/Chip';
 import IconButton from '@mui/material/IconButton';
 import Checkbox from '@mui/material/Checkbox';
+import Fade from '@mui/material/Fade';
 import { DotsThreeVertical, Sparkle } from '@phosphor-icons/react';
 import { useThemeStore } from '@/store/themeStore';
 
@@ -60,7 +61,9 @@ export const ThumbnailCard: React.FC<ThumbnailCardProps> = ({
   status,
   tags,
   preview,
-  isSelectionMode = false,
+  // isSelectionMode is kept for backwards compatibility but no longer used
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  isSelectionMode: _isSelectionMode = false,
   isSelected = false,
   onClick,
   onSelect,
@@ -68,9 +71,14 @@ export const ThumbnailCard: React.FC<ThumbnailCardProps> = ({
   primaryAction,
 }) => {
   const { config, mode } = useThemeStore();
+  const [isHovered, setIsHovered] = useState(false);
+
+  // Show checkbox on hover or when selected (no explicit selection mode needed)
+  const showCheckbox = isHovered || isSelected;
 
   const handleCardClick = () => {
-    if (isSelectionMode && onSelect) {
+    // If checkbox is showing and user clicks, treat as selection toggle
+    if (showCheckbox && onSelect && !primaryAction) {
       onSelect();
     } else if (onClick) {
       onClick();
@@ -136,6 +144,8 @@ export const ThumbnailCard: React.FC<ThumbnailCardProps> = ({
 
   return (
     <Card
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
       sx={{
         height: '100%',
         display: 'flex',
@@ -146,6 +156,7 @@ export const ThumbnailCard: React.FC<ThumbnailCardProps> = ({
         overflow: 'hidden',
         transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
         cursor: onClick ? 'pointer' : 'default',
+        backgroundColor: isSelected ? 'primary.50' : 'background.paper',
         '&:hover': {
           transform: 'translateY(-4px)',
           boxShadow: '0 12px 24px rgba(0,0,0,0.1)',
@@ -190,31 +201,33 @@ export const ThumbnailCard: React.FC<ThumbnailCardProps> = ({
           </Box>
         )}
 
-        {/* Selection checkbox */}
-        {isSelectionMode && (
-          <Box
-            sx={{ position: 'absolute', top: 8, left: 8, zIndex: 10 }}
-            onClick={(e) => {
-              e.stopPropagation();
-              onSelect?.();
-            }}
-          >
-            <Checkbox
-              checked={isSelected}
-              sx={{
-                color: 'white',
-                '&.Mui-checked': { color: 'white' },
-                backgroundColor: 'rgba(0,0,0,0.3)',
-                borderRadius: 1,
-                transition: 'all 0.2s ease',
-                '&:hover': { backgroundColor: 'rgba(0,0,0,0.5)' },
+        {/* Selection checkbox - visible on hover or when selected */}
+        {onSelect && (
+          <Fade in={showCheckbox} timeout={200}>
+            <Box
+              sx={{ position: 'absolute', top: 8, left: 8, zIndex: 10 }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelect();
               }}
-            />
-          </Box>
+            >
+              <Checkbox
+                checked={isSelected}
+                sx={{
+                  color: 'white',
+                  '&.Mui-checked': { color: 'white' },
+                  backgroundColor: 'rgba(0,0,0,0.3)',
+                  borderRadius: 1,
+                  transition: 'all 0.2s ease',
+                  '&:hover': { backgroundColor: 'rgba(0,0,0,0.5)' },
+                }}
+              />
+            </Box>
+          </Fade>
         )}
 
         {/* Hover overlay with action */}
-        {!isSelectionMode && primaryAction && (
+        {primaryAction && (
           <Box
             sx={{
               position: 'absolute',
@@ -273,7 +286,7 @@ export const ThumbnailCard: React.FC<ThumbnailCardProps> = ({
               {title}
             </Typography>
           </Box>
-          {onMenuClick && !isSelectionMode && (
+          {onMenuClick && (
             <IconButton
               size="small"
               onClick={(e) => {

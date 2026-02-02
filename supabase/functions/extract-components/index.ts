@@ -110,6 +110,16 @@ function generateComponentId(): string {
   return `comp_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
 }
 
+// Strip data URL prefix from base64 string if present
+function stripBase64Prefix(base64: string): string {
+  // Handle data URLs like "data:image/jpeg;base64,/9j/4AAQ..."
+  const match = base64.match(/^data:image\/[a-zA-Z]+;base64,(.+)$/)
+  if (match) {
+    return match[1]
+  }
+  return base64
+}
+
 // Parse LLM response into components array
 function parseComponentsResponse(response: string): ExtractedComponentLLM[] {
   // Try to extract JSON from the response
@@ -346,6 +356,10 @@ Deno.serve(async (req) => {
       throw new Error('Missing required fields: screenId, html, and screenshotBase64')
     }
 
+    // Strip data URL prefix from base64 if present
+    const screenshotBase64 = stripBase64Prefix(body.screenshotBase64)
+    console.log('[extract-components] Screenshot base64 length after stripping prefix:', screenshotBase64.length)
+
     // Get user's API key
     const requestedProvider = body.provider
     let keyQuery = supabase
@@ -384,13 +398,13 @@ Deno.serve(async (req) => {
 
     switch (keyConfig.provider) {
       case 'anthropic':
-        components = await extractWithAnthropic(apiKey, modelToUse, prompt, body.screenshotBase64)
+        components = await extractWithAnthropic(apiKey, modelToUse, prompt, screenshotBase64)
         break
       case 'openai':
-        components = await extractWithOpenAI(apiKey, modelToUse, prompt, body.screenshotBase64)
+        components = await extractWithOpenAI(apiKey, modelToUse, prompt, screenshotBase64)
         break
       case 'google':
-        components = await extractWithGoogle(apiKey, modelToUse, prompt, body.screenshotBase64)
+        components = await extractWithGoogle(apiKey, modelToUse, prompt, screenshotBase64)
         break
       default:
         throw new Error(`Unsupported provider: ${keyConfig.provider}`)

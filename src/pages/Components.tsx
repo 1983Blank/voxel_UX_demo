@@ -13,7 +13,7 @@ import CircularProgress from '@mui/material/CircularProgress';
 import LinearProgress from '@mui/material/LinearProgress';
 import Alert from '@mui/material/Alert';
 import Checkbox from '@mui/material/Checkbox';
-import IconButton from '@mui/material/IconButton';
+import Fade from '@mui/material/Fade';
 import {
   MagnifyingGlass,
   GridFour,
@@ -25,7 +25,6 @@ import {
   CheckCircle,
   XCircle,
   Wrench,
-  SelectionAll,
 } from '@phosphor-icons/react';
 import ContentCopyOutlinedIcon from '@mui/icons-material/ContentCopyOutlined';
 import CodeOutlinedIcon from '@mui/icons-material/CodeOutlined';
@@ -45,7 +44,7 @@ import {
   Tabs,
   Tab,
 } from '@/components/ui';
-import { EmptyState, PageHeader } from '@/components';
+import { EmptyState, PageHeader, BatchSelectionBar } from '@/components';
 import { useSnackbar } from '@/components/SnackbarProvider';
 import {
   useComponentsStore,
@@ -155,16 +154,18 @@ function ComponentCard({
   component,
   onClick,
   isSelected,
-  isSelectionMode,
   onToggleSelect,
 }: {
   component: ExtractedComponent;
   onClick: () => void;
   isSelected?: boolean;
-  isSelectionMode?: boolean;
   onToggleSelect?: () => void;
 }) {
   const { showSuccess } = useSnackbar();
+  const [isHovered, setIsHovered] = useState(false);
+
+  // Show checkbox on hover or when selected
+  const showCheckbox = isHovered || isSelected;
 
   const copyHTML = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -196,6 +197,8 @@ function ComponentCard({
 
   return (
     <Card
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
       sx={{
         height: '100%',
         cursor: 'pointer',
@@ -204,7 +207,7 @@ function ComponentCard({
         borderColor: isSelected ? 'primary.main' : 'divider',
         backgroundColor: isSelected ? 'primary.50' : 'background.paper',
       }}
-      onClick={isSelectionMode ? () => onToggleSelect?.() : onClick}
+      onClick={onClick}
     >
       <Box
         sx={{
@@ -218,8 +221,8 @@ function ComponentCard({
       >
         <ComponentPreview component={component} />
 
-        {/* Selection checkbox */}
-        {isSelectionMode && (
+        {/* Selection checkbox - visible on hover or when selected */}
+        <Fade in={showCheckbox} timeout={200}>
           <Checkbox
             checked={isSelected}
             onClick={handleCheckboxClick}
@@ -233,7 +236,7 @@ function ComponentCard({
               '&:hover': { backgroundColor: 'grey.100' },
             }}
           />
-        )}
+        </Fade>
 
         {/* Status badge */}
         {status !== 'pending' && (
@@ -243,11 +246,12 @@ function ComponentCard({
             sx={{
               position: 'absolute',
               top: 8,
-              left: isSelectionMode ? 40 : 8,
+              left: showCheckbox ? 40 : 8,
               backgroundColor: statusInfo.bg,
               color: statusInfo.text,
               fontSize: '0.65rem',
               height: 20,
+              transition: 'left 0.2s ease',
             }}
           />
         )}
@@ -641,8 +645,6 @@ export function Components() {
     extractionProgress,
     // Batch selection
     selectedIds,
-    isSelectionMode,
-    toggleSelectionMode,
     toggleComponentSelection,
     selectAllComponents,
     clearSelection,
@@ -798,17 +800,6 @@ export function Components() {
                 <List size={18} />
               </ToggleButton>
             </ToggleButtonGroup>
-            {components.length > 0 && (
-              <Button
-                size="small"
-                variant={isSelectionMode ? 'contained' : 'outlined'}
-                color={isSelectionMode ? 'primary' : 'inherit'}
-                startIcon={<SelectionAll size={18} />}
-                onClick={toggleSelectionMode}
-              >
-                {isSelectionMode ? 'Exit Selection' : 'Select'}
-              </Button>
-            )}
             <Button
               variant="contained"
               startIcon={
@@ -873,96 +864,6 @@ export function Components() {
         )}
       </Box>
 
-      {/* Batch action toolbar */}
-      {isSelectionMode && (
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 2,
-            mb: 2,
-            p: 1.5,
-            backgroundColor: 'primary.50',
-            borderRadius: 2,
-            border: '1px solid',
-            borderColor: 'primary.200',
-          }}
-        >
-          <Checkbox
-            checked={selectedIds.length === filteredComponents.length && filteredComponents.length > 0}
-            indeterminate={selectedIds.length > 0 && selectedIds.length < filteredComponents.length}
-            onChange={(e) => {
-              if (e.target.checked) {
-                selectAllComponents(filteredComponents.map((c) => c.id));
-              } else {
-                clearSelection();
-              }
-            }}
-          />
-          <Typography variant="body2" sx={{ fontWeight: 500 }}>
-            {selectedIds.length > 0
-              ? `${selectedIds.length} selected`
-              : 'Select components'}
-          </Typography>
-
-          {selectedIds.length > 0 && (
-            <>
-              <Box sx={{ flex: 1 }} />
-              <Tooltip title="Approve selected">
-                <IconButton
-                  size="small"
-                  color="success"
-                  onClick={() => {
-                    approveSelectedComponents();
-                    showSuccess(`Approved ${selectedIds.length} components`);
-                  }}
-                >
-                  <CheckCircle size={20} weight="fill" />
-                </IconButton>
-              </Tooltip>
-              <Tooltip title="Reject selected">
-                <IconButton
-                  size="small"
-                  color="error"
-                  onClick={() => {
-                    rejectSelectedComponents();
-                    showSuccess(`Rejected ${selectedIds.length} components`);
-                  }}
-                >
-                  <XCircle size={20} weight="fill" />
-                </IconButton>
-              </Tooltip>
-              <Tooltip title="Mark as needs fix">
-                <IconButton
-                  size="small"
-                  color="warning"
-                  onClick={() => {
-                    markSelectedAsNeedsFix();
-                    showSuccess(`Marked ${selectedIds.length} components as needs fix`);
-                  }}
-                >
-                  <Wrench size={20} weight="fill" />
-                </IconButton>
-              </Tooltip>
-              <Box sx={{ width: 1, height: 24, bgcolor: 'divider', mx: 1 }} />
-              <Tooltip title="Delete selected">
-                <IconButton
-                  size="small"
-                  color="error"
-                  onClick={() => {
-                    const count = selectedIds.length;
-                    deleteSelectedComponents();
-                    showSuccess(`Deleted ${count} components`);
-                  }}
-                >
-                  <Trash size={20} weight="fill" />
-                </IconButton>
-              </Tooltip>
-            </>
-          )}
-        </Box>
-      )}
-
       {/* Components Grid */}
       {filteredComponents.length === 0 ? (
         <EmptyState
@@ -993,7 +894,6 @@ export function Components() {
                 component={component}
                 onClick={() => selectComponent(component)}
                 isSelected={selectedIds.includes(component.id)}
-                isSelectionMode={isSelectionMode}
                 onToggleSelect={() => toggleComponentSelection(component.id)}
               />
             </Grid>
@@ -1006,6 +906,62 @@ export function Components() {
         component={selectedComponent}
         open={!!selectedComponent}
         onClose={() => selectComponent(null)}
+      />
+
+      {/* Floating Batch Selection Bar */}
+      <BatchSelectionBar
+        selectedCount={selectedIds.length}
+        totalCount={filteredComponents.length}
+        onSelectAll={() => {
+          if (selectedIds.length === filteredComponents.length) {
+            clearSelection();
+          } else {
+            selectAllComponents(filteredComponents.map((c) => c.id));
+          }
+        }}
+        onClearSelection={clearSelection}
+        actions={[
+          {
+            label: 'Approve',
+            icon: <CheckCircle size={18} weight="fill" />,
+            color: 'success',
+            onClick: () => {
+              const count = selectedIds.length;
+              approveSelectedComponents();
+              showSuccess(`Approved ${count} components`);
+            },
+          },
+          {
+            label: 'Reject',
+            icon: <XCircle size={18} weight="fill" />,
+            color: 'error',
+            onClick: () => {
+              const count = selectedIds.length;
+              rejectSelectedComponents();
+              showSuccess(`Rejected ${count} components`);
+            },
+          },
+          {
+            label: 'Needs Fix',
+            icon: <Wrench size={18} weight="fill" />,
+            color: 'warning',
+            onClick: () => {
+              const count = selectedIds.length;
+              markSelectedAsNeedsFix();
+              showSuccess(`Marked ${count} components as needs fix`);
+            },
+          },
+          {
+            label: 'Delete',
+            icon: <Trash size={18} weight="fill" />,
+            color: 'error',
+            onClick: () => {
+              const count = selectedIds.length;
+              deleteSelectedComponents();
+              showSuccess(`Deleted ${count} components`);
+            },
+          },
+        ]}
       />
     </Box>
   );

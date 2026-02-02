@@ -46,7 +46,6 @@ interface ComponentsState {
 
   // Batch selection state
   selectedIds: string[];
-  isSelectionMode: boolean;
 
   // Actions
   setSearchQuery: (query: string) => void;
@@ -70,7 +69,6 @@ interface ComponentsState {
   clearComponents: () => void;
 
   // Batch selection actions
-  toggleSelectionMode: () => void;
   toggleComponentSelection: (id: string) => void;
   selectAllComponents: (ids: string[]) => void;
   clearSelection: () => void;
@@ -85,19 +83,24 @@ interface ComponentsState {
 
 // Convert LLM extracted component to store component
 function convertLLMComponent(comp: ExtractedComponentLLM): ExtractedComponent {
+  // Filter out invalid variants that don't have required fields
+  const validVariants = comp.variants?.filter(
+    (v) => v && typeof v.name === 'string' && v.name.length > 0
+  );
+
   return {
     id: comp.id,
-    name: comp.name,
-    category: comp.category,
-    description: comp.description,
-    sourceScreen: comp.sourceScreenIds[0] || 'unknown',
-    sourceScreenIds: comp.sourceScreenIds,
-    extractedAt: comp.extractedAt,
+    name: comp.name || 'Unnamed Component',
+    category: comp.category || 'other',
+    description: comp.description || '',
+    sourceScreen: comp.sourceScreenIds?.[0] || 'unknown',
+    sourceScreenIds: comp.sourceScreenIds || [],
+    extractedAt: comp.extractedAt || new Date().toISOString(),
     tags: generateTags(comp),
-    html: comp.html,
-    css: comp.css,
-    occurrences: comp.occurrences,
-    variants: comp.variants,
+    html: comp.html || '',
+    css: comp.css || '',
+    occurrences: comp.occurrences || 1,
+    variants: validVariants,
     props: comp.props,
     generatedBy: 'llm',
   };
@@ -125,8 +128,9 @@ function generateTags(comp: ExtractedComponentLLM): string[] {
   if (comp.variants && comp.variants.length > 0) {
     tags.push('has-variants');
     comp.variants.forEach((v) => {
-      if (v.name.toLowerCase().includes('hover')) tags.push('interactive');
-      if (v.name.toLowerCase().includes('disabled')) tags.push('has-disabled');
+      const variantName = v?.name?.toLowerCase() || '';
+      if (variantName.includes('hover')) tags.push('interactive');
+      if (variantName.includes('disabled')) tags.push('has-disabled');
     });
   }
 
@@ -155,8 +159,8 @@ function deduplicateStoredComponents(components: ExtractedComponent[]): Extracte
       }
       // Merge variants
       if (comp.variants) {
-        const existingVariantNames = new Set(existing.variants?.map((v) => v.name.toLowerCase()) || []);
-        const newVariants = comp.variants.filter((v) => !existingVariantNames.has(v.name.toLowerCase()));
+        const existingVariantNames = new Set(existing.variants?.map((v) => v?.name?.toLowerCase() || '') || []);
+        const newVariants = comp.variants.filter((v) => !existingVariantNames.has(v?.name?.toLowerCase() || ''));
         existing.variants = [...(existing.variants || []), ...newVariants];
       }
     } else {
@@ -185,7 +189,6 @@ export const useComponentsStore = create<ComponentsState>()(
 
       // Batch selection state
       selectedIds: [],
-      isSelectionMode: false,
 
       setSearchQuery: (query) => set({ searchQuery: query }),
 
@@ -251,22 +254,22 @@ export const useComponentsStore = create<ComponentsState>()(
               onProgress: (progress) => {
                 set({ extractionProgress: progress });
               },
-              // Progressive loading: add components as they're found
+              // Progressive loading: add components as they're found (with immediate dedup)
               onComponentsFound: (newComponents, screenName) => {
                 const converted = newComponents.map(convertLLMComponent);
                 const current = get().components;
-                console.log(`[ComponentsStore] Progressive load: +${converted.length} components from "${screenName}"`);
-                set({ components: [...current, ...converted] });
+                // Deduplicate immediately when adding to prevent visible duplicates
+                const merged = deduplicateStoredComponents([...current, ...converted]);
+                console.log(`[ComponentsStore] +${converted.length} from "${screenName}" → ${merged.length} total (deduplicated)`);
+                set({ components: merged });
               },
             }
           );
 
-          // Final deduplication pass (components were added progressively)
-          const allComponents = get().components;
-          const deduped = deduplicateStoredComponents(allComponents);
+          // Components already deduplicated progressively - just finalize state
+          const finalComponents = get().components;
 
           set({
-            components: deduped,
             isExtracting: false,
             extractionProgress: null,
             lastExtractionTime: new Date().toISOString(),
@@ -278,7 +281,7 @@ export const useComponentsStore = create<ComponentsState>()(
           }
 
           return {
-            extractedCount: deduped.length,
+            extractedCount: finalComponents.length,
             totalScreens: screensWithHtml.length,
             failedScreens: result.errors.length,
             errors: result.errors,
@@ -300,16 +303,9 @@ export const useComponentsStore = create<ComponentsState>()(
           lastExtractionProvider: null,
           lastExtractionModel: null,
           selectedIds: [],
-          isSelectionMode: false,
         }),
 
       // Batch selection actions
-      toggleSelectionMode: () =>
-        set((state) => ({
-          isSelectionMode: !state.isSelectionMode,
-          selectedIds: state.isSelectionMode ? [] : state.selectedIds,
-        })),
-
       toggleComponentSelection: (id) =>
         set((state) => ({
           selectedIds: state.selectedIds.includes(id)
@@ -326,7 +322,6 @@ export const useComponentsStore = create<ComponentsState>()(
         set((state) => ({
           components: state.components.filter((c) => !state.selectedIds.includes(c.id)),
           selectedIds: [],
-          isSelectionMode: false,
         })),
 
       approveSelectedComponents: () =>
