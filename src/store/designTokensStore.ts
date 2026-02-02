@@ -15,7 +15,7 @@ import {
   updateTokensStatus,
   deleteDesignTokens,
   clearAllDesignTokens,
-  upsertDesignTokens,
+  replaceAllDesignTokens,
   type DesignToken,
   type TokenCategory,
   type TokenStatus,
@@ -376,9 +376,9 @@ export const useDesignTokensStore = create<DesignTokensState>()(
           const deduped = deduplicateTokens(allTokens);
           console.log(`[DesignTokensStore] Extracted ${deduped.length} unique tokens from ${screens.length} screens`);
 
-          // Save to Supabase (upsert to merge with existing)
+          // Save to Supabase (replace all to ensure clean state)
           if (isSupabaseConfigured()) {
-            const savedTokens = await upsertDesignTokens(deduped);
+            const savedTokens = await replaceAllDesignTokens(deduped);
             set({
               tokens: savedTokens,
               isExtracting: false,
@@ -386,15 +386,13 @@ export const useDesignTokensStore = create<DesignTokensState>()(
             });
             return savedTokens;
           } else {
-            // Local only - merge with existing
-            const current = get().tokens;
-            const merged = deduplicateTokens([...current, ...deduped]);
+            // Local only - replace all tokens
             set({
-              tokens: merged,
+              tokens: deduped,
               isExtracting: false,
               lastExtractionTime: new Date().toISOString(),
             });
-            return merged;
+            return deduped;
           }
         } catch (error) {
           console.error('[DesignTokensStore] Error extracting tokens:', error);

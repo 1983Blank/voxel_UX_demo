@@ -355,6 +355,52 @@ export async function clearAllDesignTokens(): Promise<void> {
 }
 
 /**
+ * Replace all design tokens (clear and re-insert)
+ * Use this for extraction to ensure clean state
+ */
+export async function replaceAllDesignTokens(
+  tokens: DesignToken[],
+  options?: {
+    extractionSessionId?: string;
+  }
+): Promise<DesignToken[]> {
+  if (!isSupabaseConfigured()) {
+    return tokens;
+  }
+
+  const user = useAuthStore.getState().supabaseUser;
+  if (!user) {
+    return tokens;
+  }
+
+  // First, clear all existing tokens
+  await clearAllDesignTokens();
+
+  // Then insert all new tokens
+  if (tokens.length > 0) {
+    const inserts: TokenInsert[] = tokens.map((t) => ({
+      ...toDbFormat(t, user.id),
+      extraction_session_id: options?.extractionSessionId || null,
+    }));
+
+    const { data, error } = await supabase
+      .from('design_tokens')
+      .insert(inserts)
+      .select();
+
+    if (error) {
+      console.error('[DesignTokensPersistence] Error inserting tokens:', error);
+      throw error;
+    }
+
+    console.log(`[DesignTokensPersistence] Replaced all tokens with ${data?.length || 0} new tokens`);
+    return (data || []).map(fromDbFormat);
+  }
+
+  return [];
+}
+
+/**
  * Get design token statistics by category
  */
 export async function getDesignTokenStats(): Promise<{
