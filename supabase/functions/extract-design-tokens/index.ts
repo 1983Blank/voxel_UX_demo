@@ -158,10 +158,12 @@ function parseTokensResponse(response: string, rawTokens: RawToken[]): Classifie
 
   try {
     const parsed = JSON.parse(jsonStr)
+    console.log('[extract-design-tokens] Parsed JSON type:', typeof parsed, 'isArray:', Array.isArray(parsed))
     if (!Array.isArray(parsed)) {
-      console.error('[extract-design-tokens] Response is not an array')
+      console.error('[extract-design-tokens] Response is not an array, got:', typeof parsed)
       return []
     }
+    console.log('[extract-design-tokens] Parsed array length:', parsed.length)
 
     // Create a map of raw tokens for usage count lookup
     const rawTokenMap = new Map<string, number>()
@@ -170,7 +172,7 @@ function parseTokensResponse(response: string, rawTokens: RawToken[]): Classifie
     })
 
     // Validate and enhance each token
-    return parsed.map((token: Partial<ClassifiedToken>) => ({
+    const result = parsed.map((token: Partial<ClassifiedToken>) => ({
       type: token.type || 'color',
       value: token.value || '',
       name: token.name || 'Unnamed Token',
@@ -180,6 +182,9 @@ function parseTokensResponse(response: string, rawTokens: RawToken[]): Classifie
       usageCount: rawTokenMap.get(`${token.type}:${token.value}`) || 1,
       cssVariable: token.cssVariable,
     })).filter((t: ClassifiedToken) => t.value && t.value.length > 0)
+
+    console.log('[extract-design-tokens] Filtered result length:', result.length)
+    return result
   } catch (error) {
     console.error('[extract-design-tokens] Failed to parse response:', error)
     console.error('[extract-design-tokens] Response was:', jsonStr.slice(0, 500))
@@ -192,7 +197,8 @@ async function extractWithAnthropic(
   apiKey: string,
   model: string,
   prompt: string,
-  screenshotBase64: string
+  screenshotBase64: string,
+  rawTokens: RawToken[]
 ): Promise<ClassifiedToken[]> {
   console.log('[extract-design-tokens] Calling Anthropic API with vision')
 
@@ -234,7 +240,8 @@ async function extractWithAnthropic(
 
   const data = await response.json()
   const responseText = data.content[0]?.text || ''
-  return parseTokensResponse(responseText, [])
+  console.log('[extract-design-tokens] Anthropic response length:', responseText.length)
+  return parseTokensResponse(responseText, rawTokens)
 }
 
 // Extract with OpenAI GPT-4 Vision
@@ -242,7 +249,8 @@ async function extractWithOpenAI(
   apiKey: string,
   model: string,
   prompt: string,
-  screenshotBase64: string
+  screenshotBase64: string,
+  rawTokens: RawToken[]
 ): Promise<ClassifiedToken[]> {
   console.log('[extract-design-tokens] Calling OpenAI API with vision')
 
@@ -283,7 +291,8 @@ async function extractWithOpenAI(
 
   const data = await response.json()
   const responseText = data.choices[0]?.message?.content || ''
-  return parseTokensResponse(responseText, [])
+  console.log('[extract-design-tokens] OpenAI response length:', responseText.length)
+  return parseTokensResponse(responseText, rawTokens)
 }
 
 // Extract with Google Gemini
@@ -291,7 +300,8 @@ async function extractWithGoogle(
   apiKey: string,
   model: string,
   prompt: string,
-  screenshotBase64: string
+  screenshotBase64: string,
+  rawTokens: RawToken[]
 ): Promise<ClassifiedToken[]> {
   console.log('[extract-design-tokens] Calling Google Gemini API with vision')
 
@@ -326,7 +336,8 @@ async function extractWithGoogle(
 
   const data = await response.json()
   const responseText = data.candidates?.[0]?.content?.parts?.[0]?.text || ''
-  return parseTokensResponse(responseText, [])
+  console.log('[extract-design-tokens] Google response length:', responseText.length)
+  return parseTokensResponse(responseText, rawTokens)
 }
 
 Deno.serve(async (req) => {
@@ -415,17 +426,19 @@ Deno.serve(async (req) => {
 
     switch (keyConfig.provider) {
       case 'anthropic':
-        tokens = await extractWithAnthropic(apiKey, modelToUse, prompt, screenshotBase64)
+        tokens = await extractWithAnthropic(apiKey, modelToUse, prompt, screenshotBase64, body.rawTokens)
         break
       case 'openai':
-        tokens = await extractWithOpenAI(apiKey, modelToUse, prompt, screenshotBase64)
+        tokens = await extractWithOpenAI(apiKey, modelToUse, prompt, screenshotBase64, body.rawTokens)
         break
       case 'google':
-        tokens = await extractWithGoogle(apiKey, modelToUse, prompt, screenshotBase64)
+        tokens = await extractWithGoogle(apiKey, modelToUse, prompt, screenshotBase64, body.rawTokens)
         break
       default:
         throw new Error(`Unsupported provider: ${keyConfig.provider}`)
     }
+
+    console.log('[extract-design-tokens] Tokens extracted:', tokens.length)
 
     const durationMs = Date.now() - startTime
     console.log('[extract-design-tokens] Classified', tokens.length, 'tokens in', durationMs, 'ms')

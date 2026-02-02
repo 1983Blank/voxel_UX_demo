@@ -570,6 +570,10 @@ export const useDesignTokensStore = create<DesignTokensState>()(
             }))
           );
 
+          console.log('[DesignTokensStore] LLM returned classifiedTokens:', classifiedTokens.length);
+          if (classifiedTokens.length > 0) {
+            console.log('[DesignTokensStore] Sample token:', JSON.stringify(classifiedTokens[0]));
+          }
           onProgress?.(80, `Classified ${classifiedTokens.length} tokens, saving...`);
 
           // Step 4: Convert ClassifiedTokens to DesignTokens
@@ -593,13 +597,19 @@ export const useDesignTokensStore = create<DesignTokensState>()(
           console.log(`[DesignTokensStore] LLM classified ${designTokens.length} tokens`);
 
           // Step 5: Save to Supabase
+          console.log('[DesignTokensStore] Saving', designTokens.length, 'design tokens to Supabase');
           if (isSupabaseConfigured()) {
             const savedTokens = await replaceAllDesignTokens(designTokens);
+            console.log('[DesignTokensStore] Saved tokens returned:', savedTokens.length);
+            if (savedTokens.length > 0) {
+              console.log('[DesignTokensStore] Sample saved token:', JSON.stringify(savedTokens[0]));
+            }
             set({
               tokens: savedTokens,
               isExtracting: false,
               lastExtractionTime: new Date().toISOString(),
             });
+            console.log('[DesignTokensStore] State updated with', savedTokens.length, 'tokens');
             onProgress?.(100, 'Done!');
             return savedTokens;
           } else {

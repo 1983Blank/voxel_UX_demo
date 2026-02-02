@@ -126,12 +126,14 @@ function fromDbFormat(row: DbDesignToken): DesignToken {
  * Fetch all design tokens for the current user
  */
 export async function fetchDesignTokens(): Promise<DesignToken[]> {
+  console.log('[DesignTokensPersistence] fetchDesignTokens called');
   if (!isSupabaseConfigured()) {
     console.warn('[DesignTokensPersistence] Supabase not configured');
     return [];
   }
 
   const user = useAuthStore.getState().supabaseUser;
+  console.log('[DesignTokensPersistence] User:', user?.id || 'null');
   if (!user) {
     console.warn('[DesignTokensPersistence] No authenticated user');
     return [];
@@ -149,7 +151,10 @@ export async function fetchDesignTokens(): Promise<DesignToken[]> {
     throw error;
   }
 
-  return (data || []).map(fromDbFormat);
+  console.log('[DesignTokensPersistence] Fetched', data?.length || 0, 'rows from Supabase');
+  const result = (data || []).map(fromDbFormat);
+  console.log('[DesignTokensPersistence] Converted to', result.length, 'tokens');
+  return result;
 }
 
 /**
@@ -378,10 +383,12 @@ export async function replaceAllDesignTokens(
 
   // Then insert all new tokens
   if (tokens.length > 0) {
+    console.log(`[DesignTokensPersistence] Preparing to insert ${tokens.length} tokens`);
     const inserts: TokenInsert[] = tokens.map((t) => ({
       ...toDbFormat(t, user.id),
       extraction_session_id: options?.extractionSessionId || null,
     }));
+    console.log(`[DesignTokensPersistence] Insert payload ready, first item:`, JSON.stringify(inserts[0]));
 
     const { data, error } = await supabase
       .from('design_tokens')
@@ -393,8 +400,13 @@ export async function replaceAllDesignTokens(
       throw error;
     }
 
-    console.log(`[DesignTokensPersistence] Replaced all tokens with ${data?.length || 0} new tokens`);
-    return (data || []).map(fromDbFormat);
+    console.log(`[DesignTokensPersistence] Insert response - data length: ${data?.length || 0}`);
+    if (data && data.length > 0) {
+      console.log(`[DesignTokensPersistence] First returned row:`, JSON.stringify(data[0]));
+    }
+    const result = (data || []).map(fromDbFormat);
+    console.log(`[DesignTokensPersistence] Converted result length: ${result.length}`);
+    return result;
   }
 
   return [];

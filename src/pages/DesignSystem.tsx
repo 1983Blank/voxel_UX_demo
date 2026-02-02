@@ -783,6 +783,7 @@ export const DesignSystem: React.FC = () => {
   // Convert stored tokens to design system format for display
   // Runs after tokens are initialized from Supabase or after extraction completes
   useEffect(() => {
+    console.log('[DesignSystem] useEffect triggered - isLoadingTokens:', isLoadingTokens, 'isStoreExtracting:', isStoreExtracting, 'isTokensInitialized:', isTokensInitialized, 'tokens.length:', tokens.length);
     // Skip while extracting or loading
     if (isLoadingTokens || isStoreExtracting) return;
     if (!isTokensInitialized) return;
@@ -790,22 +791,42 @@ export const DesignSystem: React.FC = () => {
     // If we have tokens, convert them to display format
     // Always rebuild to ensure we show current state from store
     if (tokens.length > 0) {
+      console.log('[DesignSystem] Converting', tokens.length, 'tokens to display format');
       const colorTokens = tokens.filter(t => t.category === 'color');
+      console.log('[DesignSystem] Color tokens:', colorTokens.length);
       const typographyTokens = tokens.filter(t => t.category === 'typography');
       const spacingTokens = tokens.filter(t => t.category === 'spacing');
       const borderRadiusTokens = tokens.filter(t => t.category === 'border-radius');
       const shadowTokens = tokens.filter(t => t.category === 'shadow');
 
       // Map tokens to legacy format for backward compatibility
-      const colors: ExtractedColor[] = colorTokens.map(t => ({
-        id: t.id,
-        hex: t.value,
-        rgb: `rgb(${parseInt(t.value.slice(1, 3), 16)}, ${parseInt(t.value.slice(3, 5), 16)}, ${parseInt(t.value.slice(5, 7), 16)})`,
-        count: t.usageCount,
-        usage: 'text' as const,
-        label: t.name,
-        approved: t.status === 'approved',
-      }));
+      const colors: ExtractedColor[] = colorTokens.map(t => {
+        // Safely parse hex color to RGB
+        let rgb = 'rgb(0, 0, 0)';
+        try {
+          const hex = t.value.startsWith('#') ? t.value : `#${t.value}`;
+          if (hex.length >= 7) {
+            const r = parseInt(hex.slice(1, 3), 16);
+            const g = parseInt(hex.slice(3, 5), 16);
+            const b = parseInt(hex.slice(5, 7), 16);
+            if (!isNaN(r) && !isNaN(g) && !isNaN(b)) {
+              rgb = `rgb(${r}, ${g}, ${b})`;
+            }
+          }
+        } catch (e) {
+          console.warn('[DesignSystem] Failed to parse color:', t.value);
+        }
+        return {
+          id: t.id,
+          hex: t.value.startsWith('#') ? t.value : `#${t.value}`,
+          rgb,
+          count: t.usageCount,
+          usage: 'text' as const,
+          label: t.name,
+          approved: t.status === 'approved',
+        };
+      });
+      console.log('[DesignSystem] Converted colors:', colors.length);
 
       const fonts: ExtractedFont[] = [];
       const fontFamilyMap = new Map<string, ExtractedFont>();
@@ -835,16 +856,19 @@ export const DesignSystem: React.FC = () => {
         approved: t.status === 'approved',
       }));
 
-      setDesignSystem({
+      const newDesignSystem = {
         colors,
         fonts,
         spacing,
         borderRadius: borderRadiusTokens.map(t => t.value),
         shadows: shadowTokens.map(t => t.value),
         lastUpdated: lastExtractionTime || new Date().toISOString(),
-      });
+      };
+      console.log('[DesignSystem] Setting designSystem with', colors.length, 'colors,', fonts.length, 'fonts');
+      setDesignSystem(newDesignSystem);
     } else {
       // No tokens exist - set empty design system so we show empty state
+      console.log('[DesignSystem] No tokens, setting empty designSystem');
       setDesignSystem({
         colors: [],
         fonts: [],
