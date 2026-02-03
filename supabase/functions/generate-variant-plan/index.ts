@@ -108,6 +108,9 @@ function buildPlanPrompt(request: GeneratePlanRequest): string {
 function repairJson(json: string): string {
   let repaired = json
 
+  // Remove any control characters except \n, \r, \t (do this first)
+  repaired = repaired.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '')
+
   // Remove trailing commas before } or ]
   repaired = repaired.replace(/,(\s*[}\]])/g, '$1')
 
@@ -115,25 +118,35 @@ function repairJson(json: string): string {
   // Look for patterns like "text" "text" (missing comma between strings)
   repaired = repaired.replace(/"(\s*)"(?=[^:,\]}])/g, '", "')
 
-  // Fix missing commas between object properties
-  // Look for patterns like "value"\n"key": (missing comma)
-  repaired = repaired.replace(/("|\d+|true|false|null)\s*\n\s*"/g, '$1,\n"')
+  // Fix missing commas between object properties - multiple patterns
+  // Pattern 1: "value"\n"key": (missing comma after string value)
+  repaired = repaired.replace(/(")\s*\n\s*(")/g, '$1,\n$2')
+
+  // Pattern 2: value (number/bool/null) followed by "key"
+  repaired = repaired.replace(/(\d+|true|false|null)\s*\n\s*"/g, '$1,\n"')
+
+  // Pattern 3: ] followed by "key" (end of array, then next property)
+  repaired = repaired.replace(/\]\s*\n\s*"/g, '],\n"')
+
+  // Pattern 4: } followed by { (objects in array without comma)
+  repaired = repaired.replace(/}\s*\n\s*{/g, '},\n{')
+
+  // Pattern 5: } followed by "key" (end of object, then next property in parent)
+  repaired = repaired.replace(/}\s*\n\s*"/g, '},\n"')
 
   // Fix unescaped newlines in strings (common LLM issue)
-  // This is tricky - we need to be inside a string value
-  repaired = repaired.replace(/:\s*"([^"]*)\n([^"]*)"/g, (_match, before, after) => {
-    return `: "${before}\\n${after}"`
+  // Find strings after colons and escape newlines within them
+  repaired = repaired.replace(/:\s*"([^"]*)"/g, (match, content) => {
+    const escaped = content.replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t')
+    return `: "${escaped}"`
   })
 
   // Fix unescaped quotes inside strings (very common)
-  // Look for patterns like "text "quoted" text"
-  repaired = repaired.replace(/"([^"]*)"([^",:}\]\s]+)"([^"]*)"/g, '"$1\\"$2\\"$3"')
+  // This is tricky - look for patterns suggesting unescaped quotes mid-string
+  repaired = repaired.replace(/:\s*"([^"]*)"([^",:\[\]{}]+)"([^"]*)"/g, ': "$1\\"$2\\"$3"')
 
   // Fix single quotes used instead of double quotes for property values
   repaired = repaired.replace(/:\s*'([^']*)'/g, ': "$1"')
-
-  // Remove any control characters except \n, \r, \t
-  repaired = repaired.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '')
 
   // Fix truncated strings at the end (add closing quote if missing)
   if (repaired.match(/"[^"]*$/)) {
