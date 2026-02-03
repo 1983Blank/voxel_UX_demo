@@ -83,6 +83,7 @@ import {
   UsersThree,
   Plus,
   Play,
+  Stop,
 } from '@phosphor-icons/react';
 
 import { useSnackbar } from '@/components/SnackbarProvider';
@@ -139,6 +140,7 @@ import {
   buildAgentProgressFromCheckpoint,
   type CheckpointData,
 } from '@/services/generationCheckpointService';
+import { GenerationAbortedError } from '@/services/agentOrchestrationService';
 import {
   type StartServerGenerationParams,
 } from '@/services/serverGenerationService';
@@ -1463,6 +1465,9 @@ export const VibePrototyping: React.FC = () => {
   const [useLLMEnhancement] = useState(true); // Use LLM for smart interactivity (vs quick/default)
   const [shouldBuildAfterSkip, setShouldBuildAfterSkip] = useState(false); // Trigger build after skipping wireframes
 
+  // Generation abort controller - allows stopping generation to save LLM costs
+  const generationAbortControllerRef = useRef<AbortController | null>(null);
+
   // Screen name editing
   const [isEditingName, setIsEditingName] = useState(false);
   const [editedName, setEditedName] = useState('');
@@ -2473,57 +2478,68 @@ export const VibePrototyping: React.FC = () => {
           // Reset agent progress
           setAgentProgress([]);
 
-          await generateInteractivePrototypesWithAgent(
-            currentSession.id,
-            plan.plans,
-            screen.editedHtml,
-            // Basic progress callback (backwards compatibility)
-            (p) => {
-              // Map the stage to vibeStore compatible stage
-              const stageMap: Record<string, 'analyzing' | 'generating' | 'complete'> = {
-                'preparing': 'analyzing',
-                'analyzing': 'analyzing',
-                'generating': 'generating',
-                'complete': 'complete',
-                'failed': 'generating',
-              };
-              setProgress({
-                stage: stageMap[p.stage] || 'generating',
-                message: p.message,
-                percent: p.percent,
-                variantIndex: p.variantIndex,
-              });
+          // Create AbortController for cancellation support
+          const abortController = new AbortController();
+          generationAbortControllerRef.current = abortController;
 
-              if (p.variantIndex) {
-                setVariantStartTimes((prev) => {
-                  if (!prev[p.variantIndex!]) {
-                    return { ...prev, [p.variantIndex!]: Date.now() };
-                  }
-                  return prev;
+          try {
+            await generateInteractivePrototypesWithAgent(
+              currentSession.id,
+              plan.plans,
+              screen.editedHtml,
+              // Basic progress callback (backwards compatibility)
+              (p) => {
+                // Map the stage to vibeStore compatible stage
+                const stageMap: Record<string, 'analyzing' | 'generating' | 'complete'> = {
+                  'preparing': 'analyzing',
+                  'analyzing': 'analyzing',
+                  'generating': 'generating',
+                  'complete': 'complete',
+                  'failed': 'generating',
+                };
+                setProgress({
+                  stage: stageMap[p.stage] || 'generating',
+                  message: p.message,
+                  percent: p.percent,
+                  variantIndex: p.variantIndex,
                 });
-              }
-            },
-            // Agent progress callback (granular step-by-step)
-            (progressList) => {
-              setAgentProgress(progressList);
-              // Also update prototype store for persistence
-              usePrototypeStore.getState().setAgentProgress(progressList);
-            },
-            // Variant complete callback - update preview with generated HTML
-            (result) => {
-              setCompletedVariantIndices((prev) => new Set([...prev, result.variantIndex]));
-              // Extract index.html content for streaming preview
-              const indexHtml = result.files.find(f => f.path === 'index.html');
-              if (indexHtml) {
-                setStreamingHtml((prev) => ({
-                  ...prev,
-                  [result.variantIndex]: indexHtml.content,
-                }));
-              }
-              console.log('[VibePrototyping] Variant complete:', result.variantIndex, 'files:', result.files.length, 'indexHtml length:', indexHtml?.content?.length || 0);
-            },
-            screenshot
-          );
+
+                if (p.variantIndex) {
+                  setVariantStartTimes((prev) => {
+                    if (!prev[p.variantIndex!]) {
+                      return { ...prev, [p.variantIndex!]: Date.now() };
+                    }
+                    return prev;
+                  });
+                }
+              },
+              // Agent progress callback (granular step-by-step)
+              (progressList) => {
+                setAgentProgress(progressList);
+                // Also update prototype store for persistence
+                usePrototypeStore.getState().setAgentProgress(progressList);
+              },
+              // Variant complete callback - update preview with generated HTML
+              (result) => {
+                setCompletedVariantIndices((prev) => new Set([...prev, result.variantIndex]));
+                // Extract index.html content for streaming preview
+                const indexHtml = result.files.find(f => f.path === 'index.html');
+                if (indexHtml) {
+                  setStreamingHtml((prev) => ({
+                    ...prev,
+                    [result.variantIndex]: indexHtml.content,
+                  }));
+                }
+                console.log('[VibePrototyping] Variant complete:', result.variantIndex, 'files:', result.files.length, 'indexHtml length:', indexHtml?.content?.length || 0);
+              },
+              screenshot,
+              undefined, // designTokens
+              { abortSignal: abortController.signal } // config with abort signal
+            );
+          } finally {
+            // Clear the abort controller when done
+            generationAbortControllerRef.current = null;
+          }
         }
 
       // Fetch from database for UI consistency
@@ -2542,6 +2558,16 @@ export const VibePrototyping: React.FC = () => {
       console.error('[VibePrototyping] Error generating variants:', err);
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';
       console.error('[VibePrototyping] Error details:', errorMessage);
+
+      // Check if generation was stopped by user
+      if (err instanceof GenerationAbortedError || (err instanceof Error && err.name === 'AbortError')) {
+        console.log('[VibePrototyping] Generation was stopped by user');
+        setStatus('wireframe_ready');
+        setProgress(null);
+        addChatMessage('assistant', 'Generation stopped. You can restart or modify your request.');
+        showSuccess('Generation stopped successfully');
+        return;
+      }
 
       // Check if this is an API key error - show retry dialog
       if (err instanceof GenerationError && err.code === 'API_KEY_MISSING') {
@@ -2567,6 +2593,15 @@ export const VibePrototyping: React.FC = () => {
       }
     }
   }, [currentSession, plan, sourceMetadata, screenScreenshot, wireframes, contextFiles, selectedProvider, selectedModel, addChatMessage, setVariants, setStatus, setProgress, setError, debouncedSavePartialHtml, showError, showSuccess, screen]);
+
+  // Handle Stop Generation - abort ongoing generation to save LLM costs
+  const handleStopGeneration = useCallback(() => {
+    if (generationAbortControllerRef.current) {
+      console.log('[VibePrototyping] Stopping generation...');
+      generationAbortControllerRef.current.abort();
+      generationAbortControllerRef.current = null;
+    }
+  }, []);
 
   // Handle Rebuild - re-run V2 generation for projects that already have wireframes/plans
   const [isRebuilding, setIsRebuilding] = useState(false);
@@ -3408,7 +3443,7 @@ export const VibePrototyping: React.FC = () => {
           </Box>
 
           {/* Fixed Action Bar - Shows primary CTA based on current state */}
-          {(isUnderstandingReady || isPlanReady || isWireframeReady || isComplete) && (
+          {(isUnderstandingReady || isPlanReady || isWireframeReady || isGenerating || isComplete) && (
             <Box
               sx={{
                 p: 1.5,
@@ -3422,6 +3457,25 @@ export const VibePrototyping: React.FC = () => {
                 flexShrink: 0,
               }}
             >
+              {/* Stop button when generating */}
+              {isGenerating && (
+                <Button
+                  variant="outlined"
+                  color="error"
+                  onClick={handleStopGeneration}
+                  size="small"
+                  startIcon={<Stop size={14} weight="fill" />}
+                  sx={{
+                    borderColor: 'error.main',
+                    '&:hover': {
+                      bgcolor: 'error.main',
+                      color: 'white',
+                    },
+                  }}
+                >
+                  Stop Generation
+                </Button>
+              )}
               {isUnderstandingReady && (
                 <>
                   {clarificationInput.trim() && (

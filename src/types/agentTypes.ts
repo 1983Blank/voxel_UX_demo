@@ -207,6 +207,8 @@ export interface OrchestrationConfig {
   maxRetries: number;
   /** Timeout per LLM call in ms */
   timeoutMs: number;
+  /** Optional AbortSignal for cancellation */
+  abortSignal?: AbortSignal;
 }
 
 export const DEFAULT_ORCHESTRATION_CONFIG: OrchestrationConfig = {
@@ -294,6 +296,8 @@ export interface AgentEvents {
   onVariantFail?: (variantIndex: number, error: string) => void;
   /** Called when all variants are done */
   onAllComplete?: (result: OrchestrationResult) => void;
+  /** Called when generation is aborted by user */
+  onAbort?: () => void;
 }
 
 // ============================================================================

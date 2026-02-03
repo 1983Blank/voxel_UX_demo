@@ -53,11 +53,20 @@ const INDEX_TO_APPROACH: Record<number, VariantApproach> = {
 // Edge Function Callers
 // ============================================================================
 
+// Custom error for abort
+export class GenerationAbortedError extends Error {
+  constructor() {
+    super('Generation was stopped by user');
+    this.name = 'GenerationAbortedError';
+  }
+}
+
 async function callGenerateImplementationScript(
   plan: VariantPlan,
   context: GenerationContext,
   approach: VariantApproach,
-  accessToken: string
+  accessToken: string,
+  abortSignal?: AbortSignal
 ): Promise<GenerateScriptResponse> {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
   const functionUrl = `${supabaseUrl}/functions/v1/generate-implementation-script`;
@@ -78,6 +87,7 @@ async function callGenerateImplementationScript(
       provider: context.provider,
       model: context.model,
     }),
+    signal: abortSignal,
   });
 
   if (!response.ok) {
@@ -97,6 +107,7 @@ async function callGeneratePrototypeFile(
   options?: {
     componentName?: string;
     previousFiles?: Array<{ path: string; exports?: string[]; summary?: string }>;
+    abortSignal?: AbortSignal;
   }
 ): Promise<GenerateFileResponse> {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -120,6 +131,7 @@ async function callGeneratePrototypeFile(
       provider: context.provider,
       model: context.model,
     }),
+    signal: options?.abortSignal,
   });
 
   if (!response.ok) {
@@ -180,6 +192,13 @@ function updateStepInProgress(
 // Variant Generation
 // ============================================================================
 
+// Helper to check abort signal
+function checkAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    throw new GenerationAbortedError();
+  }
+}
+
 async function generateVariant(
   plan: VariantPlan,
   context: GenerationContext,
@@ -191,6 +210,10 @@ async function generateVariant(
 ): Promise<{ files: GeneratedFile[]; implementationScript: GenerateScriptResponse }> {
   const variantIndex = plan.variant_index;
   const approach = INDEX_TO_APPROACH[variantIndex] || 'minimal';
+  const abortSignal = config.abortSignal;
+
+  // Check if already aborted before starting
+  checkAborted(abortSignal);
 
   let progress = createInitialProgress(variantIndex, plan, approach);
   progress = updateProgress(progress, { phase: 'script', startedAt: Date.now() });
@@ -222,7 +245,8 @@ async function generateVariant(
   let implementationScript: GenerateScriptResponse;
 
   try {
-    implementationScript = await callGenerateImplementationScript(plan, context, approach, accessToken);
+    checkAborted(abortSignal);
+    implementationScript = await callGenerateImplementationScript(plan, context, approach, accessToken, abortSignal);
 
     // Save checkpoint if enabled (local IndexedDB)
     if (config.enableCheckpoints) {
@@ -292,12 +316,14 @@ async function generateVariant(
 
   const tokensStartTime = Date.now();
   try {
+    checkAborted(abortSignal);
     const tokensResult = await callGeneratePrototypeFile(
       'tokens.css',
       implementationScript,
       approach,
       context,
-      accessToken
+      accessToken,
+      { abortSignal }
     );
     generatedFiles.push({
       path: tokensResult.path,
@@ -350,12 +376,14 @@ async function generateVariant(
 
   const storeStartTime = Date.now();
   try {
+    checkAborted(abortSignal);
     const storeResult = await callGeneratePrototypeFile(
       'store.json',
       implementationScript,
       approach,
       context,
-      accessToken
+      accessToken,
+      { abortSignal }
     );
     generatedFiles.push({
       path: storeResult.path,
@@ -407,12 +435,14 @@ async function generateVariant(
 
   const flowsStartTime = Date.now();
   try {
+    checkAborted(abortSignal);
     const flowsResult = await callGeneratePrototypeFile(
       'flows.json',
       implementationScript,
       approach,
       context,
-      accessToken
+      accessToken,
+      { abortSignal }
     );
     generatedFiles.push({
       path: flowsResult.path,
@@ -473,13 +503,14 @@ async function generateVariant(
 
     const componentStartTime = Date.now();
     try {
+      checkAborted(abortSignal);
       const componentResult = await callGeneratePrototypeFile(
         'component',
         implementationScript,
         approach,
         context,
         accessToken,
-        { componentName, previousFiles }
+        { componentName, previousFiles, abortSignal }
       );
       generatedFiles.push({
         path: componentResult.path,
@@ -547,13 +578,14 @@ async function generateVariant(
 
   const indexStartTime = Date.now();
   try {
+    checkAborted(abortSignal);
     const indexResult = await callGeneratePrototypeFile(
       'index.html',
       implementationScript,
       approach,
       context,
       accessToken,
-      { previousFiles }
+      { previousFiles, abortSignal }
     );
 
     // Prepare the HTML for blob URL preview:
