@@ -881,3 +881,33 @@ function extractFlowsFromPlan(_plan: VariantPlan): Array<{
 export function shouldUseInteractiveMode(): boolean {
   return useVibeStore.getState().prototypeMode === 'interactive';
 }
+
+// ============================================================================
+// Server Orchestration (Feature Flag)
+// ============================================================================
+
+/**
+ * Feature flag for server-side orchestration
+ * When enabled, generation runs on the server and survives page refresh
+ */
+export const USE_SERVER_ORCHESTRATION = false;
+
+/**
+ * Check if server orchestration should be used
+ * Can be overridden by localStorage for testing
+ */
+export function shouldUseServerOrchestration(): boolean {
+  // Check localStorage override first
+  const override = localStorage.getItem('voxel_use_server_orchestration');
+  if (override !== null) {
+    return override === 'true';
+  }
+  return USE_SERVER_ORCHESTRATION;
+}
+
+/**
+ * Enable or disable server orchestration (for testing)
+ */
+export function setServerOrchestrationEnabled(enabled: boolean): void {
+  localStorage.setItem('voxel_use_server_orchestration', enabled ? 'true' : 'false');
+}

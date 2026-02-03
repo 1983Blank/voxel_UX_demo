@@ -89,6 +89,11 @@ interface PrototypeStoreState {
   agentProgress: AgentProgress[];
   isAgentGenerating: boolean;
 
+  // Server generation state (for server-persistent generation)
+  serverGenerationSessionId: string | null;
+  isServerGenerating: boolean;
+  serverGenerationError: string | null;
+
   // Actions - Analysis
   setAnalysisResult: (result: ScreenAnalysisResponse | null) => void;
   selectScript: (script: ImplementationScript | null) => void;
@@ -115,6 +120,12 @@ interface PrototypeStoreState {
   startAgentGeneration: () => void;
   completeAgentGeneration: () => void;
   getVariantAgentProgress: (variantIndex: number) => AgentProgress | null;
+
+  // Actions - Server Generation
+  setServerGenerationSession: (sessionId: string | null) => void;
+  startServerGeneration: () => void;
+  completeServerGeneration: () => void;
+  failServerGeneration: (error: string) => void;
 
   // Actions - VirtualFS
   getVirtualFS: (variantId: string) => VirtualFS | null;
@@ -188,6 +199,10 @@ export const usePrototypeStore = create<PrototypeStoreState>()(
 
       agentProgress: [],
       isAgentGenerating: false,
+
+      serverGenerationSessionId: null,
+      isServerGenerating: false,
+      serverGenerationError: null,
 
       // ============ Analysis Actions ============
 
@@ -408,6 +423,9 @@ export const usePrototypeStore = create<PrototypeStoreState>()(
           selectedFilePath: null,
           agentProgress: [],
           isAgentGenerating: false,
+          serverGenerationSessionId: null,
+          isServerGenerating: false,
+          serverGenerationError: null,
         });
       },
 
@@ -480,6 +498,39 @@ export const usePrototypeStore = create<PrototypeStoreState>()(
 
       getVariantAgentProgress: (variantIndex) => {
         return get().agentProgress.find((p) => p.variantIndex === variantIndex) || null;
+      },
+
+      // ============ Server Generation Actions ============
+
+      setServerGenerationSession: (sessionId) => {
+        set({ serverGenerationSessionId: sessionId });
+      },
+
+      startServerGeneration: () => {
+        set({
+          isServerGenerating: true,
+          isGenerating: true,
+          serverGenerationError: null,
+          generationError: null,
+          agentProgress: [],
+        });
+      },
+
+      completeServerGeneration: () => {
+        set({
+          isServerGenerating: false,
+          isGenerating: false,
+          generationProgress: null,
+        });
+      },
+
+      failServerGeneration: (error) => {
+        set({
+          isServerGenerating: false,
+          isGenerating: false,
+          serverGenerationError: error,
+          generationError: error,
+        });
       },
 
       // ============ VirtualFS Actions ============
@@ -705,6 +756,11 @@ export const usePrototypeStore = create<PrototypeStoreState>()(
           },
           selectedFilePath: null,
           _virtualFSInstances: {},
+          agentProgress: [],
+          isAgentGenerating: false,
+          serverGenerationSessionId: null,
+          isServerGenerating: false,
+          serverGenerationError: null,
         });
       },
 

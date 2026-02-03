@@ -136,7 +136,13 @@ import {
 } from '@/services/variantEditsService';
 import {
   generateInteractivePrototypesWithAgent,
+  shouldUseServerOrchestration,
 } from '@/services/interactivePrototypeService';
+import {
+  startServerGeneration,
+  type StartServerGenerationParams,
+} from '@/services/serverGenerationService';
+import { useServerGeneration } from '@/hooks/useServerGeneration';
 import type { AgentProgress } from '@/types/agentTypes';
 import { usePrototypeStore } from '@/store/prototypeStore';
 import {
@@ -1782,6 +1788,9 @@ export const VibePrototyping: React.FC = () => {
   const [variantProgressMessages, setVariantProgressMessages] = useState<Record<number, string>>({});
   const [elapsedTimes, setElapsedTimes] = useState<Record<number, string>>({});
 
+  // Server generation hook (for server-persistent generation with streaming)
+  const serverGeneration = useServerGeneration(currentSession?.id || null);
+
   // Store generated visual wireframes
   const [wireframes, setWireframes] = useState<VisualWireframeResult[]>([]);
 
@@ -1872,6 +1881,69 @@ export const VibePrototyping: React.FC = () => {
       });
     };
   }, []);
+
+  // Sync server generation progress to local state
+  useEffect(() => {
+    if (serverGeneration.agentProgress.length > 0) {
+      // Update local agent progress from server
+      setAgentProgress(serverGeneration.agentProgress);
+      usePrototypeStore.getState().setAgentProgress(serverGeneration.agentProgress);
+
+      // Update variant start times based on server progress
+      serverGeneration.agentProgress.forEach(progress => {
+        if (progress.startedAt && !variantStartTimes[progress.variantIndex]) {
+          setVariantStartTimes(prev => ({
+            ...prev,
+            [progress.variantIndex]: progress.startedAt!,
+          }));
+        }
+        if (progress.phase === 'complete') {
+          setCompletedVariantIndices(prev => new Set([...prev, progress.variantIndex]));
+        }
+      });
+
+      // Update progress display
+      const activeProgress = serverGeneration.agentProgress.find(
+        p => p.phase !== 'queued' && p.phase !== 'complete'
+      );
+      if (activeProgress) {
+        const totalSteps = serverGeneration.agentProgress.reduce((sum, p) => sum + p.totalSteps, 0);
+        const completedSteps = serverGeneration.agentProgress.reduce((sum, p) => sum + p.completedSteps, 0);
+        const percent = totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0;
+
+        setProgress({
+          stage: 'generating',
+          message: activeProgress.currentStep || 'Processing...',
+          percent: Math.min(95, 10 + percent * 0.85),
+          variantIndex: activeProgress.variantIndex,
+        });
+      }
+    }
+
+    // Handle completion
+    if (!serverGeneration.isGenerating && serverGeneration.session?.status === 'completed') {
+      setProgress({
+        stage: 'complete',
+        message: 'Generation complete',
+        percent: 100,
+      });
+      usePrototypeStore.getState().completeServerGeneration();
+    }
+
+    // Handle errors
+    if (serverGeneration.error) {
+      setError(serverGeneration.error);
+      usePrototypeStore.getState().failServerGeneration(serverGeneration.error);
+    }
+  }, [
+    serverGeneration.agentProgress,
+    serverGeneration.isGenerating,
+    serverGeneration.session,
+    serverGeneration.error,
+    variantStartTimes,
+    setProgress,
+    setError,
+  ]);
 
   // Debug mode - toggle with keyboard shortcut (Ctrl+Shift+D)
   const [debugMode, setDebugMode] = useState(false);
@@ -2630,53 +2702,95 @@ export const VibePrototyping: React.FC = () => {
       if (currentPrototypeMode === 'interactive') {
         // Interactive Mode: Use multi-stage agent architecture for file-based Web Components
         console.log('[VibePrototyping] Using Interactive Mode with Multi-Stage Agent');
-        addChatMessage('assistant', 'Generating interactive prototypes with Web Components using multi-stage architecture. You\'ll see granular progress for each step.');
 
-        // Reset agent progress
-        setAgentProgress([]);
+        // Check if server orchestration is enabled (for server-persistent generation)
+        const useServerOrchestration = shouldUseServerOrchestration();
 
-        await generateInteractivePrototypesWithAgent(
-          currentSession.id,
-          plan.plans,
-          screen.editedHtml,
-          // Basic progress callback (backwards compatibility)
-          (p) => {
-            // Map the stage to vibeStore compatible stage
-            const stageMap: Record<string, 'analyzing' | 'generating' | 'complete'> = {
-              'preparing': 'analyzing',
-              'analyzing': 'analyzing',
-              'generating': 'generating',
-              'complete': 'complete',
-              'failed': 'generating',
+        if (useServerOrchestration) {
+          // Server-orchestrated generation: survives page refresh, streams progress via Realtime
+          console.log('[VibePrototyping] Using SERVER orchestration for generation');
+          addChatMessage('assistant', 'Generating interactive prototypes on the server. Generation will continue even if you refresh the page. Progress streams in real-time.');
+
+          // Reset agent progress
+          setAgentProgress([]);
+          usePrototypeStore.getState().startServerGeneration();
+
+          try {
+            const params: StartServerGenerationParams = {
+              vibeSessionId: currentSession.id,
+              sourceHtml: screen.editedHtml,
+              screenshotBase64: screenshot,
+              designTokens: designTokens || [],
+              plans: plan.plans,
             };
-            setProgress({
-              stage: stageMap[p.stage] || 'generating',
-              message: p.message,
-              percent: p.percent,
-              variantIndex: p.variantIndex,
-            });
 
-            if (p.variantIndex) {
-              setVariantStartTimes((prev) => {
-                if (!prev[p.variantIndex!]) {
-                  return { ...prev, [p.variantIndex!]: Date.now() };
-                }
-                return prev;
+            await serverGeneration.startGeneration(params);
+
+            // Progress is now handled by the useServerGeneration hook via Realtime
+            // The hook updates serverGeneration.agentProgress which we can sync
+            setProgress({
+              stage: 'generating',
+              message: 'Server generation in progress...',
+              percent: 10,
+            });
+          } catch (error) {
+            console.error('[VibePrototyping] Server generation failed:', error);
+            usePrototypeStore.getState().failServerGeneration(
+              error instanceof Error ? error.message : 'Server generation failed'
+            );
+            throw error;
+          }
+        } else {
+          // Client-orchestrated generation: original behavior
+          console.log('[VibePrototyping] Using CLIENT orchestration for generation');
+          addChatMessage('assistant', 'Generating interactive prototypes with Web Components using multi-stage architecture. You\'ll see granular progress for each step.');
+
+          // Reset agent progress
+          setAgentProgress([]);
+
+          await generateInteractivePrototypesWithAgent(
+            currentSession.id,
+            plan.plans,
+            screen.editedHtml,
+            // Basic progress callback (backwards compatibility)
+            (p) => {
+              // Map the stage to vibeStore compatible stage
+              const stageMap: Record<string, 'analyzing' | 'generating' | 'complete'> = {
+                'preparing': 'analyzing',
+                'analyzing': 'analyzing',
+                'generating': 'generating',
+                'complete': 'complete',
+                'failed': 'generating',
+              };
+              setProgress({
+                stage: stageMap[p.stage] || 'generating',
+                message: p.message,
+                percent: p.percent,
+                variantIndex: p.variantIndex,
               });
-            }
-          },
-          // Agent progress callback (granular step-by-step)
-          (progressList) => {
-            setAgentProgress(progressList);
-            // Also update prototype store for persistence
-            usePrototypeStore.getState().setAgentProgress(progressList);
-          },
-          // Variant complete callback
-          (result) => {
-            setCompletedVariantIndices((prev) => new Set([...prev, result.variantIndex]));
-          },
-          screenshot
-        );
+
+              if (p.variantIndex) {
+                setVariantStartTimes((prev) => {
+                  if (!prev[p.variantIndex!]) {
+                    return { ...prev, [p.variantIndex!]: Date.now() };
+                  }
+                  return prev;
+                });
+              }
+            },
+            // Agent progress callback (granular step-by-step)
+            (progressList) => {
+              setAgentProgress(progressList);
+              // Also update prototype store for persistence
+              usePrototypeStore.getState().setAgentProgress(progressList);
+            },
+            // Variant complete callback
+            (result) => {
+              setCompletedVariantIndices((prev) => new Set([...prev, result.variantIndex]));
+            },
+            screenshot
+          );
+        }
 
         // For interactive mode, we still fetch from database for UI consistency
         // The VirtualFS instances are stored in prototypeStore
