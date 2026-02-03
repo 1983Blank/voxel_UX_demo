@@ -16,17 +16,12 @@ import {
   Chip,
   IconButton,
   Tooltip,
-  ToggleButton,
-  ToggleButtonGroup,
   alpha,
   Tabs,
   Tab,
   Collapse,
 } from '@mui/material';
 import {
-  Code,
-  Eye,
-  TreeStructure,
   Lightning,
 } from '@phosphor-icons/react';
 import { FileTreeView } from './FileTreeView';
@@ -41,15 +36,18 @@ import type { VibeVariant } from '../../services/variantCodeService';
 
 // ============ Types ============
 
+type PanelView = 'preview' | 'code' | 'files';
+type DebugPanel = 'state' | 'flows' | 'none';
+
 interface InteractiveVariantViewProps {
   plans: VariantPlan[];
   variants: VibeVariant[];
   selectedVariantIndex: number | null;
   onSelectVariant: (index: number) => void;
+  // View state controlled from parent (topbar)
+  panelView?: PanelView;
+  onPanelViewChange?: (view: PanelView) => void;
 }
-
-type PanelView = 'preview' | 'code' | 'files';
-type DebugPanel = 'state' | 'flows' | 'none';
 
 // ============ Main Component ============
 
@@ -58,13 +56,19 @@ export function InteractiveVariantView({
   variants,
   selectedVariantIndex,
   onSelectVariant,
+  panelView: externalPanelView,
+  onPanelViewChange,
 }: InteractiveVariantViewProps) {
   // Local state
   const [activeVariantIndex, setActiveVariantIndex] = useState<number>(selectedVariantIndex || 1);
-  const [mainView, setMainView] = useState<PanelView>('preview');
+  const [internalMainView, setInternalMainView] = useState<PanelView>('preview');
   const [debugPanel, setDebugPanel] = useState<DebugPanel>('state');
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
   const [showDebugPanels, setShowDebugPanels] = useState(true);
+
+  // Use external view if provided, otherwise use internal state
+  const mainView = externalPanelView ?? internalMainView;
+  const setMainView = onPanelViewChange ?? setInternalMainView;
 
   // Sync with parent's selectedVariantIndex (from dropdown)
   useEffect(() => {
@@ -158,19 +162,20 @@ export function InteractiveVariantView({
 
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      {/* Variant Info Header - shows current variant info without redundant tabs */}
-      <Box
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          borderBottom: 1,
-          borderColor: 'divider',
-          bgcolor: 'background.paper',
-          px: 2,
-          py: 1,
-        }}
-      >
-        {activePlan && (
+      {/* Variant Info Header - shows current variant title and description */}
+      {activePlan && (
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            borderBottom: 1,
+            borderColor: 'divider',
+            bgcolor: 'background.paper',
+            px: 2,
+            py: 1,
+          }}
+        >
           <Box sx={{ flex: 1 }}>
             <Typography variant="subtitle2" fontWeight={600}>
               {activePlan.title}
@@ -179,38 +184,14 @@ export function InteractiveVariantView({
               {activePlan.description}
             </Typography>
           </Box>
-        )}
-        {/* View toggles */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <ToggleButtonGroup
-            value={mainView}
-            exclusive
-            onChange={(_, v) => v && setMainView(v)}
-            size="small"
-          >
-            <ToggleButton value="preview">
-              <Tooltip title="Preview">
-                <Eye size={16} />
-              </Tooltip>
-            </ToggleButton>
-            <ToggleButton value="code">
-              <Tooltip title="Code">
-                <Code size={16} />
-              </Tooltip>
-            </ToggleButton>
-            <ToggleButton value="files">
-              <Tooltip title="Files">
-                <TreeStructure size={16} />
-              </Tooltip>
-            </ToggleButton>
-          </ToggleButtonGroup>
+          {/* Debug panel toggle - keep this here as it's specific to this view */}
           <Tooltip title={showDebugPanels ? 'Hide debug panels' : 'Show debug panels'}>
             <IconButton size="small" onClick={() => setShowDebugPanels(!showDebugPanels)}>
               <Lightning size={16} />
             </IconButton>
           </Tooltip>
         </Box>
-      </Box>
+      )}
 
       {/* Main Content Area */}
       <Box sx={{ flex: 1, display: 'flex', overflow: 'hidden' }}>

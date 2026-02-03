@@ -84,6 +84,9 @@ import {
   Plus,
   Play,
   Stop,
+  Eye,
+  TreeStructure,
+  Folders,
 } from '@phosphor-icons/react';
 
 import { useSnackbar } from '@/components/SnackbarProvider';
@@ -1467,6 +1470,7 @@ export const VibePrototyping: React.FC = () => {
   const [promptValue, setPromptValue] = useState('');
   const [focusedVariantIndex, setFocusedVariantIndex] = useState<number | null>(null);
   const [editMode, setEditMode] = useState<EditMode>('cursor');
+  const [panelView, setPanelView] = useState<'preview' | 'code' | 'files'>('preview');
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [shareLink, setShareLink] = useState('');
@@ -4253,8 +4257,60 @@ export const VibePrototyping: React.FC = () => {
               </Menu>
             </Box>
 
-            {/* Right: Preview size + Share button */}
+            {/* Right: Panel view toggle + Preview size + Share button */}
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              {/* Panel View Toggle (only show when variants are ready) */}
+              {isComplete && focusedVariantIndex && (
+                <>
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      bgcolor: 'action.hover',
+                      borderRadius: 1,
+                      p: 0.25,
+                    }}
+                  >
+                    <Tooltip title="Preview">
+                      <IconButton
+                        size="small"
+                        onClick={() => setPanelView('preview')}
+                        sx={{
+                          bgcolor: panelView === 'preview' ? 'background.paper' : 'transparent',
+                          boxShadow: panelView === 'preview' ? 1 : 0,
+                        }}
+                      >
+                        <Eye size={18} weight={panelView === 'preview' ? 'fill' : 'regular'} />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Code">
+                      <IconButton
+                        size="small"
+                        onClick={() => setPanelView('code')}
+                        sx={{
+                          bgcolor: panelView === 'code' ? 'background.paper' : 'transparent',
+                          boxShadow: panelView === 'code' ? 1 : 0,
+                        }}
+                      >
+                        <TreeStructure size={18} weight={panelView === 'code' ? 'fill' : 'regular'} />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Files">
+                      <IconButton
+                        size="small"
+                        onClick={() => setPanelView('files')}
+                        sx={{
+                          bgcolor: panelView === 'files' ? 'background.paper' : 'transparent',
+                          boxShadow: panelView === 'files' ? 1 : 0,
+                        }}
+                      >
+                        <Folders size={18} weight={panelView === 'files' ? 'fill' : 'regular'} />
+                      </IconButton>
+                    </Tooltip>
+                  </Box>
+                  <Divider orientation="vertical" flexItem />
+                </>
+              )}
+
               {/* Preview Size Selector */}
               <Box
                 sx={{
@@ -4488,6 +4544,8 @@ export const VibePrototyping: React.FC = () => {
                   variants={variants}
                   selectedVariantIndex={focusedVariantIndex}
                   onSelectVariant={handleVariantClick}
+                  panelView={panelView}
+                  onPanelViewChange={setPanelView}
                 />
               </Card>
             </Box>
