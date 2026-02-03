@@ -766,9 +766,13 @@ async function generateVariant(
   events?.onStepStart?.(variantIndex, indexStepKey, 'Assemble prototype');
 
   const indexStartTime = Date.now();
+  console.log(`[AgentOrchestration] ⏳ Variant ${variantIndex}: Starting index.html generation...`);
+
   try {
     checkAborted(abortSignal);
-    const indexResult = await callGeneratePrototypeFile(
+
+    // Create a race between the actual call and a hard timeout
+    const indexPromise = callGeneratePrototypeFile(
       'index.html',
       implementationScript,
       approach,
@@ -776,6 +780,15 @@ async function generateVariant(
       accessToken,
       { previousFiles, abortSignal }
     );
+
+    const hardTimeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => {
+        reject(new Error('index.html generation timed out after 90 seconds'));
+      }, 90000); // 90 second hard timeout
+    });
+
+    const indexResult = await Promise.race([indexPromise, hardTimeoutPromise]);
+    console.log(`[AgentOrchestration] ✅ Variant ${variantIndex}: index.html generated in ${Math.round((Date.now() - indexStartTime) / 1000)}s`);
 
     // Prepare the HTML for blob URL preview:
     // 1. Inject the VxRuntime bundle (self-contained, no external imports)
@@ -831,6 +844,9 @@ async function generateVariant(
     events?.onStepComplete?.(variantIndex, indexStepKey, Date.now() - indexStartTime);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Index generation failed';
+    const duration = Math.round((Date.now() - indexStartTime) / 1000);
+    console.error(`[AgentOrchestration] ❌ Variant ${variantIndex}: index.html failed after ${duration}s:`, errorMessage);
+
     progress = updateStepInProgress(progress, indexStepKey, { status: 'failed', error: errorMessage });
     progress = updateProgress(progress, { phase: 'failed', error: errorMessage });
     onProgress(progress);
@@ -843,6 +859,7 @@ async function generateVariant(
     throw error;
   }
 
+  console.log(`[AgentOrchestration] 🎉 Variant ${variantIndex}: Generation complete!`);
   events?.onVariantComplete?.(variantIndex, generatedFiles);
 
   return { files: generatedFiles, implementationScript };
