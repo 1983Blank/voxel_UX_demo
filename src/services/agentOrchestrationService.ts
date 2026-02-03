@@ -793,8 +793,18 @@ async function generateVariant(
 
     let htmlWithRuntime: string;
 
-    if (useModifications) {
+    // Determine if we should use modifications-based assembly
+    // Requires both the flag AND sourceHtml to be available
+    const shouldUseModifications = useModifications && !!context.sourceHtml;
+
+    if (useModifications && !context.sourceHtml) {
+      console.warn(`[AgentOrchestration] ⚠️ Variant ${variantIndex}: No sourceHtml available, falling back to index.html generation`);
+    }
+
+    if (shouldUseModifications) {
       // Modifications-based assembly: generate small JSON spec and apply to source HTML
+      console.log(`[AgentOrchestration] 📋 Variant ${variantIndex}: Using modifications-based assembly with sourceHtml (${context.sourceHtml!.length} chars)`);
+
       const modificationsPromise = callGeneratePrototypeFile(
         'modifications.json',
         implementationScript,
@@ -810,25 +820,53 @@ async function generateVariant(
         }, 60000); // 60 second timeout (should be faster than index.html)
       });
 
-      const modificationsResult = await Promise.race([modificationsPromise, hardTimeoutPromise]);
-      console.log(`[AgentOrchestration] ✅ Variant ${variantIndex}: modifications.json generated in ${Math.round((Date.now() - indexStartTime) / 1000)}s`);
+      let modificationsResult;
+      try {
+        modificationsResult = await Promise.race([modificationsPromise, hardTimeoutPromise]);
+        console.log(`[AgentOrchestration] ✅ Variant ${variantIndex}: modifications.json generated in ${Math.round((Date.now() - indexStartTime) / 1000)}s`);
+        console.log(`[AgentOrchestration] 📄 Variant ${variantIndex}: modifications.json content length: ${modificationsResult.content?.length || 0} chars`);
+      } catch (modGenError) {
+        console.error(`[AgentOrchestration] ❌ Variant ${variantIndex}: modifications.json generation failed:`, modGenError);
+        throw new Error(`modifications.json generation failed: ${modGenError instanceof Error ? modGenError.message : 'Unknown error'}`);
+      }
 
-      // Parse the modifications JSON
-      const modifications: ModificationsJson = JSON.parse(modificationsResult.content);
+      // Parse the modifications JSON with detailed error handling
+      let modifications: ModificationsJson;
+      try {
+        modifications = JSON.parse(modificationsResult.content);
+        console.log(`[AgentOrchestration] ✅ Variant ${variantIndex}: modifications.json parsed successfully, ${modifications.modifications?.length || 0} modifications`);
+      } catch (parseError) {
+        console.error(`[AgentOrchestration] ❌ Variant ${variantIndex}: Failed to parse modifications.json:`, parseError);
+        console.error(`[AgentOrchestration] 📄 Raw content (first 500 chars): ${modificationsResult.content?.slice(0, 500)}`);
+        throw new Error(`Failed to parse modifications.json: ${parseError instanceof Error ? parseError.message : 'Invalid JSON'}`);
+      }
 
       // Get tokens CSS if available
       const tokensFile = generatedFiles.find(f => f.path.endsWith('tokens.css'));
       const tokensCss = tokensFile?.content;
 
-      // Apply modifications to source HTML
-      const modifiedHtml = applyModificationsToHtml(context.sourceHtml, modifications, tokensCss);
+      // Apply modifications to source HTML with error handling
+      let modifiedHtml: string;
+      try {
+        modifiedHtml = applyModificationsToHtml(context.sourceHtml!, modifications, tokensCss);
+        console.log(`[AgentOrchestration] ✅ Variant ${variantIndex}: Modifications applied to HTML (${modifiedHtml.length} chars)`);
+      } catch (applyError) {
+        console.error(`[AgentOrchestration] ❌ Variant ${variantIndex}: Failed to apply modifications:`, applyError);
+        throw new Error(`Failed to apply modifications: ${applyError instanceof Error ? applyError.message : 'Unknown error'}`);
+      }
 
       // Prepare with runtime and components
       const componentFiles = generatedFiles
         .filter(f => f.path.startsWith('components/') && f.path.endsWith('.js'))
         .map(f => ({ path: f.path, content: f.content }));
 
-      htmlWithRuntime = preparePrototypeHtml(modifiedHtml, componentFiles);
+      try {
+        htmlWithRuntime = preparePrototypeHtml(modifiedHtml, componentFiles);
+        console.log(`[AgentOrchestration] ✅ Variant ${variantIndex}: Runtime injected, final HTML: ${htmlWithRuntime.length} chars`);
+      } catch (prepareError) {
+        console.error(`[AgentOrchestration] ❌ Variant ${variantIndex}: Failed to prepare HTML with runtime:`, prepareError);
+        throw new Error(`Failed to prepare HTML with runtime: ${prepareError instanceof Error ? prepareError.message : 'Unknown error'}`);
+      }
 
       // Also save the modifications.json file
       generatedFiles.push({
@@ -837,7 +875,7 @@ async function generateVariant(
         type: 'json',
       });
     } else {
-      // Traditional approach: generate full index.html
+      // Traditional approach: generate full index.html (fallback when sourceHtml is missing)
       const indexPromise = callGeneratePrototypeFile(
         'index.html',
         implementationScript,
