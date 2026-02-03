@@ -773,3 +773,89 @@ function generateFeedbackSummary(comments: FeedbackComment[]): string {
 
   return parts.join(' ');
 }
+
+// AI Summary types
+export interface FeedbackSummaryAI {
+  summary: string;
+  keyThemes: string[];
+  actionItems: string[];
+  sentimentScore: number;
+}
+
+/**
+ * Generate an AI-powered summary of feedback comments
+ */
+export async function generateAISummary(
+  sessionId: string,
+  variantIndex: number,
+  comments: FeedbackComment[],
+  variantTitle?: string,
+  variantDescription?: string
+): Promise<FeedbackSummaryAI | null> {
+  if (!isSupabaseConfigured()) {
+    return null;
+  }
+
+  if (comments.length === 0) {
+    return null;
+  }
+
+  try {
+    // Get auth session for the request
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+      console.error('[FeedbackInsightsService] No auth session for AI summary');
+      return null;
+    }
+
+    // Prepare comments for the edge function
+    const preparedComments = comments.map((c) => ({
+      content: c.content,
+      userName: c.userName,
+      resolved: c.resolved,
+      isPinned: c.positionX !== null && c.positionY !== null,
+    }));
+
+    // Call the edge function
+    const response = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/summarize-feedback`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          sessionId,
+          variantIndex,
+          comments: preparedComments,
+          variantTitle,
+          variantDescription,
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.json();
+      console.error('[FeedbackInsightsService] AI summary error:', error);
+      return null;
+    }
+
+    const result = await response.json();
+
+    if (!result.success) {
+      console.error('[FeedbackInsightsService] AI summary failed:', result.error);
+      return null;
+    }
+
+    return {
+      summary: result.summary,
+      keyThemes: result.keyThemes || [],
+      actionItems: result.actionItems || [],
+      sentimentScore: result.sentimentScore || 0,
+    };
+  } catch (err) {
+    console.error('[FeedbackInsightsService] Error generating AI summary:', err);
+    return null;
+  }
+}

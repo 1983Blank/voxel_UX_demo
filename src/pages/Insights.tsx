@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Grid from '@mui/material/Grid';
@@ -9,7 +9,6 @@ import TableCell from '@mui/material/TableCell';
 import TableContainer from '@mui/material/TableContainer';
 import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
-import LinearProgress from '@mui/material/LinearProgress';
 import CircularProgress from '@mui/material/CircularProgress';
 import Avatar from '@mui/material/Avatar';
 import Tooltip from '@mui/material/Tooltip';
@@ -17,25 +16,34 @@ import {
   Eye,
   Trophy,
   ChatCircle,
-  PushPin,
   CheckCircle,
   ArrowsClockwise,
   Users,
+  UsersFour,
   Clock,
   EnvelopeSimple,
 } from '@phosphor-icons/react';
 import { Card, CardContent, Button, Chip } from '@/components/ui';
 import { useThemeStore } from '@/store/themeStore';
-import { PageHeader } from '@/components';
+import { PageHeader, StatCard } from '@/components';
+import {
+  UserFlowDiagram,
+  CommentItem,
+  FeedbackSummary,
+  type FlowStage,
+  type FeedbackSummaryData,
+} from '@/components/Insights';
 import {
   getProjectInsights,
   getVariantInsights,
   getVariantDetailInsight,
   getSessionInsight,
+  generateAISummary,
   type ProjectInsight,
   type VariantInsight,
   type VariantDetailInsight,
   type Viewer,
+  type FeedbackComment,
 } from '@/services/feedbackInsightsService';
 
 const formatTime = (seconds: number) => {
@@ -538,6 +546,8 @@ function VariantView({ projectId, variantId }: { projectId: string; variantId: s
   const [detail, setDetail] = useState<VariantDetailInsight | null>(null);
   const [loading, setLoading] = useState(true);
   const [projectName, setProjectName] = useState('Project');
+  const [aiSummary, setAiSummary] = useState<FeedbackSummaryData | null>(null);
+  const [aiSummaryLoading, setAiSummaryLoading] = useState(false);
 
   const variantIndex = parseInt(variantId, 10);
 
@@ -564,6 +574,89 @@ function VariantView({ projectId, variantId }: { projectId: string; variantId: s
     }
     loadDetail();
   }, [projectId, variantIndex]);
+
+  // Generate AI summary
+  const handleGenerateAISummary = useCallback(async () => {
+    if (!detail || detail.comments.length === 0) return;
+
+    setAiSummaryLoading(true);
+    try {
+      const summary = await generateAISummary(
+        projectId,
+        variantIndex,
+        detail.comments,
+        detail.title,
+        detail.description
+      );
+      if (summary) {
+        setAiSummary(summary);
+      }
+    } catch (err) {
+      console.error('Error generating AI summary:', err);
+    } finally {
+      setAiSummaryLoading(false);
+    }
+  }, [detail, projectId, variantIndex]);
+
+  // Handle generate variant from comment
+  const handleGenerateFromComment = useCallback(
+    (comment: FeedbackComment) => {
+      navigate(`/prototypes/${projectId}/${projectId}`, {
+        state: {
+          iterationPrompt: `Based on feedback: "${comment.content}"`,
+          sourceVariantIndex: variantIndex,
+        },
+      });
+    },
+    [navigate, projectId, variantIndex]
+  );
+
+  // Handle create iteration from AI summary
+  const handleCreateIteration = useCallback(() => {
+    if (!aiSummary) return;
+
+    const prompt =
+      aiSummary.actionItems.length > 0
+        ? `Improve based on feedback:\n${aiSummary.actionItems.join('\n')}`
+        : aiSummary.summary;
+
+    navigate(`/prototypes/${projectId}/${projectId}`, {
+      state: {
+        iterationPrompt: prompt,
+        sourceVariantIndex: variantIndex,
+      },
+    });
+  }, [aiSummary, navigate, projectId, variantIndex]);
+
+  // Build flow stages for UserFlowDiagram
+  const flowStages: FlowStage[] = detail
+    ? [
+        {
+          label: 'Viewed',
+          count: detail.participantsFunnel[0]?.count || 0,
+          percent: 100,
+          icon: <Eye size={20} />,
+        },
+        {
+          label: 'Engaged',
+          count: detail.participantsFunnel[1]?.count || 0,
+          percent: detail.participantsFunnel[1]?.percent || 0,
+          icon: <Clock size={20} />,
+        },
+        {
+          label: 'Commented',
+          count: detail.participantsFunnel[2]?.count || 0,
+          percent: detail.participantsFunnel[2]?.percent || 0,
+          icon: <ChatCircle size={20} />,
+        },
+        {
+          label: 'Resolved',
+          count: detail.participantsFunnel[3]?.count || 0,
+          percent: detail.participantsFunnel[3]?.percent || 0,
+          icon: <CheckCircle size={20} />,
+        },
+      ]
+    : [];
 
   if (loading) {
     return (
@@ -630,58 +723,46 @@ function VariantView({ projectId, variantId }: { projectId: string; variantId: s
         <Grid item xs={12} md={8}>
           <Grid container spacing={2}>
             <Grid item xs={6}>
-              <Card variant="outlined" sx={{ p: 2, textAlign: 'center', height: '100%', minHeight: 90 }}>
-                <Typography variant="body2" color="text.secondary" gutterBottom>
-                  Total sessions
-                </Typography>
-                <Typography variant="h5" fontWeight={500}>
-                  {detail.sessions}
-                </Typography>
-              </Card>
+              <StatCard
+                title="Total sessions"
+                value={detail.sessions}
+                icon={<Users size={20} />}
+              />
             </Grid>
             <Grid item xs={6}>
-              <Card variant="outlined" sx={{ p: 2, textAlign: 'center', height: '100%', minHeight: 90 }}>
-                <Typography variant="body2" color="text.secondary" gutterBottom>
-                  Unique participants
-                </Typography>
-                <Typography variant="h5" fontWeight={500}>
-                  {detail.participants}
-                </Typography>
-              </Card>
+              <StatCard
+                title="Unique participants"
+                value={detail.participants}
+                icon={<UsersFour size={20} />}
+              />
             </Grid>
             <Grid item xs={6}>
-              <Card variant="outlined" sx={{ p: 2, textAlign: 'center', height: '100%', minHeight: 90 }}>
-                <Typography variant="body2" color="text.secondary" gutterBottom>
-                  Time per session
-                </Typography>
-                <Typography variant="h5" fontWeight={500}>
-                  {formatTime(detail.avgTimeSpent)}
-                </Typography>
-              </Card>
+              <StatCard
+                title="Time per session"
+                value={formatTime(detail.avgTimeSpent)}
+                icon={<Clock size={20} />}
+              />
             </Grid>
             <Grid item xs={6}>
-              <Card variant="outlined" sx={{ p: 2, textAlign: 'center', height: '100%', minHeight: 90 }}>
-                <Typography variant="body2" color="text.secondary" gutterBottom>
-                  Feedback shared
-                </Typography>
-                <Typography variant="h5" fontWeight={500}>
-                  {detail.comments.length}
-                </Typography>
-              </Card>
+              <StatCard
+                title="Feedback shared"
+                value={detail.comments.length}
+                icon={<ChatCircle size={20} />}
+              />
             </Grid>
           </Grid>
         </Grid>
 
         {/* Variant Thumbnail / Actions */}
         <Grid item xs={12} md={4}>
-          <Card variant="outlined" sx={{ height: '100%', minHeight: 180, overflow: 'hidden' }}>
+          <Card sx={{ height: '100%', minHeight: 180, overflow: 'hidden' }}>
             {detail.screenshotUrl ? (
               <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
                 <Box
                   sx={{
                     flex: 1,
-                    minHeight: 120,
-                    backgroundColor: '#f5f5f5',
+                    minHeight: 100,
+                    backgroundColor: config.colors.bgSecondary,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -698,15 +779,22 @@ function VariantView({ projectId, variantId }: { projectId: string; variantId: s
                     }}
                   />
                 </Box>
-                <Box sx={{ p: 1.5, borderTop: '1px solid', borderColor: 'divider' }}>
+                <Box sx={{ p: 2 }}>
+                  <Typography
+                    variant="subtitle2"
+                    sx={{ textAlign: 'center', mb: 1.5, color: config.colors.textSecondary }}
+                  >
+                    {detail.label}
+                  </Typography>
                   <Button
-                    variant="outlined"
+                    variant="contained"
                     size="small"
                     fullWidth
                     startIcon={<ArrowsClockwise size={16} />}
-                    onClick={() => navigate(`/vibe/${projectId}`)}
+                    onClick={aiSummary ? handleCreateIteration : () => navigate(`/vibe/${projectId}`)}
+                    disabled={aiSummaryLoading}
                   >
-                    Create iteration
+                    {aiSummary ? 'Create iteration from feedback' : 'Create iteration'}
                   </Button>
                 </Box>
               </Box>
@@ -727,12 +815,13 @@ function VariantView({ projectId, variantId }: { projectId: string; variantId: s
                   {detail.label}
                 </Typography>
                 <Button
-                  variant="outlined"
+                  variant="contained"
                   size="small"
                   startIcon={<ArrowsClockwise size={16} />}
-                  onClick={() => navigate(`/vibe/${projectId}`)}
+                  onClick={aiSummary ? handleCreateIteration : () => navigate(`/vibe/${projectId}`)}
+                  disabled={aiSummaryLoading}
                 >
-                  Create iteration
+                  {aiSummary ? 'Create iteration from feedback' : 'Create iteration'}
                 </Button>
               </Box>
             )}
@@ -740,71 +829,35 @@ function VariantView({ projectId, variantId }: { projectId: string; variantId: s
         </Grid>
       </Grid>
 
-      {/* Main content: Left (Feedback Summary + Funnel) + Right (Feedback Shared) */}
+      {/* Main content: Left (AI Summary + User Flow) + Right (Feedback Shared) */}
       <Grid container spacing={3} sx={{ flex: 1, minHeight: 0 }}>
         {/* Left Column */}
         <Grid item xs={12} md={6} sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-          {/* Feedback Summary */}
+          {/* AI Feedback Summary */}
           <Box>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
               <Typography variant="subtitle1" fontWeight={600}>
                 Feedback summary
               </Typography>
             </Box>
-            <Card variant="outlined">
-              <CardContent>
-                <Typography variant="body2" color="text.secondary">
-                  {detail.feedbackSummary}
-                </Typography>
-                {detail.keyThemes.length > 0 && (
-                  <Box sx={{ mt: 2, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                    {detail.keyThemes.map((theme, idx) => (
-                      <Chip key={idx} size="small" label={theme} variant="outlined" />
-                    ))}
-                  </Box>
-                )}
-              </CardContent>
-            </Card>
+            <FeedbackSummary
+              data={aiSummary}
+              isLoading={aiSummaryLoading}
+              onRegenerate={handleGenerateAISummary}
+              commentCount={detail.comments.length}
+            />
           </Box>
 
-          {/* Participants Funnel */}
+          {/* User Flow Diagram */}
           <Box>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
               <Typography variant="subtitle1" fontWeight={600}>
-                Participants funnel
+                User journey
               </Typography>
             </Box>
-            <Card variant="outlined">
-              <CardContent>
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-                  {detail.participantsFunnel.map((step, index) => (
-                    <Box key={step.label}>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-                        <Typography variant="body2">{step.label}</Typography>
-                        <Typography variant="body2" fontWeight={500}>
-                          {step.count} ({step.percent}%)
-                        </Typography>
-                      </Box>
-                      <LinearProgress
-                        variant="determinate"
-                        value={step.percent}
-                        sx={{
-                          height: 8,
-                          borderRadius: 4,
-                          backgroundColor: 'grey.200',
-                          '& .MuiLinearProgress-bar': {
-                            backgroundColor:
-                              index === 0
-                                ? config.colors.primary
-                                : index === detail.participantsFunnel.length - 1
-                                ? config.colors.success
-                                : config.colors.textSecondary,
-                          },
-                        }}
-                      />
-                    </Box>
-                  ))}
-                </Box>
+            <Card>
+              <CardContent sx={{ p: 2 }}>
+                <UserFlowDiagram stages={flowStages} />
               </CardContent>
             </Card>
           </Box>
@@ -812,94 +865,66 @@ function VariantView({ projectId, variantId }: { projectId: string; variantId: s
 
         {/* Right Column: Feedback Shared */}
         <Grid item xs={12} md={6} sx={{ display: 'flex', flexDirection: 'column' }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5, flexShrink: 0 }}>
-            <Typography variant="subtitle1" fontWeight={600}>
-              Feedback shared
-            </Typography>
-            <Chip size="small" label={detail.comments.length} />
-          </Box>
-          <Card variant="outlined" sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-            <CardContent
-              sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+          <Card sx={{ flex: 1, display: 'flex', flexDirection: 'column', borderRadius: 2, overflow: 'hidden' }}>
+            {/* Header */}
+            <Box
+              sx={{
+                p: 2,
+                borderBottom: 1,
+                borderColor: 'divider',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 1,
+              }}
             >
+              <Typography variant="subtitle2" fontWeight={600}>
+                Feedback
+              </Typography>
+              <Chip
+                size="small"
+                label={detail.comments.length}
+                sx={{ height: 20, fontSize: '0.7rem' }}
+              />
+            </Box>
+
+            {/* Comments list */}
+            <Box sx={{ flex: 1, overflow: 'auto', maxHeight: 400 }}>
               {detail.comments.length === 0 ? (
                 <Box
                   sx={{
-                    flex: 1,
+                    height: '100%',
+                    minHeight: 200,
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'center',
                     justifyContent: 'center',
                   }}
                 >
-                  <ChatCircle size={48} color="#ccc" />
+                  <ChatCircle size={48} color={config.colors.textSecondary} />
                   <Typography color="text.secondary" sx={{ mt: 1 }}>
                     No feedback yet
                   </Typography>
                 </Box>
               ) : (
-                <Box
-                  sx={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 1.5,
-                    flex: 1,
-                    overflow: 'auto',
-                  }}
-                >
-                  {detail.comments.map((fb) => (
+                <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+                  {detail.comments.map((comment, index) => (
                     <Box
-                      key={fb.id}
+                      key={comment.id}
                       sx={{
-                        borderBottom: '1px solid',
+                        borderBottom: index < detail.comments.length - 1 ? 1 : 0,
                         borderColor: 'divider',
-                        pb: 1.5,
-                        opacity: fb.resolved ? 0.6 : 1,
                       }}
                     >
-                      <Box
-                        sx={{
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                          mb: 0.5,
-                        }}
-                      >
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <Avatar sx={{ width: 24, height: 24, fontSize: 10, bgcolor: 'primary.main' }}>
-                            {getInitials(fb.userName)}
-                          </Avatar>
-                          <Typography variant="body2" fontWeight={500}>
-                            {fb.userName}
-                          </Typography>
-                          {fb.positionX !== null && (
-                            <Tooltip title="Pin comment">
-                              <PushPin size={12} />
-                            </Tooltip>
-                          )}
-                          {fb.resolved && (
-                            <Tooltip title="Resolved">
-                              <CheckCircle size={14} color="#2e7d32" weight="fill" />
-                            </Tooltip>
-                          )}
-                        </Box>
-                        <Typography variant="caption" color="text.secondary">
-                          {formatRelativeTime(fb.createdAt)}
-                        </Typography>
-                      </Box>
-                      <Typography variant="body2" color="text.secondary">
-                        {fb.content}
-                      </Typography>
-                      {fb.replyCount > 0 && (
-                        <Typography variant="caption" color="primary" sx={{ mt: 0.5, display: 'block' }}>
-                          {fb.replyCount} {fb.replyCount === 1 ? 'reply' : 'replies'}
-                        </Typography>
-                      )}
+                      <CommentItem
+                        comment={comment}
+                        onGenerateVariant={() => handleGenerateFromComment(comment)}
+                        showGenerateButton={true}
+                      />
                     </Box>
                   ))}
                 </Box>
               )}
-            </CardContent>
+            </Box>
           </Card>
         </Grid>
       </Grid>
