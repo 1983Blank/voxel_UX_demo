@@ -533,6 +533,15 @@ Avoid: ${implementationScript.variantGuidelines.avoidAreas.join(', ')}
 
 Return ONLY the JSON object with "flows" array.`
 
+  // Log the actual prompts being sent to the LLM
+  console.log('[generate-prototype-file] ═══════════════════════════════════════')
+  console.log('[generate-prototype-file] 📝 SYSTEM PROMPT (flows.json):')
+  console.log(FLOWS_SYSTEM_PROMPT)
+  console.log('[generate-prototype-file] ═══════════════════════════════════════')
+  console.log('[generate-prototype-file] 📝 USER PROMPT (flows.json):')
+  console.log(userPrompt)
+  console.log('[generate-prototype-file] ═══════════════════════════════════════')
+
   let rawResponse: string
   switch (provider) {
     case 'openai':
@@ -593,6 +602,15 @@ ${previousFiles?.length ? `PREVIOUSLY GENERATED FILES:\n${previousFiles.map(f =>
 
 Create the ${componentName} component following the VxComponent pattern.
 Return ONLY the JavaScript code.`
+
+  // Log the actual prompts being sent to the LLM
+  console.log('[generate-prototype-file] ═══════════════════════════════════════')
+  console.log(`[generate-prototype-file] 📝 SYSTEM PROMPT (component: ${componentName}):`)
+  console.log(COMPONENT_SYSTEM_PROMPT)
+  console.log('[generate-prototype-file] ═══════════════════════════════════════')
+  console.log(`[generate-prototype-file] 📝 USER PROMPT (component: ${componentName}):`)
+  console.log(userPrompt)
+  console.log('[generate-prototype-file] ═══════════════════════════════════════')
 
   let rawResponse: string
   switch (provider) {
@@ -683,6 +701,17 @@ ${sourceHtmlForPrompt}
 
 Return the enhanced HTML that looks EXACTLY like the source but with interactive behavior added.
 Return ONLY the HTML, no markdown.`
+
+  // Log the actual prompts being sent to the LLM
+  console.log('[generate-prototype-file] ═══════════════════════════════════════')
+  console.log('[generate-prototype-file] 📝 SYSTEM PROMPT (index.html):')
+  console.log(INDEX_SYSTEM_PROMPT)
+  console.log('[generate-prototype-file] ═══════════════════════════════════════')
+  console.log('[generate-prototype-file] 📝 USER PROMPT (index.html):')
+  console.log(userPrompt)
+  console.log('[generate-prototype-file] ═══════════════════════════════════════')
+  console.log(`[generate-prototype-file] 📊 Prompt lengths: system=${INDEX_SYSTEM_PROMPT.length} chars, user=${userPrompt.length} chars`)
+  console.log(`[generate-prototype-file] 📷 Screenshot included: ${!!screenshotBase64} (${screenshotBase64 ? Math.round(screenshotBase64.length/1024) + 'KB' : 'none'})`)
 
   let rawResponse: string
   switch (provider) {

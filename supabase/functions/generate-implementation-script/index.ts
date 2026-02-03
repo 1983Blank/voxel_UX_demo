@@ -570,6 +570,16 @@ Deno.serve(async (req) => {
     // Build prompt
     const prompt = buildPrompt(request)
 
+    // Log the actual prompts being sent to the LLM
+    console.log('[generate-implementation-script] ═══════════════════════════════════════')
+    console.log('[generate-implementation-script] 📝 SYSTEM PROMPT:')
+    console.log(SYSTEM_PROMPT)
+    console.log('[generate-implementation-script] ═══════════════════════════════════════')
+    console.log('[generate-implementation-script] 📝 USER PROMPT:')
+    console.log(prompt)
+    console.log('[generate-implementation-script] ═══════════════════════════════════════')
+    console.log(`[generate-implementation-script] 📊 Prompt lengths: system=${SYSTEM_PROMPT.length} chars, user=${prompt.length} chars`)
+
     // Call LLM
     let rawResponse: string
     switch (provider) {
