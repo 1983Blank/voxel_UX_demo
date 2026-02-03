@@ -666,6 +666,37 @@ function sanitizeLLMCode(code: string): string {
 }
 
 /**
+ * Escape code for safe injection into a script tag within a template literal
+ * This handles backticks and ${} expressions that would break the outer template
+ *
+ * IMPORTANT: We only escape unescaped backticks and ${} patterns.
+ * Already-escaped sequences in the source code should be preserved.
+ */
+function escapeForScriptInjection(code: string): string {
+  // Escape backticks to prevent breaking template literals
+  // Use negative lookbehind to only escape backticks not already preceded by backslash
+  // But JS regex lookbehind has issues, so use a different approach:
+  // Replace all backticks, then restore already-escaped ones
+  let escaped = code;
+
+  // First, temporarily replace already-escaped backticks with a placeholder
+  escaped = escaped.replace(/\\`/g, '\u0000ESCAPED_BACKTICK\u0000');
+
+  // Escape unescaped backticks
+  escaped = escaped.replace(/`/g, '\\`');
+
+  // Restore the already-escaped backticks
+  escaped = escaped.replace(/\u0000ESCAPED_BACKTICK\u0000/g, '\\`');
+
+  // Similarly for ${} expressions
+  escaped = escaped.replace(/\\\$\{/g, '\u0000ESCAPED_DOLLAR_BRACE\u0000');
+  escaped = escaped.replace(/\$\{/g, '\\${');
+  escaped = escaped.replace(/\u0000ESCAPED_DOLLAR_BRACE\u0000/g, '\\${');
+
+  return escaped;
+}
+
+/**
  * Extract class name from component code
  * Returns the class name and derived custom element tag name
  */
@@ -757,7 +788,11 @@ export function injectComponentScripts(html: string, components: ComponentScript
     .filter(c => c.path.endsWith('.js') && c.content)
     .map(c => {
       // Clean up the component code to remove ES module syntax
-      const cleanedCode = cleanComponentCode(c.content);
+      let cleanedCode = cleanComponentCode(c.content);
+
+      // CRITICAL: Escape the code for safe injection into template literal
+      // This prevents backticks and ${} from breaking the generated HTML
+      cleanedCode = escapeForScriptInjection(cleanedCode);
 
       // Escape the path for use in strings
       const safePath = c.path.replace(/'/g, "\\'");
