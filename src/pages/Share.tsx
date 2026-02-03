@@ -26,6 +26,7 @@ import {
   ImageBroken,
 } from '@phosphor-icons/react';
 import { getShareData, type ShareData } from '@/services/sharingService';
+import { relaxCsp } from '@/utils/htmlUtils';
 import { supabasePublic } from '@/services/supabase';
 
 // Local storage keys
@@ -877,7 +878,7 @@ export default function SharePage() {
           )
         ) : htmlContent ? (
           <iframe
-            srcDoc={htmlContent}
+            srcDoc={relaxCsp(htmlContent)}
             title={`${session.name} - Variant ${variantLetter}`}
             style={{
               width: '100%',

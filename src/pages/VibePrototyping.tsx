@@ -165,6 +165,7 @@ import WYSIWYGEditor from '@/components/WYSIWYGEditor';
 import { InteractiveVariantView } from '@/components/Vibe/InteractiveVariantView';
 import { captureHtmlScreenshot, compressScreenshot } from '@/services/screenshotService';
 import { quickEnhance, enhancePrototype, type EnhanceResult } from '@/services/injectionService';
+import { relaxCsp } from '@/utils/htmlUtils';
 
 // ============== Types ==============
 
@@ -1102,7 +1103,7 @@ function FetchedHtmlIframe({
     return (
       <Box sx={{ position: 'relative', width: '100%', height: '100%' }}>
         <iframe
-          srcDoc={enhancedHtml}
+          srcDoc={relaxCsp(enhancedHtml)}
           title={title}
           style={style}
         />
@@ -1246,7 +1247,7 @@ function CanvasVariantCard({
               }}
             >
               <iframe
-                srcDoc={streamingHtml!}
+                srcDoc={relaxCsp(streamingHtml!)}
                 title={`${label}${isLoading ? ' (streaming)' : ''}`}
                 style={{
                   width: '200%',
@@ -1573,7 +1574,7 @@ function InlineExpansionGrid({
           <Box sx={{ position: 'relative', width: '100%', height: '100%' }}>
             <iframe
               key={`html-${focusedIndex}-${effectiveHtml.length}`}
-              srcDoc={effectiveHtml}
+              srcDoc={relaxCsp(effectiveHtml)}
               title={labels[focusedIndex - 1]}
               style={{
                 width: '100%',
@@ -4703,7 +4704,7 @@ export const VibePrototyping: React.FC = () => {
                         }}
                       >
                         <iframe
-                          srcDoc={screen.editedHtml}
+                          srcDoc={relaxCsp(screen.editedHtml)}
                           title={screen.name || 'Screen Preview'}
                           style={{
                             width: '100%',
@@ -4823,7 +4824,7 @@ export const VibePrototyping: React.FC = () => {
                 {/* Original screen preview */}
                 <Box sx={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
                   <iframe
-                    srcDoc={screen.editedHtml}
+                    srcDoc={relaxCsp(screen.editedHtml)}
                     title="Original Screen"
                     style={{
                       width: '100%',
