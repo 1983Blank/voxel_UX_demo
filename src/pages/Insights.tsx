@@ -745,175 +745,144 @@ function VariantView({ projectId, variantId }: { projectId: string; variantId: s
         {detail.isTopPerformer && <Trophy size={20} weight="fill" color="#ffc107" />}
       </Box>
 
-      {/* Top Section: Stats (4 cards) + Thumbnail */}
-      <Grid container spacing={2} sx={{ mb: 3, flexShrink: 0 }}>
-        {/* Stats Row */}
-        <Grid item xs={6} sm={3}>
-          <InsightStatCard
-            title="Sessions"
-            value={detail.sessions}
-            icon={<Users size={18} />}
-            subtitle="Total views"
-          />
-        </Grid>
-        <Grid item xs={6} sm={3}>
-          <InsightStatCard
-            title="Participants"
-            value={detail.participants}
-            icon={<UsersFour size={18} />}
-            subtitle="Unique users"
-          />
-        </Grid>
-        <Grid item xs={6} sm={3}>
-          <InsightStatCard
-            title="Avg. Time"
-            value={formatTime(detail.avgTimeSpent)}
-            icon={<Clock size={18} />}
-            subtitle="Per session"
-          />
-        </Grid>
-        <Grid item xs={6} sm={3}>
-          <InsightStatCard
-            title="Feedback"
-            value={detail.comments.length}
-            icon={<ChatCircle size={18} />}
-            subtitle={`${detail.resolvedComments || 0} resolved`}
-            color={detail.comments.length > 0 ? config.colors.success : undefined}
-          />
-        </Grid>
-      </Grid>
-
-      {/* Thumbnail Row */}
+      {/* Top Section: Stats (2x2 grid) + Variant Thumbnail */}
       <Grid container spacing={3} sx={{ mb: 3, flexShrink: 0 }}>
-        <Grid item xs={12}>
-          <Card sx={{ overflow: 'hidden' }}>
-            <Box sx={{ display: 'flex', alignItems: 'stretch', minHeight: 120 }}>
-              {/* Thumbnail */}
-              <Box
-                sx={{
-                  width: 200,
-                  minWidth: 200,
-                  backgroundColor: config.colors.bgSecondary,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  borderRight: 1,
-                  borderColor: 'divider',
-                }}
-              >
-                {detail.screenshotUrl ? (
-                  <img
-                    src={detail.screenshotUrl}
-                    alt={detail.label}
-                    style={{
-                      maxWidth: '100%',
-                      maxHeight: 120,
-                      objectFit: 'contain',
-                    }}
-                  />
-                ) : (
-                  <Eye size={32} color={config.colors.textSecondary} />
-                )}
-              </Box>
+        {/* Left: 2x2 Stats Grid */}
+        <Grid item xs={12} md={7}>
+          <Grid container spacing={2}>
+            <Grid item xs={6}>
+              <InsightStatCard
+                title="Sessions"
+                value={detail.sessions}
+                icon={<Users size={18} />}
+                subtitle="Total views"
+              />
+            </Grid>
+            <Grid item xs={6}>
+              <InsightStatCard
+                title="Participants"
+                value={detail.participants}
+                icon={<UsersFour size={18} />}
+                subtitle="Unique users"
+              />
+            </Grid>
+            <Grid item xs={6}>
+              <InsightStatCard
+                title="Avg. Time"
+                value={formatTime(detail.avgTimeSpent)}
+                icon={<Clock size={18} />}
+                subtitle="Per session"
+              />
+            </Grid>
+            <Grid item xs={6}>
+              <InsightStatCard
+                title="Feedback"
+                value={detail.comments.length}
+                icon={<ChatCircle size={18} />}
+                subtitle={`${detail.resolvedComments || 0} resolved`}
+                color={detail.comments.length > 0 ? config.colors.success : undefined}
+              />
+            </Grid>
+          </Grid>
+        </Grid>
 
-              {/* Variant info */}
-              <Box sx={{ flex: 1, p: 2, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                <Typography variant="subtitle1" fontWeight={600} gutterBottom>
-                  {detail.title || detail.label}
+        {/* Right: Variant Thumbnail */}
+        <Grid item xs={12} md={5}>
+          <Card
+            sx={{
+              height: '100%',
+              minHeight: 200,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              p: 3,
+              border: `2px dashed ${config.colors.border}`,
+              borderRadius: 2,
+              backgroundColor: config.colors.bgSecondary,
+            }}
+          >
+            {detail.screenshotUrl ? (
+              <Box
+                component="img"
+                src={detail.screenshotUrl}
+                alt={detail.label}
+                sx={{
+                  maxWidth: '100%',
+                  maxHeight: 180,
+                  objectFit: 'contain',
+                  borderRadius: 1,
+                }}
+              />
+            ) : (
+              <>
+                <Eye size={48} color={config.colors.textSecondary} />
+                <Typography
+                  variant="body1"
+                  color="text.secondary"
+                  sx={{ mt: 2, fontWeight: 500 }}
+                >
+                  Variant Image Thumbnail
                 </Typography>
-                {detail.description && (
-                  <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                    {detail.description}
-                  </Typography>
-                )}
-                <Typography variant="caption" color="text.secondary">
-                  {detail.totalTimeSpent} total engagement time
-                </Typography>
-              </Box>
-            </Box>
+              </>
+            )}
           </Card>
         </Grid>
       </Grid>
 
-      {/* Main content: Left (AI Summary + Generate button) + Right (User Journey + Feedback) */}
+      {/* Bottom Section: Feedback Summary (left) + Comments (right) */}
       <Grid container spacing={3} sx={{ flex: 1, minHeight: 0 }}>
-        {/* Left Column: Summary + Action */}
-        <Grid item xs={12} md={5} sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          {/* AI Feedback Summary */}
-          <Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
-              <Typography variant="subtitle1" fontWeight={600}>
-                Feedback Summary
+        {/* Left Column: Feedback Summary with Sankey */}
+        <Grid item xs={12} md={7} sx={{ display: 'flex', flexDirection: 'column' }}>
+          <Card sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <CardContent sx={{ flex: 1, display: 'flex', flexDirection: 'column', p: 3 }}>
+              {/* Header */}
+              <Typography variant="h6" fontWeight={600} sx={{ mb: 2 }}>
+                Feedback summary
               </Typography>
-            </Box>
-            <FeedbackSummary
-              data={aiSummary}
-              isLoading={aiSummaryLoading}
-              onRegenerate={handleGenerateAISummary}
-              commentCount={detail.comments.length}
-            />
-          </Box>
 
-          {/* Generate Iteration Button - next to summary */}
-          {(aiSummary || detail.comments.length > 0) && (
-            <Button
-              variant="contained"
-              fullWidth
-              size="large"
-              startIcon={<ArrowsClockwise size={18} />}
-              onClick={aiSummary ? handleCreateIteration : () => navigate(`/vibe/${projectId}`)}
-              disabled={aiSummaryLoading}
-              sx={{
-                py: 1.5,
-                fontWeight: 600,
-              }}
-            >
-              {aiSummary ? 'Create iteration from feedback' : 'Create iteration'}
-            </Button>
-          )}
+              {/* AI Summary */}
+              <Box sx={{ mb: 3 }}>
+                <FeedbackSummary
+                  data={aiSummary}
+                  isLoading={aiSummaryLoading}
+                  onRegenerate={handleGenerateAISummary}
+                  commentCount={detail.comments.length}
+                />
+              </Box>
 
-          {/* User Journey Sankey */}
-          <Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
-              <Typography variant="subtitle1" fontWeight={600}>
-                User Journey
-              </Typography>
-            </Box>
-            <Card>
-              <CardContent sx={{ p: 2 }}>
+              {/* Sankey Chart */}
+              <Box sx={{ flex: 1, minHeight: 200 }}>
                 <UserJourneySankey stages={journeyStages} />
-              </CardContent>
-            </Card>
-          </Box>
+              </Box>
+
+              {/* Generate Iteration Button */}
+              {(aiSummary || detail.comments.length > 0) && (
+                <Button
+                  variant="contained"
+                  fullWidth
+                  size="large"
+                  startIcon={<ArrowsClockwise size={18} />}
+                  onClick={aiSummary ? handleCreateIteration : () => navigate(`/vibe/${projectId}`)}
+                  disabled={aiSummaryLoading}
+                  sx={{
+                    mt: 3,
+                    py: 1.5,
+                    fontWeight: 600,
+                  }}
+                >
+                  {aiSummary ? 'Create iteration from feedback' : 'Create iteration'}
+                </Button>
+              )}
+            </CardContent>
+          </Card>
         </Grid>
 
-        {/* Right Column: Feedback Comments */}
-        <Grid item xs={12} md={7} sx={{ display: 'flex', flexDirection: 'column' }}>
-          {/* Header */}
-          <Box
-            sx={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              mb: 2,
-            }}
-          >
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Typography variant="subtitle1" fontWeight={600}>
-                Feedback
-              </Typography>
-              <Chip
-                size="small"
-                label={detail.comments.length}
-                sx={{ height: 22, fontSize: '0.75rem' }}
-              />
-            </Box>
-          </Box>
-
-          {/* Comments as cards */}
-          <Box sx={{ flex: 1, overflow: 'auto', maxHeight: 500 }}>
+        {/* Right Column: Comment Cards */}
+        <Grid item xs={12} md={5} sx={{ display: 'flex', flexDirection: 'column' }}>
+          <Box sx={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
             {detail.comments.length === 0 ? (
-              <Card sx={{ p: 4, textAlign: 'center' }}>
+              <Card sx={{ p: 4, textAlign: 'center', flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
                 <ChatCircle size={48} color={config.colors.textSecondary} />
                 <Typography color="text.secondary" sx={{ mt: 2 }}>
                   No feedback yet
@@ -923,16 +892,14 @@ function VariantView({ projectId, variantId }: { projectId: string; variantId: s
                 </Typography>
               </Card>
             ) : (
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                {detail.comments.map((comment) => (
-                  <CommentItem
-                    key={comment.id}
-                    comment={comment}
-                    onGenerateVariant={() => handleGenerateFromComment(comment)}
-                    showGenerateButton={true}
-                  />
-                ))}
-              </Box>
+              detail.comments.map((comment) => (
+                <CommentItem
+                  key={comment.id}
+                  comment={comment}
+                  onGenerateVariant={() => handleGenerateFromComment(comment)}
+                  showGenerateButton={true}
+                />
+              ))
             )}
           </Box>
         </Grid>
