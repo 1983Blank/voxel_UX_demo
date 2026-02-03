@@ -190,72 +190,78 @@ Return ONLY valid JSON, no markdown.`
 
 const COMPONENT_SYSTEM_PROMPT = `You are a UX engineer creating Web Components for Voxel prototypes.
 
-Create a JavaScript Web Component that extends VxComponent.
+Create a JavaScript Web Component that extends the globally available VxComponentClass.
+
+CRITICAL: Use window.VxComponentClass (NOT imports). The runtime is bundled and globally available.
 
 COMPONENT TEMPLATE:
 \`\`\`javascript
 // Component: component-name
 // Description: Brief description
 
-class ComponentName extends VxComponent {
-  static get observedAttributes() {
-    return ['variant', 'disabled', 'state-path'];
-  }
+(function() {
+  class ComponentName extends window.VxComponentClass {
+    static get observedAttributes() {
+      return ['variant', 'disabled', 'state-path'];
+    }
 
-  get template() {
-    return \`
-      <style>
-        :host { display: block; }
-        /* Component styles using CSS variables */
-      </style>
-      <div class="component-root">
-        <!-- Component HTML -->
-      </div>
-    \`;
-  }
+    template() {
+      return \`
+        <style>\${this.getBaseStyles()}</style>
+        <style>
+          /* Component-specific styles using CSS variables */
+          .component-root { /* styles */ }
+        </style>
+        <div class="component-root">
+          <!-- Component HTML -->
+        </div>
+      \`;
+    }
 
-  connectedCallback() {
-    super.connectedCallback();
-    this.render();
-    this.setupListeners();
-  }
+    init() {
+      // Initialize component state
+    }
 
-  setupListeners() {
-    // Event handling using VxStore
-    this.shadowRoot.querySelector('.button')?.addEventListener('click', () => {
-      this.dispatchVxEvent('click');
-      const statePath = this.getAttribute('set-state');
-      if (statePath) {
-        window.VxStore?.set(statePath, this.getAttribute('set-to'));
-      }
-    });
-  }
+    afterRender() {
+      // Called after render, set up click handlers
+      this.$('.button')?.addEventListener('click', () => {
+        const statePath = this.getAttribute('set-state');
+        if (statePath) {
+          const value = this.getAttribute('set-to');
+          try {
+            this.setState(statePath, JSON.parse(value));
+          } catch {
+            this.setState(statePath, value);
+          }
+        }
+      });
+    }
 
-  onStateChange(state) {
-    // React to state changes
-    const path = this.getAttribute('state-path');
-    if (path) {
-      const value = this.getStateValue(path);
-      this.updateFromState(value);
+    getSubscribedPaths() {
+      // Return array of state paths this component cares about
+      const path = this.getAttribute('state-path');
+      return path ? [path] : [];
+    }
+
+    onStoreChange(path, newValue, oldValue) {
+      // React to state changes - render is called automatically
     }
   }
 
-  updateFromState(value) {
-    // Update component based on state
-  }
-}
-
-customElements.define('component-name', ComponentName);
-export { ComponentName };
+  customElements.define('component-name', ComponentName);
+})();
 \`\`\`
 
 IMPORTANT:
-- Use Shadow DOM for encapsulation
-- Use CSS custom properties from the design tokens (var(--color-primary), var(--spacing-md), etc.)
-- CRITICAL: Style the component to match the original UI design - use the same colors, fonts, spacing, borders, shadows
-- Support state-path, set-state, set-to attributes
-- Call super.connectedCallback() and super methods
-- Export the component class
+- MUST extend window.VxComponentClass (globally available, no imports)
+- Wrap in IIFE to avoid global scope pollution
+- Use Shadow DOM for encapsulation (automatic via base class)
+- Use CSS custom properties from design tokens (var(--color-primary), var(--spacing-md), etc.)
+- CRITICAL: Style the component to match the original UI design - same colors, fonts, spacing, borders, shadows
+- Use this.$() and this.$$() for querying shadow DOM elements
+- Use this.getState(path), this.setState(path, value), this.toggleState(path)
+- Call this.getBaseStyles() in template for design token CSS variables
+- NO export statements - component is registered globally via customElements.define
 - Make the component look polished and production-ready, not like a basic wireframe
 
 Return ONLY the JavaScript code, no markdown code blocks.`
@@ -264,14 +270,15 @@ const INDEX_SYSTEM_PROMPT = `You are a UX engineer creating the entry HTML for a
 
 CRITICAL: You must PRESERVE the original UI's visual design, layout, styling, and user experience. Your prototype should look and feel like an enhanced version of the original, not a completely different design.
 
+CRITICAL: Do NOT use ES modules or import statements. The runtime is bundled inline and globally available via window.initVxRuntime.
+
 Create an index.html that:
-1. Imports the VxRuntime
-2. Imports all generated components
-3. Loads design tokens CSS
-4. Creates the UI structure using Voxel components - MATCHING THE ORIGINAL DESIGN
-5. Initializes the runtime with initial state
-6. Uses the same colors, fonts, spacing, and layout patterns as the source HTML
-7. Preserves the original content structure and visual hierarchy
+1. Includes inline CSS from tokens.css in a <style> tag
+2. Includes inline component scripts (no imports)
+3. Creates the UI structure using Voxel components - MATCHING THE ORIGINAL DESIGN
+4. Initializes the runtime with inline initial state and flows
+5. Uses the same colors, fonts, spacing, and layout patterns as the source HTML
+6. Preserves the original content structure and visual hierarchy
 
 TEMPLATE:
 \`\`\`html
@@ -281,9 +288,27 @@ TEMPLATE:
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Prototype Title</title>
-  <link rel="stylesheet" href="styles/tokens.css">
-  <script type="module" src="runtime/vx-runtime.js"></script>
-  <!-- Component imports -->
+
+  <!-- Design tokens - inline CSS -->
+  <style data-vx-tokens>
+    :root {
+      --color-primary: #6366f1;
+      --color-primary-hover: #4f46e5;
+      /* ... more tokens from design system ... */
+    }
+  </style>
+
+  <!-- Base styles -->
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: var(--font-family, system-ui, sans-serif);
+      background: var(--color-background, #f8fafc);
+      color: var(--color-text, #1e293b);
+    }
+    /* ... page-specific styles matching original design ... */
+  </style>
 </head>
 <body>
   <div id="prototype-root">
@@ -293,15 +318,26 @@ TEMPLATE:
     <!-- Use trigger-flow for complex interactions -->
   </div>
 
-  <script type="module">
-    import { initVxRuntime } from './runtime/vx-runtime.js';
-    import initialState from './state/store.json' with { type: 'json' };
-    import flows from './flows/user-flow.json' with { type: 'json' };
+  <!-- Component definitions (inline, no imports) -->
+  <script>
+    // Components are defined here as IIFEs extending window.VxComponentClass
+    // Each component calls customElements.define() to register itself
+  </script>
 
-    initVxRuntime({
-      initialState,
-      flows: flows.flows,
-      debug: true,
+  <!-- Initialize runtime (runtime bundle is injected automatically) -->
+  <script>
+    // Wait for runtime bundle to load
+    document.addEventListener('DOMContentLoaded', function() {
+      // Initialize with inline state and flows
+      window.initVxRuntime({
+        initialState: {
+          // Initial state object here
+        },
+        flows: [
+          // Flow definitions here
+        ],
+        debug: true
+      });
     });
   </script>
 </body>
@@ -309,12 +345,17 @@ TEMPLATE:
 \`\`\`
 
 COMPONENT ATTRIBUTES:
-- state-path="ui.loading": Bind to state path
-- set-state="modal.open" set-to="true": Set state on action
-- toggle-state="sidebar.expanded": Toggle boolean on action
-- trigger-flow="submit-form": Execute flow on action
-- vx-bind:visible="state.path": Conditional visibility
-- vx-bind:class="state.path": Dynamic class binding
+- state-path="ui.loading": Bind to state path (component re-renders on change)
+- set-state="modal.open" set-to="true": Set state on click
+- toggle-state="sidebar.expanded": Toggle boolean on click
+- trigger-flow="submit-form": Execute flow on click
+
+IMPORTANT:
+- NO ES module imports - everything is inline or globally available
+- Components extend window.VxComponentClass
+- Runtime is initialized via window.initVxRuntime()
+- Use DOMContentLoaded to ensure runtime is loaded
+- Include all component definitions inline in <script> tags
 
 Return ONLY the HTML, no markdown code blocks.`
 

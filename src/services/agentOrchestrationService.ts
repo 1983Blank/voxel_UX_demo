@@ -10,6 +10,7 @@
 
 import { supabase, isSupabaseConfigured } from './supabase';
 import { VirtualFS } from '../runtime/virtual-fs';
+import { preparePrototypeHtml } from '../runtime/vx-runtime-bundle';
 import type { VariantPlan } from './variantPlanService';
 import type { GeneratedFile, VariantApproach } from '../types/implementationScript';
 import type {
@@ -554,24 +555,38 @@ async function generateVariant(
       accessToken,
       { previousFiles }
     );
+
+    // Prepare the HTML for blob URL preview:
+    // 1. Inject the VxRuntime bundle (self-contained, no external imports)
+    // 2. Inject all component scripts inline (ES modules don't work with blob URLs)
+    const componentFiles = generatedFiles
+      .filter(f => f.path.startsWith('components/') && f.path.endsWith('.js'))
+      .map(f => ({ path: f.path, content: f.content }));
+
+    const htmlWithRuntime = preparePrototypeHtml(indexResult.content, componentFiles);
+
     generatedFiles.push({
       path: indexResult.path,
-      content: indexResult.content,
+      content: htmlWithRuntime,
       type: indexResult.type,
     });
 
     if (config.enableCheckpoints) {
-      await saveCheckpoint(context.sessionId, variantIndex, indexStepKey, indexResult);
+      // Save checkpoint with the runtime-injected HTML
+      await saveCheckpoint(context.sessionId, variantIndex, indexStepKey, {
+        ...indexResult,
+        content: htmlWithRuntime,
+      });
     }
 
-    // Save step to Supabase with file content
+    // Save step to Supabase with file content (use htmlWithRuntime which includes the bundled runtime)
     if (serverVariantId) {
       await saveStepCheckpoint(
         serverVariantId,
         indexStepKey,
         'Assemble prototype',
         'completed',
-        { path: indexResult.path, content: indexResult.content, type: indexResult.type },
+        { path: indexResult.path, content: htmlWithRuntime, type: indexResult.type },
         Date.now() - indexStartTime
       );
 
