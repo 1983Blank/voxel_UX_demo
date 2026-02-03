@@ -50,6 +50,43 @@ const INDEX_TO_APPROACH: Record<number, VariantApproach> = {
 };
 
 // ============================================================================
+// Auth Helpers
+// ============================================================================
+
+/**
+ * Get a fresh access token, refreshing if needed
+ * This prevents 401 errors during long-running generation
+ */
+async function getFreshAccessToken(): Promise<string> {
+  // First try to get the current session
+  const { data: { session }, error } = await supabase.auth.getSession();
+
+  if (error || !session) {
+    throw new Error('Not authenticated');
+  }
+
+  // Check if token is about to expire (within 5 minutes)
+  const expiresAt = session.expires_at ? session.expires_at * 1000 : 0;
+  const fiveMinutesFromNow = Date.now() + 5 * 60 * 1000;
+
+  if (expiresAt < fiveMinutesFromNow) {
+    // Token is expiring soon, refresh it
+    console.log('[AgentOrchestration] Token expiring soon, refreshing...');
+    const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
+
+    if (refreshError || !refreshData.session) {
+      console.error('[AgentOrchestration] Failed to refresh token:', refreshError);
+      throw new Error('Failed to refresh authentication');
+    }
+
+    console.log('[AgentOrchestration] Token refreshed successfully');
+    return refreshData.session.access_token;
+  }
+
+  return session.access_token;
+}
+
+// ============================================================================
 // Edge Function Callers
 // ============================================================================
 
@@ -65,11 +102,14 @@ async function callGenerateImplementationScript(
   plan: VariantPlan,
   context: GenerationContext,
   approach: VariantApproach,
-  accessToken: string,
+  _accessToken: string, // Kept for backwards compatibility, but we get fresh token
   abortSignal?: AbortSignal
 ): Promise<GenerateScriptResponse> {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
   const functionUrl = `${supabaseUrl}/functions/v1/generate-implementation-script`;
+
+  // Get fresh access token to prevent 401 errors during long-running generation
+  const freshToken = await getFreshAccessToken();
 
   // Log what we're sending to the LLM
   console.log('[AgentOrchestration] 📤 Calling generate-implementation-script:', {
@@ -91,7 +131,7 @@ async function callGenerateImplementationScript(
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${accessToken}`,
+      'Authorization': `Bearer ${freshToken}`,
     },
     body: JSON.stringify({
       variantPlan: plan,
@@ -121,7 +161,7 @@ async function callGeneratePrototypeFile(
   implementationScript: GenerateScriptResponse,
   approach: VariantApproach,
   context: GenerationContext,
-  accessToken: string,
+  _accessToken: string, // Kept for backwards compatibility, but we get fresh token
   options?: {
     componentName?: string;
     previousFiles?: Array<{ path: string; exports?: string[]; summary?: string }>;
@@ -130,6 +170,9 @@ async function callGeneratePrototypeFile(
 ): Promise<GenerateFileResponse> {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
   const functionUrl = `${supabaseUrl}/functions/v1/generate-prototype-file`;
+
+  // Get fresh access token to prevent 401 errors during long-running generation
+  const freshToken = await getFreshAccessToken();
 
   // Reduce source HTML to prevent timeout - 25KB is enough for design context
   const sourceHtmlToSend = fileType === 'index.html' ? context.sourceHtml?.slice(0, 25000) : undefined;
@@ -164,7 +207,7 @@ async function callGeneratePrototypeFile(
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${accessToken}`,
+      'Authorization': `Bearer ${freshToken}`,
     },
     body: JSON.stringify({
       fileType,
