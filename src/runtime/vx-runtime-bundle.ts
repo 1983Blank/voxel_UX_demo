@@ -666,6 +666,27 @@ function sanitizeLLMCode(code: string): string {
 }
 
 /**
+ * Escape </script> tags in code to prevent breaking HTML
+ * This is critical - any </script> in the code will close the script tag prematurely
+ */
+function escapeScriptTags(code: string): string {
+  // Escape </script> to prevent breaking the enclosing script tag
+  // Use multiple patterns to catch variations
+  let escaped = code;
+
+  // Handle </script> - the most common case
+  escaped = escaped.replace(/<\/script>/gi, '<\\/script>');
+
+  // Handle </script with potential whitespace before >
+  escaped = escaped.replace(/<\/script\s*>/gi, '<\\/script>');
+
+  // Handle partial </script (without closing >) that could still break parsing
+  escaped = escaped.replace(/<\/script(?![a-z])/gi, '<\\/script');
+
+  return escaped;
+}
+
+/**
  * Escape code for safe injection into a script tag within a template literal
  * This handles backticks and ${} expressions that would break the outer template
  *
@@ -673,12 +694,12 @@ function sanitizeLLMCode(code: string): string {
  * Already-escaped sequences in the source code should be preserved.
  */
 function escapeForScriptInjection(code: string): string {
-  // Escape backticks to prevent breaking template literals
-  // Use negative lookbehind to only escape backticks not already preceded by backslash
-  // But JS regex lookbehind has issues, so use a different approach:
-  // Replace all backticks, then restore already-escaped ones
   let escaped = code;
 
+  // CRITICAL: First escape </script> tags to prevent HTML breakage
+  escaped = escapeScriptTags(escaped);
+
+  // Escape backticks to prevent breaking template literals
   // First, temporarily replace already-escaped backticks with a placeholder
   escaped = escaped.replace(/\\`/g, '\u0000ESCAPED_BACKTICK\u0000');
 
@@ -908,8 +929,10 @@ function sanitizeScriptsInHtml(html: string): string {
     if (attrs.includes('src=')) {
       return match;
     }
-    // Sanitize the script content
-    const sanitizedContent = sanitizeLLMCode(content);
+    // Sanitize the script content for LLM artifacts
+    let sanitizedContent = sanitizeLLMCode(content);
+    // CRITICAL: Escape </script> in the content to prevent breaking HTML
+    sanitizedContent = escapeScriptTags(sanitizedContent);
     return `<script${attrs}>${sanitizedContent}</script>`;
   });
 }
@@ -990,6 +1013,22 @@ export function preparePrototypeHtml(
 
   // Then inject component scripts
   processed = injectComponentScripts(processed, components);
+
+  // FINAL SAFETY CHECK: Ensure no unescaped </script> in script content
+  // This catches any edge cases missed by earlier processing
+  processed = processed.replace(/<script([^>]*)>([\s\S]*?)<\/script>/gi, (match, attrs, content) => {
+    if (attrs.includes('src=')) {
+      return match;
+    }
+    // Check for unescaped </script> in content (not already escaped as <\/script>)
+    if (content.includes('</script') && !content.includes('<\\/script')) {
+      console.warn('[preparePrototypeHtml] Found unescaped </script> in content, escaping...');
+      const escapedContent = escapeScriptTags(content);
+      return `<script${attrs}>${escapedContent}</script>`;
+    }
+    return match;
+  });
+
   console.log('[preparePrototypeHtml] Final output length:', processed.length);
   console.log('[preparePrototypeHtml] Output starts with:', processed.slice(0, 100));
 
