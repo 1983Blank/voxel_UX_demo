@@ -131,8 +131,10 @@ async function callGeneratePrototypeFile(
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
   const functionUrl = `${supabaseUrl}/functions/v1/generate-prototype-file`;
 
-  const sourceHtmlToSend = fileType === 'index.html' ? context.sourceHtml?.slice(0, 50000) : undefined;
-  const screenshotToSend = fileType === 'index.html' ? context.screenshotBase64 : undefined;
+  // Reduce source HTML to prevent timeout - 25KB is enough for design context
+  const sourceHtmlToSend = fileType === 'index.html' ? context.sourceHtml?.slice(0, 25000) : undefined;
+  // Skip screenshot for index.html to reduce payload and speed up generation
+  const screenshotToSend: string | undefined = undefined;
 
   // Log what we're sending to the LLM
   console.log(`[AgentOrchestration] 📤 Calling generate-prototype-file (${fileType}):`, {
@@ -145,8 +147,8 @@ async function callGeneratePrototypeFile(
     designTokensCount: context.designTokens?.length || 0,
     previousFilesCount: options?.previousFiles?.length || 0,
     sourceHtmlLength: sourceHtmlToSend?.length || 0,
-    hasScreenshot: !!screenshotToSend,
-    screenshotSize: screenshotToSend ? `${Math.round(screenshotToSend.length / 1024)}KB` : 'none',
+    hasScreenshot: false,
+    screenshotSize: 'disabled',
     provider: context.provider,
     model: context.model,
   });

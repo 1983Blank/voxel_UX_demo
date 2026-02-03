@@ -694,8 +694,8 @@ async function generateIndexHtml(
     .map(f => `- ${f.path}: ${f.summary || 'component'}`)
     .join('\n') || 'No custom components'
 
-  // For index.html, we want to include MORE of the source HTML to preserve the design
-  const sourceHtmlForPrompt = sourceHtml ? sourceHtml.slice(0, 50000) : ''
+  // For index.html, include source HTML for design preservation (25KB limit to prevent timeout)
+  const sourceHtmlForPrompt = sourceHtml ? sourceHtml.slice(0, 25000) : ''
 
   // Add null safety for optional fields
   const guidelines = implementationScript.variantGuidelines || { description: variantApproach, focusAreas: [], avoidAreas: [], tonality: 'professional' }
