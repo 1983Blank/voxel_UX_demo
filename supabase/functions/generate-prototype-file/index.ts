@@ -343,7 +343,7 @@ OUTPUT FORMAT:
             {
               name: "flow-name",
               trigger: { event: "click", selector: "[trigger-flow='flow-name']" },
-              steps: [{ set: "state.path", to: value }]
+              steps: [{ set: "state.path", to: true }]
             }
           ],
           debug: true
