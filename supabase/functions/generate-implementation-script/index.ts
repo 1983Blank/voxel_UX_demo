@@ -327,10 +327,11 @@ function buildPrompt(request: GenerateScriptRequest): string {
 IMPORTANT:
 - Include 2-5 entry points based on the key interactions
 - Create flows for each major user action
-- Use appropriate components from the available list
+- Use ONLY 2-4 components maximum - pick the most essential ones for this specific interaction
 - Match the variant approach in complexity and style
 - State paths should use dot notation (e.g., "ui.loading", "form.email")
 - Keep flows focused and not too long (3-8 steps each)
+- CRITICAL: Do NOT include every possible component. Only include components that are directly needed for the main interaction.
 
 Return ONLY the JSON object, no markdown code blocks.`
 
@@ -374,10 +375,10 @@ function parseResponse(response: string): GenerateScriptResponse {
     throw new Error('Response must contain componentsNeeded array')
   }
 
-  // Filter to only valid components
-  const validComponents = parsed.componentsNeeded.filter(
-    (c: string) => AVAILABLE_COMPONENTS.includes(c)
-  )
+  // Filter to only valid components and limit to 4 maximum
+  const validComponents = parsed.componentsNeeded
+    .filter((c: string) => AVAILABLE_COMPONENTS.includes(c))
+    .slice(0, 4) // Cap at 4 components max to prevent long generation times
 
   return {
     stateSchema: parsed.stateSchema,

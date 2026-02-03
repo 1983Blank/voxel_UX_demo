@@ -840,13 +840,18 @@ function VariantCard({
       sx={{
         mb: 1.5,
         cursor: onClick ? 'pointer' : 'default',
-        border: isSelected ? `2px solid ${config.colors.primary}` : '1px solid #e0e0e0',
-        backgroundColor: isChecked ? 'white' : 'grey.50',
+        border: isComplete && onClick
+          ? `2px solid ${config.colors.success}`
+          : isSelected
+            ? `2px solid ${config.colors.primary}`
+            : '1px solid #e0e0e0',
+        backgroundColor: isComplete && onClick ? '#f0fdf4' : isChecked ? 'white' : 'grey.50',
         transition: 'all 0.2s ease',
         opacity: isBuilding ? 0.9 : isChecked ? 1 : 0.6,
         '&:hover': onClick ? {
-          borderColor: config.colors.primary,
+          borderColor: isComplete ? config.colors.success : config.colors.primary,
           transform: 'translateX(4px)',
+          boxShadow: isComplete ? '0 2px 8px rgba(34, 197, 94, 0.2)' : undefined,
         } : {},
       }}
       onClick={onClick}
@@ -898,7 +903,21 @@ function VariantCard({
                 {showWireframe ? <CaretDown size={14} /> : <CaretRight size={14} />}
               </IconButton>
             )}
-            {isComplete && <Check size={16} color={config.colors.success} weight="bold" />}
+            {isComplete && (
+              <Chip
+                label="Preview"
+                size="small"
+                icon={<Play size={10} weight="fill" />}
+                sx={{
+                  height: 20,
+                  fontSize: 10,
+                  bgcolor: config.colors.success,
+                  color: 'white',
+                  '& .MuiChip-icon': { color: 'white', ml: 0.5 },
+                  cursor: 'pointer',
+                }}
+              />
+            )}
             {isBuilding && <CircularProgress size={14} />}
             {isQueued && (
               <Chip
