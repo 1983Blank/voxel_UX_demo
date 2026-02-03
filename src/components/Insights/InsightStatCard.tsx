@@ -58,14 +58,14 @@ export function InsightStatCard({
         }}
       />
 
-      <Box sx={{ p: 1.5, py: 1.25 }}>
+      <Box sx={{ p: 1.75, py: 1.5 }}>
         {/* Header with icon */}
         <Box
           sx={{
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            mb: 0.75,
+            mb: 1,
           }}
         >
           <Typography
@@ -73,7 +73,7 @@ export function InsightStatCard({
             sx={{
               color: config.colors.textSecondary,
               fontWeight: 500,
-              fontSize: '0.65rem',
+              fontSize: '0.7rem',
               textTransform: 'uppercase',
               letterSpacing: '0.05em',
             }}
@@ -85,8 +85,8 @@ export function InsightStatCard({
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              width: 24,
-              height: 24,
+              width: 28,
+              height: 28,
               borderRadius: 1,
               backgroundColor: `${accentColor}12`,
               color: accentColor,
@@ -101,11 +101,11 @@ export function InsightStatCard({
           variant="h5"
           sx={{
             fontWeight: 600,
-            fontSize: '1.35rem',
+            fontSize: '1.5rem',
             lineHeight: 1,
             color: config.colors.textPrimary,
             fontFamily: config.fonts.display,
-            mb: subtitle || trend ? 0.5 : 0,
+            mb: subtitle || trend ? 0.75 : 0,
           }}
         >
           {value}
@@ -117,7 +117,7 @@ export function InsightStatCard({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            minHeight: 16,
+            minHeight: 18,
           }}
         >
           {subtitle && (
@@ -125,7 +125,7 @@ export function InsightStatCard({
               variant="caption"
               sx={{
                 color: config.colors.textSecondary,
-                fontSize: '0.6rem',
+                fontSize: '0.7rem',
               }}
             >
               {subtitle}

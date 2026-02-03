@@ -169,7 +169,7 @@ function AllProjectsView() {
                 key={project.id}
                 hover
                 onClick={() => navigate(`/insights/${project.sessionId}`)}
-                sx={{ cursor: 'pointer' }}
+                sx={{ cursor: 'pointer', '& td': { py: 1.75 } }}
               >
                 <TableCell>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -342,7 +342,7 @@ function ProjectView({ projectId }: { projectId: string }) {
                 key={variant.variantIndex}
                 hover
                 onClick={() => navigate(`/insights/${projectId}/${variant.variantIndex}`)}
-                sx={{ cursor: 'pointer' }}
+                sx={{ cursor: 'pointer', '& td': { py: 1.75 } }}
               >
                 <TableCell>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -406,7 +406,7 @@ function ProjectView({ projectId }: { projectId: string }) {
               </TableHead>
               <TableBody>
                 {viewers.map((viewer, idx) => (
-                  <TableRow key={viewer.email || idx}>
+                  <TableRow key={viewer.email || idx} sx={{ '& td': { py: 1.5 } }}>
                     <TableCell>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                         <Avatar sx={{ width: 24, height: 24, fontSize: 10, bgcolor: 'primary.main' }}>
@@ -736,15 +736,16 @@ function VariantView({ projectId, variantId }: { projectId: string; variantId: s
           <Card
             sx={{
               height: '100%',
-              minHeight: 140,
+              minHeight: 180,
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
-              p: 2,
-              border: `1px dashed ${config.colors.border}`,
+              p: detail.screenshotUrl ? 0 : 2,
+              border: detail.screenshotUrl ? 'none' : `1px dashed ${config.colors.border}`,
               borderRadius: 1.5,
               backgroundColor: config.colors.bgSecondary,
+              overflow: 'hidden',
             }}
           >
             {detail.screenshotUrl ? (
@@ -753,9 +754,9 @@ function VariantView({ projectId, variantId }: { projectId: string; variantId: s
                 src={detail.screenshotUrl}
                 alt={detail.label}
                 sx={{
-                  maxWidth: '100%',
-                  maxHeight: 120,
-                  objectFit: 'contain',
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'cover',
                   borderRadius: 1,
                 }}
               />

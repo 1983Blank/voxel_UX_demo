@@ -3,7 +3,11 @@ import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
+import { Path, ArrowRight } from '@phosphor-icons/react';
 import { useThemeStore } from '@/store/themeStore';
+
+// Track if module is already loaded globally
+let sankeyModuleLoaded = false;
 
 export interface JourneyEvent {
   type: 'pageview' | 'scroll' | 'click';
@@ -24,15 +28,29 @@ interface UserJourneySankeyProps {
 export function UserJourneySankey({ stages }: UserJourneySankeyProps) {
   const { config } = useThemeStore();
   const chartRef = useRef<HighchartsReact.RefObject>(null);
-  const [sankeyLoaded, setSankeyLoaded] = useState(false);
+  const [isReady, setIsReady] = useState(sankeyModuleLoaded);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Dynamically load Sankey module
   useEffect(() => {
-    import('highcharts/modules/sankey').then((module) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (module.default as any)(Highcharts);
-      setSankeyLoaded(true);
-    });
+    if (sankeyModuleLoaded) {
+      setIsReady(true);
+      return;
+    }
+
+    import('highcharts/modules/sankey')
+      .then((module) => {
+        if (!sankeyModuleLoaded) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (module.default as any)(Highcharts);
+          sankeyModuleLoaded = true;
+        }
+        setIsReady(true);
+      })
+      .catch((err) => {
+        console.error('[UserJourneySankey] Failed to load Sankey module:', err);
+        setLoadError('Failed to load chart module');
+      });
   }, []);
 
   // Convert stages to Sankey data format
@@ -82,7 +100,6 @@ export function UserJourneySankey({ stages }: UserJourneySankeyProps) {
       if (index === stages.length - 1) {
         color = successColor;
       } else if (index > 0) {
-        // Blend colors based on position
         const blendRatio = index / (stages.length - 1);
         color = blendRatio > 0.5 ? successColor : primaryColor;
       }
@@ -102,14 +119,153 @@ export function UserJourneySankey({ stages }: UserJourneySankeyProps) {
     return nodes;
   };
 
+  // Empty state component
+  const EmptyState = ({ message }: { message: string }) => (
+    <Box
+      sx={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: '100%',
+        minHeight: 200,
+        py: 4,
+      }}
+    >
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1,
+          mb: 2,
+          opacity: 0.4,
+        }}
+      >
+        <Box
+          sx={{
+            width: 32,
+            height: 32,
+            borderRadius: 1,
+            backgroundColor: config.colors.primary,
+            opacity: 0.3,
+          }}
+        />
+        <ArrowRight size={20} color={config.colors.textSecondary} />
+        <Box
+          sx={{
+            width: 24,
+            height: 24,
+            borderRadius: 1,
+            backgroundColor: config.colors.success,
+            opacity: 0.3,
+          }}
+        />
+        <ArrowRight size={20} color={config.colors.textSecondary} />
+        <Box
+          sx={{
+            width: 16,
+            height: 16,
+            borderRadius: 1,
+            backgroundColor: config.colors.textSecondary,
+            opacity: 0.3,
+          }}
+        />
+      </Box>
+      <Path size={28} color={config.colors.textSecondary} style={{ opacity: 0.5, marginBottom: 8 }} />
+      <Typography
+        variant="body2"
+        sx={{
+          color: config.colors.textSecondary,
+          fontSize: '0.8rem',
+          textAlign: 'center',
+        }}
+      >
+        {message}
+      </Typography>
+      <Typography
+        variant="caption"
+        sx={{
+          color: config.colors.textSecondary,
+          fontSize: '0.7rem',
+          opacity: 0.7,
+          mt: 0.5,
+        }}
+      >
+        User journey data will appear here
+      </Typography>
+    </Box>
+  );
+
+  // Error state
+  if (loadError) {
+    return <EmptyState message={loadError} />;
+  }
+
+  // No data state
+  if (stages.length === 0) {
+    return <EmptyState message="No journey data available" />;
+  }
+
+  // Not enough stages
+  if (stages.length < 2) {
+    return <EmptyState message="Need at least 2 stages to show flow" />;
+  }
+
+  // Loading state
+  if (!isReady) {
+    return (
+      <Box
+        sx={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          height: '100%',
+          minHeight: 200,
+          py: 4,
+        }}
+      >
+        <Box
+          sx={{
+            width: 24,
+            height: 24,
+            border: `2px solid ${config.colors.primary}`,
+            borderTopColor: 'transparent',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite',
+            '@keyframes spin': {
+              '0%': { transform: 'rotate(0deg)' },
+              '100%': { transform: 'rotate(360deg)' },
+            },
+          }}
+        />
+        <Typography
+          variant="caption"
+          sx={{
+            color: config.colors.textSecondary,
+            fontSize: '0.75rem',
+            mt: 1.5,
+          }}
+        >
+          Loading chart...
+        </Typography>
+      </Box>
+    );
+  }
+
   const sankeyData = getSankeyData();
   const nodes = getNodes();
+
+  // No flow data (all users dropped)
+  if (sankeyData.length === 0) {
+    return <EmptyState message="No user flow data to display" />;
+  }
 
   const options: Highcharts.Options = {
     chart: {
       type: 'sankey',
       backgroundColor: 'transparent',
-      height: 260,
+      height: 240,
       style: {
         fontFamily: 'inherit',
       },
@@ -154,38 +310,8 @@ export function UserJourneySankey({ stages }: UserJourneySankeyProps) {
     } as Highcharts.SeriesSankeyOptions],
   };
 
-  if (stages.length === 0) {
-    return (
-      <Box sx={{ textAlign: 'center', py: 4 }}>
-        <Typography variant="body2" color="text.secondary">
-          No journey data available
-        </Typography>
-      </Box>
-    );
-  }
-
-  if (stages.length < 2) {
-    return (
-      <Box sx={{ textAlign: 'center', py: 4 }}>
-        <Typography variant="body2" color="text.secondary">
-          Need at least 2 stages to show journey flow
-        </Typography>
-      </Box>
-    );
-  }
-
-  if (!sankeyLoaded) {
-    return (
-      <Box sx={{ textAlign: 'center', py: 4 }}>
-        <Typography variant="body2" color="text.secondary">
-          Loading chart...
-        </Typography>
-      </Box>
-    );
-  }
-
   return (
-    <Box sx={{ width: '100%', height: '100%', minHeight: 260 }}>
+    <Box sx={{ width: '100%', height: '100%', minHeight: 240 }}>
       <HighchartsReact
         ref={chartRef}
         highcharts={Highcharts}
