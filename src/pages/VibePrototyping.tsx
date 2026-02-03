@@ -891,7 +891,7 @@ function VariantCard({
             </Typography>
           </Box>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-            {wireframeUrl && (
+            {wireframeUrl && !isComplete && (
               <IconButton
                 size="small"
                 onClick={(e) => {
@@ -932,8 +932,8 @@ function VariantCard({
           {description}
         </Typography>
 
-        {/* Visual wireframe preview in iframe */}
-        {wireframeUrl && showWireframe && (
+        {/* Visual wireframe preview in iframe - only show for non-complete variants */}
+        {wireframeUrl && showWireframe && !isComplete && (
           <Box
             sx={{
               mt: 1.5,
@@ -956,12 +956,12 @@ function VariantCard({
           </Box>
         )}
 
-        {/* Detailed building progress with agent steps */}
-        {isBuilding && (
+        {/* Detailed building progress with agent steps - show for building AND completed */}
+        {(isBuilding || (isComplete && agentSteps && agentSteps.length > 0)) && (
           <Box sx={{ mt: 1 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
-              <Typography variant="caption" sx={{ color: 'primary.main', fontWeight: 500, fontSize: 11 }}>
-                {progressMessage || 'Generating...'}
+              <Typography variant="caption" sx={{ color: isComplete ? 'success.main' : 'primary.main', fontWeight: 500, fontSize: 11 }}>
+                {isComplete ? 'Completed' : (progressMessage || 'Generating...')}
               </Typography>
               {elapsedTime && (
                 <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: 10 }}>
@@ -1012,16 +1012,18 @@ function VariantCard({
                 ))}
               </Box>
             ) : (
-              <>
-                <LinearProgress
-                  variant="determinate"
-                  value={progress}
-                  sx={{ height: 4, borderRadius: 2 }}
-                />
-                <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: 10, mt: 0.25, display: 'block' }}>
-                  {Math.round(progress)}% complete
-                </Typography>
-              </>
+              !isComplete && (
+                <>
+                  <LinearProgress
+                    variant="determinate"
+                    value={progress}
+                    sx={{ height: 4, borderRadius: 2 }}
+                  />
+                  <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: 10, mt: 0.25, display: 'block' }}>
+                    {Math.round(progress)}% complete
+                  </Typography>
+                </>
+              )
             )}
           </Box>
         )}
