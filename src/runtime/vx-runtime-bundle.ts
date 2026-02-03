@@ -388,6 +388,27 @@ export function generateVxRuntimeBundle(): string {
   window.VxComponentClass = VxComponent;
   window.VxFlowEngineClass = VxFlowEngine;
 
+  // Dispatch event to notify components that runtime is ready (Approach B)
+  // This allows components to use event-based synchronization instead of polling
+  function dispatchRuntimeReady() {
+    console.log('[VxRuntime] Dispatching vx-runtime-ready event');
+    window.dispatchEvent(new CustomEvent('vx-runtime-ready', {
+      detail: {
+        VxStoreClass: VxStore,
+        VxComponentClass: VxComponent,
+        VxFlowEngineClass: VxFlowEngine
+      }
+    }));
+  }
+
+  // Dispatch immediately for components already waiting
+  dispatchRuntimeReady();
+
+  // Also dispatch after DOMContentLoaded for components added later
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', dispatchRuntimeReady);
+  }
+
   window.initVxRuntime = function(options = {}) {
     try {
       const { initialState = {}, flows = [], debug = false } = options;
@@ -645,7 +666,31 @@ function sanitizeLLMCode(code: string): string {
 }
 
 /**
+ * Extract class name from component code
+ * Returns the class name and derived custom element tag name
+ */
+function extractComponentClassName(code: string): { className: string; tagName: string } | null {
+  // Match class declaration: class ClassName extends ...
+  const classMatch = code.match(/class\s+(\w+)\s+extends/);
+  if (!classMatch) {
+    return null;
+  }
+
+  const className = classMatch[1];
+
+  // Convert PascalCase to kebab-case for tag name
+  // VxButton -> vx-button, VxFormInput -> vx-form-input
+  const tagName = className
+    .replace(/([A-Z])/g, '-$1')
+    .toLowerCase()
+    .replace(/^-/, ''); // Remove leading dash
+
+  return { className, tagName };
+}
+
+/**
  * Clean up component code to remove ES module syntax that doesn't work inline
+ * Also adds customElements.define() if missing
  */
 function cleanComponentCode(code: string): string {
   // First sanitize LLM-generated characters
@@ -675,6 +720,23 @@ function cleanComponentCode(code: string): string {
   // Also handle the case where it might be in a string
   cleaned = cleaned.replace(/<\/script/gi, () => '<\\/script');
 
+  // Extract class name and add customElements.define() if not present
+  if (!cleaned.includes('customElements.define')) {
+    const classInfo = extractComponentClassName(cleaned);
+    if (classInfo) {
+      // Check if already defined to avoid duplicate registration errors
+      const defineCall = `
+// Register the custom element
+if (!customElements.get('${classInfo.tagName}')) {
+  customElements.define('${classInfo.tagName}', ${classInfo.className});
+  console.log('[VxComponent] Registered custom element: ${classInfo.tagName}');
+} else {
+  console.log('[VxComponent] Custom element already registered: ${classInfo.tagName}');
+}`;
+      cleaned = cleaned.trim() + '\n' + defineCall;
+    }
+  }
+
   return cleaned;
 }
 
@@ -702,47 +764,20 @@ export function injectComponentScripts(html: string, components: ComponentScript
 
       // Wrap component code to ensure it doesn't pollute global scope
       // and handles any syntax errors gracefully
-      // Use a deferred execution to ensure runtime is fully loaded
+      // Use event-based synchronization for reliable loading
       return `
 <!-- Component: ${safePath} -->
 <script>
 (function() {
   'use strict';
 
+  var componentLoaded = false;
   var retryCount = 0;
   var maxRetries = 100; // 5 seconds max (100 * 50ms)
 
-  function loadComponent() {
-    // Check if runtime bundle loaded at all
-    if (!window.__VX_RUNTIME_LOADED__) {
-      retryCount++;
-      if (retryCount >= maxRetries) {
-        console.error('[VxComponent] FATAL: VxRuntime bundle never loaded for ${safePath}');
-        console.error('[VxComponent] Check if the runtime bundle is present in <head>');
-        return;
-      }
-      if (retryCount === 1 || retryCount % 20 === 0) {
-        console.warn('[VxComponent] Waiting for VxRuntime bundle to load... (attempt ' + retryCount + ')');
-      }
-      setTimeout(loadComponent, 50);
-      return;
-    }
-
-    // Runtime loaded, check for VxComponentClass
-    if (typeof window.VxComponentClass === 'undefined') {
-      retryCount++;
-      if (retryCount >= maxRetries) {
-        console.error('[VxComponent] FATAL: VxComponentClass not defined after ${safePath}');
-        console.error('[VxComponent] Runtime loaded but VxComponentClass missing. Available globals:',
-          Object.keys(window).filter(function(k) { return k.startsWith('Vx'); }));
-        return;
-      }
-      if (retryCount === 1 || retryCount % 20 === 0) {
-        console.warn('[VxComponent] VxComponentClass not available for ${safePath}, retrying... (attempt ' + retryCount + ')');
-      }
-      setTimeout(loadComponent, 50);
-      return;
-    }
+  function executeComponent() {
+    if (componentLoaded) return;
+    componentLoaded = true;
 
     try {
 ${cleanedCode}
@@ -753,12 +788,58 @@ ${cleanedCode}
     }
   }
 
-  // Use DOMContentLoaded or run immediately if DOM is ready
+  function checkAndLoad() {
+    // Check if runtime is ready
+    if (window.__VX_RUNTIME_LOADED__ && typeof window.VxComponentClass !== 'undefined') {
+      executeComponent();
+      return true;
+    }
+    return false;
+  }
+
+  function pollForRuntime() {
+    if (componentLoaded) return;
+
+    if (checkAndLoad()) return;
+
+    retryCount++;
+    if (retryCount >= maxRetries) {
+      console.error('[VxComponent] FATAL: VxRuntime never ready for ${safePath}');
+      console.error('[VxComponent] __VX_RUNTIME_LOADED__:', window.__VX_RUNTIME_LOADED__);
+      console.error('[VxComponent] VxComponentClass:', typeof window.VxComponentClass);
+      return;
+    }
+
+    if (retryCount % 20 === 0) {
+      console.warn('[VxComponent] Still waiting for VxRuntime... (attempt ' + retryCount + ')');
+    }
+
+    setTimeout(pollForRuntime, 50);
+  }
+
+  function initComponent() {
+    // First check if runtime is already ready
+    if (checkAndLoad()) return;
+
+    // Listen for the runtime-ready event (Approach B)
+    window.addEventListener('vx-runtime-ready', function onReady() {
+      window.removeEventListener('vx-runtime-ready', onReady);
+      executeComponent();
+    });
+
+    // Also start polling as fallback (Approach A)
+    // Give the runtime a moment to initialize before polling
+    setTimeout(pollForRuntime, 50);
+  }
+
+  // Wait for DOM to be ready first
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', loadComponent);
+    document.addEventListener('DOMContentLoaded', initComponent);
   } else {
-    // Small delay to ensure runtime bundle in head has executed
-    setTimeout(loadComponent, 10);
+    // DOM is ready, but give runtime bundle a moment to execute
+    // The runtime is in <head>, so it should have executed by now
+    // but we add a small delay to be safe
+    setTimeout(initComponent, 0);
   }
 })();
 </script>`;
