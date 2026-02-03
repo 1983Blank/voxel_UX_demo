@@ -16,6 +16,10 @@ export function generateVxRuntimeBundle(): string {
 (function() {
   'use strict';
 
+  try {
+  // Flag to track initialization progress
+  window.__VX_RUNTIME_LOADING__ = true;
+
   // ============================================================================
   // VxStore - Global state manager
   // ============================================================================
@@ -513,6 +517,15 @@ export function generateVxRuntimeBundle(): string {
       window.initVxRuntime(window.__VX_RUNTIME_CONFIG__);
     }
   }
+
+  } catch (e) {
+    // Critical: if runtime fails to load, log detailed error
+    console.error('[VxRuntime] CRITICAL: Bundle failed to initialize!', e);
+    console.error('[VxRuntime] Error details:', e.message, e.stack);
+    window.__VX_RUNTIME_ERROR__ = e.message;
+  } finally {
+    window.__VX_RUNTIME_LOADING__ = false;
+  }
 })();
 </script>
 `.trim();
@@ -696,13 +709,41 @@ export function injectComponentScripts(html: string, components: ComponentScript
 (function() {
   'use strict';
 
+  var retryCount = 0;
+  var maxRetries = 100; // 5 seconds max (100 * 50ms)
+
   function loadComponent() {
-    if (typeof window.VxComponentClass === 'undefined') {
-      console.error('[VxComponent] VxComponentClass not available for ${safePath}! Retrying...');
-      // Retry after a short delay
+    // Check if runtime bundle loaded at all
+    if (!window.__VX_RUNTIME_LOADED__) {
+      retryCount++;
+      if (retryCount >= maxRetries) {
+        console.error('[VxComponent] FATAL: VxRuntime bundle never loaded for ${safePath}');
+        console.error('[VxComponent] Check if the runtime bundle is present in <head>');
+        return;
+      }
+      if (retryCount === 1 || retryCount % 20 === 0) {
+        console.warn('[VxComponent] Waiting for VxRuntime bundle to load... (attempt ' + retryCount + ')');
+      }
       setTimeout(loadComponent, 50);
       return;
     }
+
+    // Runtime loaded, check for VxComponentClass
+    if (typeof window.VxComponentClass === 'undefined') {
+      retryCount++;
+      if (retryCount >= maxRetries) {
+        console.error('[VxComponent] FATAL: VxComponentClass not defined after ${safePath}');
+        console.error('[VxComponent] Runtime loaded but VxComponentClass missing. Available globals:',
+          Object.keys(window).filter(function(k) { return k.startsWith('Vx'); }));
+        return;
+      }
+      if (retryCount === 1 || retryCount % 20 === 0) {
+        console.warn('[VxComponent] VxComponentClass not available for ${safePath}, retrying... (attempt ' + retryCount + ')');
+      }
+      setTimeout(loadComponent, 50);
+      return;
+    }
+
     try {
 ${cleanedCode}
       console.log('[VxComponent] Loaded: ${safePath}');
@@ -716,7 +757,8 @@ ${cleanedCode}
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', loadComponent);
   } else {
-    loadComponent();
+    // Small delay to ensure runtime bundle in head has executed
+    setTimeout(loadComponent, 10);
   }
 })();
 </script>`;
