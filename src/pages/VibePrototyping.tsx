@@ -141,7 +141,6 @@ import {
 } from '@/services/interactivePrototypeService';
 import {
   getActiveCheckpoint,
-  getLatestCheckpoint,
   buildFilesFromCheckpoint,
   buildAgentProgressFromCheckpoint,
   type CheckpointData,
