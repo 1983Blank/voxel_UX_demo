@@ -526,6 +526,7 @@ function VariantCard({
   isBuilding = false,
   isComplete = false,
   isQueued = false,
+  isFailed = false,
   progress = 0,
   progressMessage,
   elapsedTime,
@@ -543,6 +544,7 @@ function VariantCard({
   isBuilding?: boolean;
   isComplete?: boolean;
   isQueued?: boolean;
+  isFailed?: boolean;
   progress?: number;
   progressMessage?: string;
   elapsedTime?: string;
@@ -561,14 +563,16 @@ function VariantCard({
       sx={{
         mb: 1.5,
         cursor: onClick ? 'pointer' : 'default',
-        border: isComplete && onClick
-          ? `2px solid ${config.colors.success}`
-          : isSelected
-            ? `2px solid ${config.colors.primary}`
+        border: isFailed
+          ? '2px solid #ef4444'
+          : isComplete && onClick
+            ? `2px solid ${config.colors.success}`
+            : isSelected
+              ? `2px solid ${config.colors.primary}`
             : '1px solid #e0e0e0',
-        backgroundColor: isComplete && onClick ? '#f0fdf4' : isChecked ? 'white' : 'grey.50',
+        backgroundColor: isFailed ? '#fef2f2' : isComplete && onClick ? '#f0fdf4' : isChecked ? 'white' : 'grey.50',
         transition: 'all 0.2s ease',
-        opacity: isBuilding ? 0.9 : isChecked ? 1 : 0.6,
+        opacity: isBuilding ? 0.9 : isFailed ? 0.85 : isChecked ? 1 : 0.6,
         '&:hover': onClick ? {
           borderColor: isComplete ? config.colors.success : config.colors.primary,
           transform: 'translateX(4px)',
@@ -647,9 +651,23 @@ function VariantCard({
                 sx={{ height: 18, fontSize: 10, bgcolor: 'grey.200' }}
               />
             )}
+            {isFailed && (
+              <Chip
+                label="Failed"
+                size="small"
+                icon={<X size={10} weight="bold" />}
+                sx={{
+                  height: 20,
+                  fontSize: 10,
+                  bgcolor: '#ef4444',
+                  color: 'white',
+                  '& .MuiChip-icon': { color: 'white', ml: 0.5 },
+                }}
+              />
+            )}
           </Box>
         </Box>
-        <Typography variant="body2" color="text.secondary" sx={{ fontSize: 13, mb: (isBuilding || isQueued) ? 1 : 0 }}>
+        <Typography variant="body2" color="text.secondary" sx={{ fontSize: 13, mb: (isBuilding || isQueued || isFailed) ? 1 : 0 }}>
           {description}
         </Typography>
 
@@ -677,12 +695,12 @@ function VariantCard({
           </Box>
         )}
 
-        {/* Detailed building progress with agent steps - show for building AND completed */}
-        {(isBuilding || (isComplete && agentSteps && agentSteps.length > 0)) && (
+        {/* Detailed building progress with agent steps - show for building, completed, AND failed */}
+        {(isBuilding || isFailed || (isComplete && agentSteps && agentSteps.length > 0)) && (
           <Box sx={{ mt: 1 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
-              <Typography variant="caption" sx={{ color: isComplete ? 'success.main' : 'primary.main', fontWeight: 500, fontSize: 11 }}>
-                {isComplete ? 'Completed' : (progressMessage || 'Generating...')}
+              <Typography variant="caption" sx={{ color: isFailed ? 'error.main' : isComplete ? 'success.main' : 'primary.main', fontWeight: 500, fontSize: 11 }}>
+                {isFailed ? (progressMessage || 'Generation failed') : isComplete ? 'Completed' : (progressMessage || 'Generating...')}
               </Typography>
               {elapsedTime && (
                 <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: 10 }}>
@@ -3381,16 +3399,18 @@ export const VibePrototyping: React.FC = () => {
                   const variantIndex = idx + 1;
                   const variantProgress = getVariantProgress(variantIndex);
                   const variant = getVariantByIndex(variantIndex);
-                  const isThisBuilding = isGenerating && progress?.variantIndex === variantIndex;
-                  // Check if this variant is queued (not yet started but will be built)
-                  const isQueued = isGenerating && selectedVariants.includes(variantIndex) &&
-                    !variantStartTimes[variantIndex] && variant?.status !== 'complete';
-                  // Find wireframe for this variant
-                  const wireframe = wireframes.find(w => w.variantIndex === variantIndex);
-
                   // Get agent progress steps for this variant
                   const variantAgentProgress = agentProgress.find(ap => ap.variantIndex === variantIndex);
                   const agentSteps = variantAgentProgress?.steps;
+                  // Check if variant failed
+                  const isVariantFailed = variantAgentProgress?.phase === 'failed';
+                  // isBuilding should be false if variant failed or completed
+                  const isThisBuilding = isGenerating && progress?.variantIndex === variantIndex && !isVariantFailed;
+                  // Check if this variant is queued (not yet started but will be built)
+                  const isQueued = isGenerating && selectedVariants.includes(variantIndex) &&
+                    !variantStartTimes[variantIndex] && variant?.status !== 'complete' && !isVariantFailed;
+                  // Find wireframe for this variant
+                  const wireframe = wireframes.find(w => w.variantIndex === variantIndex);
 
                   // Check completion: database status OR completedVariantIndices (for interactive mode during generation)
                   const isVariantComplete = variant?.status === 'complete' || completedVariantIndices.has(variantIndex);
@@ -3409,11 +3429,12 @@ export const VibePrototyping: React.FC = () => {
                       isBuilding={isThisBuilding}
                       isQueued={isQueued}
                       isComplete={isVariantComplete}
+                      isFailed={isVariantFailed}
                       progress={variantProgress}
-                      progressMessage={variantAgentProgress?.currentStep || variantProgressMessages[variantIndex]}
+                      progressMessage={isVariantFailed ? variantAgentProgress?.error : (variantAgentProgress?.currentStep || variantProgressMessages[variantIndex])}
                       elapsedTime={elapsedTimes[variantIndex]}
                       onClick={isVariantComplete ? () => handleVariantClick(variantIndex) : undefined}
-                      agentSteps={(isThisBuilding || isVariantComplete) ? agentSteps : undefined}
+                      agentSteps={(isThisBuilding || isVariantComplete || isVariantFailed) ? agentSteps : undefined}
                     />
                   );
                 })}

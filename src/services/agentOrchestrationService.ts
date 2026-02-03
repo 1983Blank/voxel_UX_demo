@@ -823,11 +823,22 @@ export async function orchestrateGeneration(
         });
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Generation failed';
+
+        // Update progress to show failed state
+        const currentProgress = progressMap.get(variantIndex);
+        if (currentProgress) {
+          progressMap.set(variantIndex, updateProgress(currentProgress, {
+            phase: 'failed',
+            error: errorMessage,
+          }));
+          reportProgress();
+        }
+
         results.failures.push({
           variantIndex,
           approach,
           error: errorMessage,
-          partialFiles: progressMap.get(variantIndex)?.filesCompleted.map(path => ({
+          partialFiles: currentProgress?.filesCompleted.map(path => ({
             path,
             content: '',
             type: 'html' as const,
