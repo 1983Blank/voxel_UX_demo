@@ -266,75 +266,57 @@ IMPORTANT:
 
 Return ONLY the JavaScript code, no markdown code blocks.`
 
-const INDEX_SYSTEM_PROMPT = `You are a UX engineer creating the entry HTML for an interactive prototype.
+const INDEX_SYSTEM_PROMPT = `You are a UX engineer enhancing an existing UI with interactive behavior.
 
-CRITICAL: You must PRESERVE the original UI's visual design, layout, styling, and user experience. Your prototype should look and feel like an enhanced version of the original, not a completely different design.
+CRITICAL PRIORITY #1: PRESERVE THE EXACT VISUAL DESIGN
+Your output MUST look visually identical to the source HTML. This means:
+- COPY the exact HTML structure from the source
+- COPY all CSS classes, styles, colors, fonts, spacing from the source
+- COPY all visual elements (sidebar, headers, tables, cards, etc.)
+- ONLY add interactive attributes to existing elements
 
-CRITICAL: Do NOT use ES modules or import statements. The runtime is bundled inline and globally available via window.initVxRuntime.
+CRITICAL PRIORITY #2: Do NOT use ES modules. Use inline scripts and window.initVxRuntime().
 
-Create an index.html that:
-1. Includes inline CSS from tokens.css in a <style> tag
-2. Includes inline component scripts (no imports)
-3. Creates the UI structure using Voxel components - MATCHING THE ORIGINAL DESIGN
-4. Initializes the runtime with inline initial state and flows
-5. Uses the same colors, fonts, spacing, and layout patterns as the source HTML
-6. Preserves the original content structure and visual hierarchy
+APPROACH: ENHANCE, DON'T REPLACE
+1. Take the source HTML structure as your BASE
+2. Keep all the original CSS styles inline in <style> tags
+3. Add these attributes to existing elements for interactivity:
+   - set-state="path" set-to="value": Set state on click
+   - toggle-state="path": Toggle boolean on click
+   - trigger-flow="flowName": Execute a flow on click
+4. Add minimal VxRuntime initialization script
 
-TEMPLATE:
+TEMPLATE - Copy source HTML structure and add interactivity:
 \`\`\`html
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Prototype Title</title>
+  <title>[Same title as source]</title>
 
-  <!-- Design tokens - inline CSS -->
-  <style data-vx-tokens>
-    :root {
-      --color-primary: #6366f1;
-      --color-primary-hover: #4f46e5;
-      /* ... more tokens from design system ... */
-    }
-  </style>
-
-  <!-- Base styles -->
+  <!-- COPY ALL CSS FROM SOURCE HTML HERE -->
   <style>
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font-family: var(--font-family, system-ui, sans-serif);
-      background: var(--color-background, #f8fafc);
-      color: var(--color-text, #1e293b);
-    }
-    /* ... page-specific styles matching original design ... */
+    /* Copy ALL styles from the source HTML */
+    /* Include all the original colors, fonts, spacing, layouts */
   </style>
 </head>
 <body>
-  <div id="prototype-root">
-    <!-- UI structure using vx-* components -->
-    <!-- Use state-path for reactive bindings -->
-    <!-- Use set-state/set-to for actions -->
-    <!-- Use trigger-flow for complex interactions -->
-  </div>
+  <!-- COPY THE ENTIRE BODY STRUCTURE FROM SOURCE HTML -->
+  <!-- Only add interactive attributes (set-state, toggle-state, trigger-flow) -->
 
-  <!-- Component definitions (inline, no imports) -->
-  <script>
-    // Components are defined here as IIFEs extending window.VxComponentClass
-    // Each component calls customElements.define() to register itself
-  </script>
+  <!-- Example: Original button from source, enhanced with interactivity -->
+  <button class="btn-primary" trigger-flow="add-contact">Add Contact</button>
 
-  <!-- Initialize runtime (runtime bundle is injected automatically) -->
+  <!-- Initialize runtime -->
   <script>
-    // Wait for runtime bundle to load
     document.addEventListener('DOMContentLoaded', function() {
-      // Initialize with inline state and flows
       window.initVxRuntime({
         initialState: {
-          // Initial state object here
+          // State based on the UI needs
         },
         flows: [
-          // Flow definitions here
+          // Flows that implement the requested behavior
         ],
         debug: true
       });
@@ -344,18 +326,26 @@ TEMPLATE:
 </html>
 \`\`\`
 
-COMPONENT ATTRIBUTES:
-- state-path="ui.loading": Bind to state path (component re-renders on change)
-- set-state="modal.open" set-to="true": Set state on click
-- toggle-state="sidebar.expanded": Toggle boolean on click
-- trigger-flow="submit-form": Execute flow on click
+INTERACTIVE ATTRIBUTES (add to EXISTING elements):
+- trigger-flow="flowName": Execute a named flow on click
+- set-state="path" set-to="value": Set state value on click
+- toggle-state="path": Toggle boolean state on click
 
-IMPORTANT:
-- NO ES module imports - everything is inline or globally available
-- Components extend window.VxComponentClass
-- Runtime is initialized via window.initVxRuntime()
-- Use DOMContentLoaded to ensure runtime is loaded
-- Include all component definitions inline in <script> tags
+FLOW FORMAT for initVxRuntime:
+{
+  name: "add-contact",
+  description: "Opens the add contact modal",
+  trigger: { event: "click", selector: "[trigger-flow='add-contact']" },
+  steps: [
+    { set: "modal.addContact.open", to: true }
+  ]
+}
+
+Remember:
+- Your HTML output should look EXACTLY like the source visually
+- Copy CSS verbatim, copy HTML structure, only add interactive attributes
+- NO Web Components - use the original HTML elements with interactive attributes
+- Do NOT create new designs or layouts
 
 Return ONLY the HTML, no markdown code blocks.`
 
@@ -658,31 +648,41 @@ async function generateIndexHtml(
     .map(f => `- ${f.path}: ${f.summary || 'component'}`)
     .join('\n') || 'No custom components'
 
-  const userPrompt = `Generate index.html for a "${variantApproach}" prototype variant.
+  // For index.html, we want to include MORE of the source HTML to preserve the design
+  const sourceHtmlForPrompt = sourceHtml ? sourceHtml.slice(0, 50000) : ''
 
-VARIANT: ${variantApproach}
+  const userPrompt = `Enhance this existing UI with "${variantApproach}" interactive behavior.
+
+VARIANT APPROACH: ${variantApproach}
 - ${implementationScript.variantGuidelines.description}
 - Focus: ${implementationScript.variantGuidelines.focusAreas.join(', ')}
-- Avoid: ${implementationScript.variantGuidelines.avoidAreas.join(', ')}
 
-ENTRY POINTS:
-${implementationScript.entryPoints.map(ep => `- ${ep.selector} (${ep.action}) → ${ep.triggersFlow || ep.triggersState || 'action'}`).join('\n')}
+INTERACTIVE ENTRY POINTS TO ADD:
+${implementationScript.entryPoints.map(ep => `- ${ep.selector}: ${ep.action} → triggers ${ep.triggersFlow || ep.triggersState || 'state change'}`).join('\n')}
 
-FLOWS:
-${implementationScript.flows.map(f => `- ${f.name}: ${f.description || 'no description'}`).join('\n')}
+FLOWS TO IMPLEMENT:
+${implementationScript.flows.map(f => `- ${f.name}: ${f.description || 'implements the interaction'}`).join('\n')}
 
-COMPONENTS TO USE:
-${implementationScript.componentsNeeded.join(', ')}
+INITIAL STATE:
+${JSON.stringify(implementationScript.initialState, null, 2)}
 
-GENERATED COMPONENTS:
-${previousFilesContext}
+${sourceHtmlForPrompt ? `
+========================================
+SOURCE HTML - COPY THIS DESIGN EXACTLY
+========================================
+The following is the source HTML. Your output MUST:
+1. COPY the exact CSS styles (colors, fonts, spacing, layouts)
+2. COPY the exact HTML structure (sidebar, header, table, cards, etc.)
+3. ONLY add interactive attributes (trigger-flow, set-state, toggle-state) to existing elements
+4. Add the initVxRuntime script at the bottom
 
-${sourceHtml ? `SOURCE HTML REFERENCE - CRITICAL: Preserve the original design, styling, layout, and visual appearance. Adapt this structure while keeping its look and feel:\n${sourceHtml.slice(0, 25000)}` : ''}
+SOURCE HTML:
+${sourceHtmlForPrompt}
+========================================
+` : 'No source HTML provided - create a clean design following the variant approach.'}
 
-Create a complete, interactive HTML prototype.
-Use vx-* components with state-path bindings.
-Include all component imports.
-Return ONLY the HTML.`
+Return the enhanced HTML that looks EXACTLY like the source but with interactive behavior added.
+Return ONLY the HTML, no markdown.`
 
   let rawResponse: string
   switch (provider) {

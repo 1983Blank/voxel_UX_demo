@@ -126,7 +126,7 @@ async function callGeneratePrototypeFile(
       designTokens: context.designTokens,
       componentName: options?.componentName,
       previousFiles: options?.previousFiles,
-      sourceHtml: fileType === 'index.html' ? context.sourceHtml?.slice(0, 10000) : undefined,
+      sourceHtml: fileType === 'index.html' ? context.sourceHtml?.slice(0, 50000) : undefined,
       screenshotBase64: fileType === 'index.html' ? context.screenshotBase64 : undefined,
       provider: context.provider,
       model: context.model,
