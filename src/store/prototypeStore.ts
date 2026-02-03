@@ -17,6 +17,7 @@ import type {
   Flow,
   EntryPoint,
 } from '../types/implementationScript';
+import type { AgentProgress, AgentStepProgress } from '../types/agentTypes';
 
 // ============ Types ============
 
@@ -31,6 +32,8 @@ export interface PrototypeVariant {
   previewUrl?: string;
   createdAt: Date;
   updatedAt: Date;
+  /** Agent progress for multi-stage generation */
+  agentProgress?: AgentProgress;
 }
 
 export interface PrototypeState {
@@ -82,6 +85,10 @@ interface PrototypeStoreState {
   // VirtualFS instances (not persisted, recreated from snapshots)
   _virtualFSInstances: Record<string, VirtualFS>;
 
+  // Agent progress (for multi-stage generation)
+  agentProgress: AgentProgress[];
+  isAgentGenerating: boolean;
+
   // Actions - Analysis
   setAnalysisResult: (result: ScreenAnalysisResponse | null) => void;
   selectScript: (script: ImplementationScript | null) => void;
@@ -101,6 +108,13 @@ interface PrototypeStoreState {
   setGenerationProgress: (progress: { current: number; total: number; message: string } | null) => void;
   setGenerationError: (error: string | null) => void;
   clearVariants: () => void;
+
+  // Actions - Agent Progress (multi-stage generation)
+  setAgentProgress: (progress: AgentProgress[]) => void;
+  updateVariantAgentProgress: (variantIndex: number, progress: AgentProgress) => void;
+  startAgentGeneration: () => void;
+  completeAgentGeneration: () => void;
+  getVariantAgentProgress: (variantIndex: number) => AgentProgress | null;
 
   // Actions - VirtualFS
   getVirtualFS: (variantId: string) => VirtualFS | null;
@@ -171,6 +185,9 @@ export const usePrototypeStore = create<PrototypeStoreState>()(
       showFlowDebugger: true,
 
       _virtualFSInstances: {},
+
+      agentProgress: [],
+      isAgentGenerating: false,
 
       // ============ Analysis Actions ============
 
@@ -389,7 +406,80 @@ export const usePrototypeStore = create<PrototypeStoreState>()(
           generationError: null,
           _virtualFSInstances: {},
           selectedFilePath: null,
+          agentProgress: [],
+          isAgentGenerating: false,
         });
+      },
+
+      // ============ Agent Progress Actions ============
+
+      setAgentProgress: (progress) => {
+        set({ agentProgress: progress });
+
+        // Also update individual variant agentProgress
+        const variants = { ...get().variants };
+        let hasChanges = false;
+
+        for (const p of progress) {
+          const variantId = Object.keys(variants).find((id) => {
+            const v = variants[id];
+            // Match by variant index (1-4) to approach
+            const approachMap: Record<number, VariantApproach> = {
+              1: 'minimal',
+              2: 'feature-rich',
+              3: 'gamified',
+              4: 'accessible',
+            };
+            return v.approach === approachMap[p.variantIndex];
+          });
+
+          if (variantId && variants[variantId]) {
+            variants[variantId] = {
+              ...variants[variantId],
+              agentProgress: p,
+              updatedAt: new Date(),
+            };
+            hasChanges = true;
+          }
+        }
+
+        if (hasChanges) {
+          set({ variants });
+        }
+      },
+
+      updateVariantAgentProgress: (variantIndex, progress) => {
+        const currentProgress = [...get().agentProgress];
+        const existingIdx = currentProgress.findIndex((p) => p.variantIndex === variantIndex);
+
+        if (existingIdx >= 0) {
+          currentProgress[existingIdx] = progress;
+        } else {
+          currentProgress.push(progress);
+        }
+
+        set({ agentProgress: currentProgress });
+      },
+
+      startAgentGeneration: () => {
+        set({
+          isAgentGenerating: true,
+          isGenerating: true,
+          agentProgress: [],
+          generationError: null,
+        });
+      },
+
+      completeAgentGeneration: () => {
+        set({
+          isAgentGenerating: false,
+          isGenerating: false,
+          generationProgress: null,
+        });
+      },
+
+      getVariantAgentProgress: (variantIndex) => {
+        return get().agentProgress.find((p) => p.variantIndex === variantIndex) || null;
       },
 
       // ============ VirtualFS Actions ============

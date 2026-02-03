@@ -136,7 +136,10 @@ import {
 } from '@/services/variantEditsService';
 import {
   generateInteractivePrototypes,
+  generateInteractivePrototypesWithAgent,
 } from '@/services/interactivePrototypeService';
+import type { AgentProgress } from '@/types/agentTypes';
+import { usePrototypeStore } from '@/store/prototypeStore';
 import {
   generateUnderstanding,
   approveUnderstanding as approveUnderstandingService,
@@ -792,7 +795,7 @@ function PipelineStepper({
   );
 }
 
-// Variant Card in the left panel
+// Variant Card in the left panel with agent progress support
 function VariantCard({
   title,
   description,
@@ -809,6 +812,7 @@ function VariantCard({
   showCheckbox = false,
   onToggleCheck,
   onClick,
+  agentSteps,
 }: {
   title: string;
   description: string;
@@ -825,6 +829,8 @@ function VariantCard({
   showCheckbox?: boolean;
   onToggleCheck?: () => void;
   onClick?: () => void;
+  /** Agent progress steps for granular display */
+  agentSteps?: Array<{ stepKey: string; label: string; status: 'pending' | 'in_progress' | 'completed' | 'failed' }>;
 }) {
   const { config } = useThemeStore();
   const [showWireframe, setShowWireframe] = useState(false);
@@ -932,7 +938,7 @@ function VariantCard({
           </Box>
         )}
 
-        {/* Detailed building progress */}
+        {/* Detailed building progress with agent steps */}
         {isBuilding && (
           <Box sx={{ mt: 1 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
@@ -945,14 +951,60 @@ function VariantCard({
                 </Typography>
               )}
             </Box>
-            <LinearProgress
-              variant="determinate"
-              value={progress}
-              sx={{ height: 4, borderRadius: 2 }}
-            />
-            <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: 10, mt: 0.25, display: 'block' }}>
-              {Math.round(progress)}% complete
-            </Typography>
+
+            {/* Agent progress steps */}
+            {agentSteps && agentSteps.length > 0 ? (
+              <Box sx={{ mt: 0.5, mb: 0.5 }}>
+                {agentSteps.map((step) => (
+                  <Box
+                    key={step.stepKey}
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 0.75,
+                      py: 0.25,
+                      fontSize: 10,
+                    }}
+                  >
+                    {step.status === 'completed' && (
+                      <Check size={10} weight="bold" style={{ color: '#22c55e' }} />
+                    )}
+                    {step.status === 'in_progress' && (
+                      <CircularProgress size={10} thickness={6} />
+                    )}
+                    {step.status === 'pending' && (
+                      <Box sx={{ width: 10, height: 10, borderRadius: '50%', border: '1px solid #e0e0e0' }} />
+                    )}
+                    {step.status === 'failed' && (
+                      <X size={10} weight="bold" style={{ color: '#ef4444' }} />
+                    )}
+                    <Typography
+                      variant="caption"
+                      sx={{
+                        fontSize: 10,
+                        color: step.status === 'in_progress' ? 'primary.main' :
+                               step.status === 'completed' ? 'success.main' :
+                               step.status === 'failed' ? 'error.main' : 'text.secondary',
+                        fontWeight: step.status === 'in_progress' ? 500 : 400,
+                      }}
+                    >
+                      {step.label}
+                    </Typography>
+                  </Box>
+                ))}
+              </Box>
+            ) : (
+              <>
+                <LinearProgress
+                  variant="determinate"
+                  value={progress}
+                  sx={{ height: 4, borderRadius: 2 }}
+                />
+                <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: 10, mt: 0.25, display: 'block' }}>
+                  {Math.round(progress)}% complete
+                </Typography>
+              </>
+            )}
           </Box>
         )}
 
@@ -1704,6 +1756,10 @@ export const VibePrototyping: React.FC = () => {
 
   // Track variant building state for detailed progress
   const [variantStartTimes, setVariantStartTimes] = useState<Record<number, number>>({});
+
+  // Agent progress for multi-stage generation
+  const [agentProgress, setAgentProgress] = useState<AgentProgress[]>([]);
+  const prototypeStoreAgentProgress = usePrototypeStore((state) => state.agentProgress);
   const [variantProgressMessages, setVariantProgressMessages] = useState<Record<number, string>>({});
   const [elapsedTimes, setElapsedTimes] = useState<Record<number, string>>({});
 
@@ -2553,17 +2609,21 @@ export const VibePrototyping: React.FC = () => {
       const currentPrototypeMode = useVibeStore.getState().prototypeMode;
 
       if (currentPrototypeMode === 'interactive') {
-        // Interactive Mode: Use file-based Web Components generation
-        console.log('[VibePrototyping] Using Interactive Mode (file-based Web Components)');
-        addChatMessage('assistant', 'Generating interactive prototypes with Web Components. This enables real interactivity, state management, and debugging tools.');
+        // Interactive Mode: Use multi-stage agent architecture for file-based Web Components
+        console.log('[VibePrototyping] Using Interactive Mode with Multi-Stage Agent');
+        addChatMessage('assistant', 'Generating interactive prototypes with Web Components using multi-stage architecture. You\'ll see granular progress for each step.');
 
-        await generateInteractivePrototypes(
+        // Reset agent progress
+        setAgentProgress([]);
+
+        await generateInteractivePrototypesWithAgent(
           currentSession.id,
           plan.plans,
           screen.editedHtml,
+          // Basic progress callback (backwards compatibility)
           (p) => {
             setProgress({
-              stage: 'generating',
+              stage: p.stage,
               message: p.message,
               percent: p.percent,
               variantIndex: p.variantIndex,
@@ -2578,8 +2638,14 @@ export const VibePrototyping: React.FC = () => {
               });
             }
           },
+          // Agent progress callback (granular step-by-step)
+          (progressList) => {
+            setAgentProgress(progressList);
+            // Also update prototype store for persistence
+            usePrototypeStore.getState().setAgentProgress(progressList);
+          },
+          // Variant complete callback
           (result) => {
-            // Variant completed - update state
             setCompletedVariantIndices((prev) => new Set([...prev, result.variantIndex]));
           },
           screenshot
@@ -3443,6 +3509,10 @@ export const VibePrototyping: React.FC = () => {
                   // Find wireframe for this variant
                   const wireframe = wireframes.find(w => w.variantIndex === variantIndex);
 
+                  // Get agent progress steps for this variant
+                  const variantAgentProgress = agentProgress.find(ap => ap.variantIndex === variantIndex);
+                  const agentSteps = variantAgentProgress?.steps;
+
                   return (
                     <VariantCard
                       key={p.id || idx}
@@ -3458,9 +3528,10 @@ export const VibePrototyping: React.FC = () => {
                       isQueued={isQueued}
                       isComplete={variant?.status === 'complete'}
                       progress={variantProgress}
-                      progressMessage={variantProgressMessages[variantIndex]}
+                      progressMessage={variantAgentProgress?.currentStep || variantProgressMessages[variantIndex]}
                       elapsedTime={elapsedTimes[variantIndex]}
                       onClick={variant?.status === 'complete' ? () => handleVariantClick(variantIndex) : undefined}
+                      agentSteps={isThisBuilding ? agentSteps : undefined}
                     />
                   );
                 })}

@@ -5,14 +5,22 @@
  * Web Components architecture and VirtualFS system.
  *
  * This service is used when prototypeMode === 'interactive'.
+ *
+ * Now uses multi-stage agent architecture for:
+ * - Faster generation (no timeouts)
+ * - Granular progress tracking
+ * - Fault tolerance with checkpointing
  */
 
 import { supabase, isSupabaseConfigured } from './supabase';
 import { VirtualFS } from '../runtime/virtual-fs';
 import { usePrototypeStore } from '../store/prototypeStore';
 import { useVibeStore } from '../store/vibeStore';
+import { orchestrateGeneration, resumeGeneration } from './agentOrchestrationService';
+import { initCheckpointService } from './checkpointService';
 import type { VariantPlan } from './variantPlanService';
-import type { GeneratedFile, VariantApproach } from '../types/implementationScript';
+import type { GeneratedFile, VariantApproach, DesignToken } from '../types/implementationScript';
+import type { AgentProgress, OrchestrationConfig } from '../types/agentTypes';
 
 // ============================================================================
 // Types
@@ -540,6 +548,252 @@ export function initVxRuntime(initialState = {}) {
   ];
 
   return files;
+}
+
+// ============================================================================
+// Agent-Based Generation (Multi-Stage)
+// ============================================================================
+
+/**
+ * Extended progress callback for granular step-by-step updates
+ */
+export type AgentProgressCallback = (progress: AgentProgress[]) => void;
+
+/**
+ * Generate interactive prototypes using multi-stage agent architecture
+ *
+ * This is the recommended method for generation as it:
+ * - Avoids timeouts by breaking work into smaller LLM calls
+ * - Provides granular progress tracking per step
+ * - Supports checkpointing for resume capability
+ * - Generates 2 variants in parallel for speed
+ */
+export async function generateInteractivePrototypesWithAgent(
+  sessionId: string,
+  plans: VariantPlan[],
+  originalHtml: string,
+  onProgress?: ProgressCallback,
+  onAgentProgress?: AgentProgressCallback,
+  onVariantComplete?: VariantCompleteCallback,
+  screenshotBase64?: string,
+  designTokens?: DesignToken[],
+  config?: Partial<OrchestrationConfig>
+): Promise<InteractiveVariantResult[]> {
+  if (!isSupabaseConfigured()) {
+    throw new Error('Supabase not configured');
+  }
+
+  // Initialize checkpoint service
+  await initCheckpointService();
+
+  onProgress?.({
+    stage: 'preparing',
+    message: 'Initializing multi-stage generation...',
+    percent: 5,
+  });
+
+  // Get the prototype store actions
+  const prototypeStore = usePrototypeStore.getState();
+
+  // Start generation in prototype store
+  const approaches = plans.map(p => INDEX_TO_APPROACH[p.variant_index] || 'minimal');
+  prototypeStore.startGeneration(approaches as VariantApproach[]);
+
+  try {
+    // Use orchestration service for multi-stage generation
+    const result = await orchestrateGeneration(
+      sessionId,
+      plans,
+      {
+        sourceHtml: originalHtml,
+        screenshotBase64,
+        designTokens: designTokens || [],
+      },
+      (agentProgressList) => {
+        // Report agent progress
+        onAgentProgress?.(agentProgressList);
+
+        // Convert to simple progress for backwards compatibility
+        const activeVariant = agentProgressList.find(p => p.phase !== 'queued' && p.phase !== 'complete');
+        if (activeVariant) {
+          const totalSteps = agentProgressList.reduce((sum, p) => sum + p.totalSteps, 0);
+          const completedSteps = agentProgressList.reduce((sum, p) => sum + p.completedSteps, 0);
+          const percent = Math.round((completedSteps / totalSteps) * 100);
+
+          onProgress?.({
+            stage: 'generating',
+            message: activeVariant.currentStep,
+            percent: Math.min(95, 10 + percent * 0.85),
+            variantIndex: activeVariant.variantIndex,
+            variantTitle: activeVariant.variantTitle,
+          });
+        }
+      },
+      {
+        onVariantComplete: (variantIndex, files) => {
+          const approach = INDEX_TO_APPROACH[variantIndex] || 'minimal';
+          const variantId = Object.keys(prototypeStore.variants).find(
+            id => prototypeStore.variants[id].approach === approach
+          );
+
+          if (variantId) {
+            prototypeStore.setVariantReady(
+              variantId,
+              files,
+              files.filter(f => f.path.startsWith('components/')).map(f => f.path)
+            );
+          }
+
+          // Create VirtualFS and notify
+          const virtualFS = new VirtualFS({
+            sessionId,
+            variantId: `variant-${variantIndex}`,
+          });
+          for (const file of files) {
+            virtualFS.writeFile(file.path, file.content, file.type);
+          }
+
+          onVariantComplete?.({
+            variantIndex,
+            approach: approach as VariantApproach,
+            files,
+            virtualFS,
+            previewUrl: virtualFS.createPreviewUrl(),
+          });
+        },
+        onVariantFail: (variantIndex, error) => {
+          const approach = INDEX_TO_APPROACH[variantIndex] || 'minimal';
+          const variantId = Object.keys(prototypeStore.variants).find(
+            id => prototypeStore.variants[id].approach === approach
+          );
+
+          if (variantId) {
+            prototypeStore.setVariantError(variantId, error);
+          }
+        },
+      },
+      {
+        parallelVariants: 2,
+        parallelComponents: 2,
+        enableCheckpoints: true,
+        maxRetries: 2,
+        timeoutMs: 30000,
+        ...config,
+      }
+    );
+
+    // Convert orchestration results to InteractiveVariantResult[]
+    const results: InteractiveVariantResult[] = result.variants.map(v => {
+      const virtualFS = new VirtualFS({
+        sessionId,
+        variantId: `variant-${v.variantIndex}`,
+      });
+      for (const file of v.files) {
+        virtualFS.writeFile(file.path, file.content, file.type);
+      }
+
+      return {
+        variantIndex: v.variantIndex,
+        approach: v.approach,
+        files: v.files,
+        virtualFS,
+        previewUrl: v.previewUrl || virtualFS.createPreviewUrl(),
+      };
+    });
+
+    onProgress?.({
+      stage: 'complete',
+      message: `Generated ${results.length} interactive prototypes`,
+      percent: 100,
+    });
+
+    console.log('[InteractivePrototypeService] Agent generation complete:', {
+      successful: result.variants.length,
+      failed: result.failures.length,
+      duration: result.totalDuration,
+    });
+
+    return results;
+  } catch (error) {
+    console.error('[InteractivePrototypeService] Agent generation failed:', error);
+    onProgress?.({
+      stage: 'failed',
+      message: error instanceof Error ? error.message : 'Generation failed',
+      percent: 0,
+    });
+    throw error;
+  }
+}
+
+/**
+ * Resume generation from checkpoints
+ */
+export async function resumeInteractivePrototypes(
+  sessionId: string,
+  plans: VariantPlan[],
+  originalHtml: string,
+  onProgress?: ProgressCallback,
+  onAgentProgress?: AgentProgressCallback,
+  onVariantComplete?: VariantCompleteCallback,
+  screenshotBase64?: string,
+  designTokens?: DesignToken[]
+): Promise<InteractiveVariantResult[]> {
+  await initCheckpointService();
+
+  onProgress?.({
+    stage: 'preparing',
+    message: 'Resuming from last checkpoint...',
+    percent: 5,
+  });
+
+  const result = await resumeGeneration(
+    sessionId,
+    plans,
+    {
+      sourceHtml: originalHtml,
+      screenshotBase64,
+      designTokens: designTokens || [],
+    },
+    onAgentProgress,
+    {
+      onVariantComplete: (variantIndex, files) => {
+        const approach = INDEX_TO_APPROACH[variantIndex] || 'minimal';
+        const virtualFS = new VirtualFS({
+          sessionId,
+          variantId: `variant-${variantIndex}`,
+        });
+        for (const file of files) {
+          virtualFS.writeFile(file.path, file.content, file.type);
+        }
+
+        onVariantComplete?.({
+          variantIndex,
+          approach: approach as VariantApproach,
+          files,
+          virtualFS,
+          previewUrl: virtualFS.createPreviewUrl(),
+        });
+      },
+    }
+  );
+
+  return result.variants.map(v => {
+    const virtualFS = new VirtualFS({
+      sessionId,
+      variantId: `variant-${v.variantIndex}`,
+    });
+    for (const file of v.files) {
+      virtualFS.writeFile(file.path, file.content, file.type);
+    }
+
+    return {
+      variantIndex: v.variantIndex,
+      approach: v.approach,
+      files: v.files,
+      virtualFS,
+      previewUrl: v.previewUrl || virtualFS.createPreviewUrl(),
+    };
+  });
 }
 
 // ============================================================================
