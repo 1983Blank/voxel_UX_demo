@@ -17,6 +17,7 @@ import type { RealtimeChannel, RealtimePostgresChangesPayload } from '@supabase/
 import type { VariantPlan } from './variantPlanService';
 import type { DesignToken, GeneratedFile, VariantApproach } from '../types/implementationScript';
 import type { AgentProgress, AgentPhase, AgentStepProgress } from '../types/agentTypes';
+import { shouldUseServerOrchestration } from './interactivePrototypeService';
 
 // ============================================================================
 // Types
@@ -187,6 +188,11 @@ export async function getActiveGeneration(
     return null;
   }
 
+  // Skip if server orchestration is disabled
+  if (!shouldUseServerOrchestration()) {
+    return null;
+  }
+
   const { data, error } = await supabase
     .from('generation_sessions')
     .select('*')
@@ -199,6 +205,10 @@ export async function getActiveGeneration(
   if (error) {
     if (error.code === 'PGRST116') {
       // No rows found
+      return null;
+    }
+    // Silently handle 406 errors (table not accessible)
+    if (error.message?.includes('406') || error.code === '406') {
       return null;
     }
     console.error('[ServerGeneration] Error getting active session:', error);
@@ -527,6 +537,11 @@ export async function syncFromServer(
   agentProgress: AgentProgress[];
   virtualFSInstances: Map<number, VirtualFS>;
 } | null> {
+  // Skip if server orchestration is disabled (using client-side orchestration instead)
+  if (!shouldUseServerOrchestration()) {
+    return null;
+  }
+
   // Get active session
   const session = await getActiveGeneration(vibeSessionId);
   if (!session) {
