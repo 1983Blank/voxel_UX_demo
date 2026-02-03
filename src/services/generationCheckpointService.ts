@@ -436,6 +436,77 @@ export async function getCompletedSteps(
 }
 
 // ============================================================================
+// Get Latest Session (including completed)
+// ============================================================================
+
+/**
+ * Get the most recent checkpoint session for a vibe session (including completed ones)
+ * Use this to restore artifacts from a completed but broken generation
+ */
+export async function getLatestCheckpoint(
+  vibeSessionId: string
+): Promise<CheckpointData | null> {
+  // Skip if server orchestration not enabled
+  if (!SERVER_ORCHESTRATION_ENABLED) {
+    return null;
+  }
+
+  // Get most recent session regardless of status
+  const { data: session, error: sessionError } = await supabase
+    .from('generation_sessions')
+    .select('*')
+    .eq('vibe_session_id', vibeSessionId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single();
+
+  if (sessionError || !session) {
+    if (sessionError?.code === 'PGRST116' || sessionError?.message?.includes('406') ||
+        sessionError?.code === '42P01' || sessionError?.message?.includes('does not exist')) {
+      return null;
+    }
+    console.log('[Checkpoint] No session found for vibe session:', vibeSessionId);
+    return null;
+  }
+
+  console.log('[Checkpoint] Found session:', session.id, 'status:', session.status);
+
+  // Get variants with their steps
+  const { data: variants, error: variantsError } = await supabase
+    .from('generation_variants')
+    .select('*')
+    .eq('generation_session_id', session.id)
+    .order('variant_index');
+
+  if (variantsError || !variants) {
+    console.error('[Checkpoint] Failed to get variants:', variantsError);
+    return null;
+  }
+
+  // Get steps for each variant
+  const variantsWithSteps = await Promise.all(
+    variants.map(async (variant) => {
+      const { data: steps } = await supabase
+        .from('generation_steps')
+        .select('*')
+        .eq('variant_id', variant.id)
+        .order('created_at');
+
+      return {
+        ...variant,
+        steps: steps || [],
+      };
+    })
+  );
+
+  console.log('[Checkpoint] Loaded', variants.length, 'variants with steps');
+  return {
+    session,
+    variants: variantsWithSteps,
+  };
+}
+
+// ============================================================================
 // Recovery Helpers
 // ============================================================================
 

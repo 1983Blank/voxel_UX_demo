@@ -137,9 +137,11 @@ import {
 import {
   generateInteractivePrototypesWithAgent,
   shouldUseServerOrchestration,
+  restoreFromCheckpoint,
 } from '@/services/interactivePrototypeService';
 import {
   getActiveCheckpoint,
+  getLatestCheckpoint,
   buildFilesFromCheckpoint,
   buildAgentProgressFromCheckpoint,
   type CheckpointData,
@@ -1937,6 +1939,30 @@ export const VibePrototyping: React.FC = () => {
                   }
                 } catch (err) {
                   console.warn('[VibePrototyping] Failed to check for checkpoint:', err);
+                }
+              }
+
+              // If variants are complete but VirtualFS previews are missing (lost after refresh),
+              // try to restore from the most recent checkpoint (including completed sessions)
+              if (allVariantsComplete || session.status === 'complete') {
+                const prototypeStore = usePrototypeStore.getState();
+                const prototypeVariants = Object.values(prototypeStore.variants);
+                const hasPreviewsLost = prototypeVariants.some(
+                  v => v.status === 'ready' && (!v.files || v.files.length === 0 || !v.previewUrl)
+                );
+
+                if (hasPreviewsLost) {
+                  console.log('[VibePrototyping] Detected completed variants with lost previews, attempting restoration...');
+                  try {
+                    const restoration = await restoreFromCheckpoint(sessionId);
+                    if (restoration.restored) {
+                      console.log('[VibePrototyping] Successfully restored', restoration.results?.length, 'variants from checkpoint');
+                    } else {
+                      console.log('[VibePrototyping] No checkpoint data available for restoration');
+                    }
+                  } catch (err) {
+                    console.warn('[VibePrototyping] Failed to restore from checkpoint:', err);
+                  }
                 }
               }
 

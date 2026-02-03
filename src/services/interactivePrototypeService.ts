@@ -18,6 +18,11 @@ import { usePrototypeStore } from '../store/prototypeStore';
 import { useVibeStore } from '../store/vibeStore';
 import { orchestrateGeneration, resumeGeneration } from './agentOrchestrationService';
 import { initCheckpointService } from './checkpointService';
+import {
+  getLatestCheckpoint,
+  buildFilesFromCheckpoint,
+  type CheckpointData,
+} from './generationCheckpointService';
 import type { VariantPlan } from './variantPlanService';
 import type { GeneratedFile, VariantApproach, DesignToken } from '../types/implementationScript';
 import type { AgentProgress, OrchestrationConfig } from '../types/agentTypes';
@@ -955,4 +960,129 @@ export function shouldUseServerOrchestration(): boolean {
  */
 export function setServerOrchestrationEnabled(enabled: boolean): void {
   localStorage.setItem('voxel_use_server_orchestration', enabled ? 'true' : 'false');
+}
+
+// ============================================================================
+// Checkpoint Recovery
+// ============================================================================
+
+/**
+ * Restore artifacts from a checkpoint after page refresh
+ *
+ * This retrieves the most recent generation session (including completed ones)
+ * and rebuilds the VirtualFS and prototypeStore state from saved files.
+ *
+ * Returns true if restoration was successful, false if no checkpoint found.
+ */
+export async function restoreFromCheckpoint(
+  sessionId: string
+): Promise<{
+  restored: boolean;
+  results?: InteractiveVariantResult[];
+  checkpoint?: CheckpointData;
+}> {
+  console.log('[InteractivePrototypeService] Attempting to restore from checkpoint for session:', sessionId);
+
+  // Get the latest checkpoint (including completed sessions)
+  const checkpoint = await getLatestCheckpoint(sessionId);
+
+  if (!checkpoint) {
+    console.log('[InteractivePrototypeService] No checkpoint found for session');
+    return { restored: false };
+  }
+
+  console.log('[InteractivePrototypeService] Found checkpoint:', {
+    sessionId: checkpoint.session.id,
+    status: checkpoint.session.status,
+    variantsCount: checkpoint.variants.length,
+  });
+
+  // Get prototype store
+  const prototypeStore = usePrototypeStore.getState();
+
+  // Rebuild each variant from checkpoint
+  const results: InteractiveVariantResult[] = [];
+  const approaches = checkpoint.variants.map(v =>
+    INDEX_TO_APPROACH[v.variant_index] || 'minimal'
+  );
+
+  // Initialize the prototype store with the approaches if not already
+  // This ensures the variant IDs exist
+  if (Object.keys(prototypeStore.variants).length === 0) {
+    prototypeStore.startGeneration(approaches as VariantApproach[]);
+  }
+
+  for (const variant of checkpoint.variants) {
+    const variantIndex = variant.variant_index;
+    const approach = INDEX_TO_APPROACH[variantIndex] || 'minimal';
+
+    // Build files from checkpoint steps
+    const files = buildFilesFromCheckpoint(variant.steps);
+
+    // Also check virtual_fs if files were saved there
+    if ((!files.length || files.length < 2) && variant.virtual_fs?.files) {
+      // Use files from virtual_fs instead
+      files.length = 0;
+      for (const f of variant.virtual_fs.files) {
+        files.push({
+          path: f.path,
+          content: f.content,
+          type: f.type as 'html' | 'js' | 'css' | 'json',
+        });
+      }
+    }
+
+    if (files.length === 0) {
+      console.log(`[InteractivePrototypeService] No files found for variant ${variantIndex}, skipping`);
+      continue;
+    }
+
+    console.log(`[InteractivePrototypeService] Restoring variant ${variantIndex} with ${files.length} files`);
+
+    // Create VirtualFS
+    const virtualFS = new VirtualFS({
+      sessionId,
+      variantId: `variant-${variantIndex}`,
+    });
+
+    for (const file of files) {
+      virtualFS.writeFile(file.path, file.content, file.type);
+    }
+
+    // Find the variant ID in the store
+    const variantId = Object.keys(prototypeStore.variants).find(
+      id => prototypeStore.variants[id].approach === approach
+    );
+
+    if (variantId) {
+      // Update the prototype store
+      prototypeStore.setVariantReady(
+        variantId,
+        files,
+        files.filter(f => f.path.startsWith('components/')).map(f => f.path)
+      );
+    }
+
+    const result: InteractiveVariantResult = {
+      variantIndex,
+      approach: approach as VariantApproach,
+      files,
+      virtualFS,
+      previewUrl: virtualFS.createPreviewUrl(),
+    };
+
+    results.push(result);
+  }
+
+  if (results.length > 0) {
+    console.log(`[InteractivePrototypeService] Successfully restored ${results.length} variants from checkpoint`);
+    return {
+      restored: true,
+      results,
+      checkpoint,
+    };
+  }
+
+  console.log('[InteractivePrototypeService] No variants could be restored from checkpoint');
+  return { restored: false, checkpoint };
 }
