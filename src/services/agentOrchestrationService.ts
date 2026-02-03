@@ -53,6 +53,10 @@ const INDEX_TO_APPROACH: Record<number, VariantApproach> = {
 // Auth Helpers
 // ============================================================================
 
+// Track when we last refreshed to avoid excessive refreshes
+let lastTokenRefresh = 0;
+const MIN_REFRESH_INTERVAL = 30000; // 30 seconds
+
 /**
  * Get a fresh access token, refreshing if needed
  * This prevents 401 errors during long-running generation
@@ -65,25 +69,70 @@ async function getFreshAccessToken(): Promise<string> {
     throw new Error('Not authenticated');
   }
 
-  // Check if token is about to expire (within 5 minutes)
+  // Check if token is about to expire (within 10 minutes - more aggressive)
   const expiresAt = session.expires_at ? session.expires_at * 1000 : 0;
-  const fiveMinutesFromNow = Date.now() + 5 * 60 * 1000;
+  const tenMinutesFromNow = Date.now() + 10 * 60 * 1000;
+  const timeSinceLastRefresh = Date.now() - lastTokenRefresh;
 
-  if (expiresAt < fiveMinutesFromNow) {
+  // Refresh if:
+  // 1. Token is expiring within 10 minutes, OR
+  // 2. We haven't refreshed in the last 30 seconds (for safety during long operations)
+  const shouldRefresh = expiresAt < tenMinutesFromNow ||
+    (timeSinceLastRefresh > MIN_REFRESH_INTERVAL && expiresAt < Date.now() + 30 * 60 * 1000);
+
+  if (shouldRefresh) {
     // Token is expiring soon, refresh it
-    console.log('[AgentOrchestration] Token expiring soon, refreshing...');
+    console.log('[AgentOrchestration] Refreshing token (expires in', Math.round((expiresAt - Date.now()) / 1000 / 60), 'min)');
     const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
 
     if (refreshError || !refreshData.session) {
       console.error('[AgentOrchestration] Failed to refresh token:', refreshError);
-      throw new Error('Failed to refresh authentication');
+      // Try to continue with the existing token if refresh fails
+      console.log('[AgentOrchestration] Continuing with existing token');
+      return session.access_token;
     }
 
-    console.log('[AgentOrchestration] Token refreshed successfully');
+    lastTokenRefresh = Date.now();
+    console.log('[AgentOrchestration] Token refreshed successfully, new expiry in',
+      Math.round((refreshData.session.expires_at! * 1000 - Date.now()) / 1000 / 60), 'min');
     return refreshData.session.access_token;
   }
 
   return session.access_token;
+}
+
+/**
+ * Wrapper to retry a fetch with refreshed token on 401
+ */
+async function fetchWithTokenRetry(
+  url: string,
+  options: RequestInit,
+  retries = 1
+): Promise<Response> {
+  const token = await getFreshAccessToken();
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      ...options.headers,
+      'Authorization': `Bearer ${token}`,
+    },
+  });
+
+  // If 401 and we have retries left, force refresh and retry
+  if (response.status === 401 && retries > 0) {
+    console.log('[AgentOrchestration] Got 401, forcing token refresh and retry...');
+    lastTokenRefresh = 0; // Force refresh
+    const newToken = await getFreshAccessToken();
+    return fetch(url, {
+      ...options,
+      headers: {
+        ...options.headers,
+        'Authorization': `Bearer ${newToken}`,
+      },
+    });
+  }
+
+  return response;
 }
 
 // ============================================================================
@@ -108,9 +157,6 @@ async function callGenerateImplementationScript(
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
   const functionUrl = `${supabaseUrl}/functions/v1/generate-implementation-script`;
 
-  // Get fresh access token to prevent 401 errors during long-running generation
-  const freshToken = await getFreshAccessToken();
-
   // Log what we're sending to the LLM
   console.log('[AgentOrchestration] 📤 Calling generate-implementation-script:', {
     variantIndex: plan.variant_index,
@@ -127,11 +173,10 @@ async function callGenerateImplementationScript(
     model: context.model,
   });
 
-  const response = await fetch(functionUrl, {
+  const response = await fetchWithTokenRetry(functionUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${freshToken}`,
     },
     body: JSON.stringify({
       variantPlan: plan,
@@ -171,9 +216,6 @@ async function callGeneratePrototypeFile(
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
   const functionUrl = `${supabaseUrl}/functions/v1/generate-prototype-file`;
 
-  // Get fresh access token to prevent 401 errors during long-running generation
-  const freshToken = await getFreshAccessToken();
-
   // Reduce source HTML to prevent timeout - 25KB is enough for design context
   const sourceHtmlToSend = fileType === 'index.html' ? context.sourceHtml?.slice(0, 25000) : undefined;
   // Skip screenshot for index.html to reduce payload and speed up generation
@@ -203,11 +245,10 @@ async function callGeneratePrototypeFile(
     console.log('[AgentOrchestration] 📋 Initial state:', implementationScript.initialState);
   }
 
-  const response = await fetch(functionUrl, {
+  const response = await fetchWithTokenRetry(functionUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${freshToken}`,
     },
     body: JSON.stringify({
       fileType,

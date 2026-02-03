@@ -17,6 +17,17 @@ import type { GeneratedFile } from '../types/implementationScript';
 import type { AgentProgress, AgentPhase } from '../types/agentTypes';
 
 // ============================================================================
+// Feature Flag
+// ============================================================================
+
+/**
+ * Server orchestration feature flag.
+ * Set to true when the generation_sessions table is deployed.
+ * When false, all checkpoint functions return early without making DB queries.
+ */
+const SERVER_ORCHESTRATION_ENABLED = true;
+
+// ============================================================================
 // Types
 // ============================================================================
 
@@ -78,6 +89,11 @@ export async function createCheckpointSession(
   plans: VariantPlan[],
   screenshotBase64?: string
 ): Promise<CheckpointSession | null> {
+  // Skip if server orchestration not enabled
+  if (!SERVER_ORCHESTRATION_ENABLED) {
+    return null;
+  }
+
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) {
     console.error('[Checkpoint] No authenticated user');
@@ -152,6 +168,11 @@ export async function createCheckpointSession(
 export async function getActiveCheckpoint(
   vibeSessionId: string
 ): Promise<CheckpointData | null> {
+  // Skip if server orchestration not enabled
+  if (!SERVER_ORCHESTRATION_ENABLED) {
+    return null;
+  }
+
   // Get running or paused session
   const { data: session, error: sessionError } = await supabase
     .from('generation_sessions')

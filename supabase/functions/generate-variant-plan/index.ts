@@ -115,8 +115,11 @@ function repairJson(json: string): string {
   repaired = repaired.replace(/,(\s*[}\]])/g, '$1')
 
   // Fix missing commas between array elements (common LLM issue)
-  // Look for patterns like "text" "text" (missing comma between strings)
-  repaired = repaired.replace(/"(\s*)"(?=[^:,\]}])/g, '", "')
+  // Pattern: "string1" "string2" (missing comma between strings in array)
+  repaired = repaired.replace(/"(\s+)"/g, '", "')
+
+  // Pattern: "string1"\n"string2" (missing comma between strings on different lines)
+  repaired = repaired.replace(/"\s*\n\s*"/g, '",\n"')
 
   // Fix missing commas between object properties - multiple patterns
   // Pattern 1: "value"\n"key": (missing comma after string value)
@@ -135,11 +138,55 @@ function repairJson(json: string): string {
   repaired = repaired.replace(/}\s*\n\s*"/g, '},\n"')
 
   // Fix unescaped newlines in strings (common LLM issue)
-  // Find strings after colons and escape newlines within them
-  repaired = repaired.replace(/:\s*"([^"]*)"/g, (match, content) => {
-    const escaped = content.replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t')
-    return `: "${escaped}"`
-  })
+  // Process line by line to fix strings with embedded newlines
+  // This is complex because we need to track whether we're inside a string
+  const lines = repaired.split('\n')
+  const fixedLines: string[] = []
+  let inString = false
+  let stringBuffer = ''
+
+  for (const line of lines) {
+    let i = 0
+    while (i < line.length) {
+      const char = line[i]
+      if (char === '"' && (i === 0 || line[i - 1] !== '\\')) {
+        if (inString) {
+          // End of string
+          stringBuffer += char
+          fixedLines.push(stringBuffer)
+          stringBuffer = ''
+          inString = false
+        } else {
+          // Start of string
+          inString = true
+          stringBuffer = char
+        }
+      } else if (inString) {
+        stringBuffer += char
+      } else {
+        if (stringBuffer) {
+          fixedLines.push(stringBuffer)
+          stringBuffer = ''
+        }
+        fixedLines.push(char)
+      }
+      i++
+    }
+
+    if (inString) {
+      // We're in a string that continues to the next line - escape the newline
+      stringBuffer += '\\n'
+    } else if (stringBuffer) {
+      fixedLines.push(stringBuffer)
+      stringBuffer = ''
+    }
+  }
+
+  if (stringBuffer) {
+    fixedLines.push(stringBuffer)
+  }
+
+  repaired = fixedLines.join('')
 
   // Fix unescaped quotes inside strings (very common)
   // This is tricky - look for patterns suggesting unescaped quotes mid-string
@@ -183,6 +230,39 @@ function extractJsonObject(text: string): string {
   return text
 }
 
+// More aggressive JSON repair for stubborn cases
+function aggressiveRepairJson(json: string): string {
+  let repaired = json
+
+  // Strip all control characters
+  repaired = repaired.replace(/[\x00-\x1F]/g, (match) => {
+    if (match === '\n' || match === '\r' || match === '\t') return ' '
+    return ''
+  })
+
+  // Normalize all whitespace to single spaces
+  repaired = repaired.replace(/\s+/g, ' ')
+
+  // Fix common array issues: "item1" "item2" -> "item1", "item2"
+  repaired = repaired.replace(/" "/g, '", "')
+
+  // Fix: "item1"  "item2" (multiple spaces)
+  repaired = repaired.replace(/"\s+"/g, '", "')
+
+  // Fix: ]["  or ]"  (missing comma before next element/property)
+  repaired = repaired.replace(/\]\s*"/g, '], "')
+  repaired = repaired.replace(/}\s*"/g, '}, "')
+  repaired = repaired.replace(/}\s*{/g, '}, {')
+
+  // Remove trailing commas
+  repaired = repaired.replace(/,\s*([}\]])/g, '$1')
+
+  // Fix double commas
+  repaired = repaired.replace(/,\s*,/g, ',')
+
+  return repaired
+}
+
 // Parse and validate JSON response
 function parseVariantPlans(response: string): VariantPlan[] {
   // Clean response
@@ -208,6 +288,7 @@ function parseVariantPlans(response: string): VariantPlan[] {
     parsed = JSON.parse(cleaned)
   } catch (firstError) {
     console.log('[generate-variant-plan] First JSON parse failed, attempting repair...')
+    console.log('[generate-variant-plan] First error:', (firstError as Error).message)
 
     // Try to repair and parse again
     const repaired = repairJson(cleaned)
@@ -215,14 +296,23 @@ function parseVariantPlans(response: string): VariantPlan[] {
       parsed = JSON.parse(repaired)
       console.log('[generate-variant-plan] JSON repair successful')
     } catch (secondError) {
-      // Log the problematic section for debugging
-      const errorMatch = (firstError as Error).message.match(/position (\d+)/)
-      if (errorMatch) {
-        const pos = parseInt(errorMatch[1])
-        const context = cleaned.slice(Math.max(0, pos - 50), pos + 50)
-        console.error('[generate-variant-plan] JSON error near:', context)
+      console.log('[generate-variant-plan] Standard repair failed, trying aggressive repair...')
+
+      // Try more aggressive repair
+      const aggressiveRepaired = aggressiveRepairJson(cleaned)
+      try {
+        parsed = JSON.parse(aggressiveRepaired)
+        console.log('[generate-variant-plan] Aggressive JSON repair successful')
+      } catch (thirdError) {
+        // Log the problematic section for debugging
+        const errorMatch = (firstError as Error).message.match(/position (\d+)/)
+        if (errorMatch) {
+          const pos = parseInt(errorMatch[1])
+          const context = cleaned.slice(Math.max(0, pos - 100), pos + 100)
+          console.error('[generate-variant-plan] JSON error near position', pos, ':', context)
+        }
+        throw firstError // Throw original error
       }
-      throw firstError // Throw original error
     }
   }
 
