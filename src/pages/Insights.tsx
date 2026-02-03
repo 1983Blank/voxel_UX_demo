@@ -25,12 +25,13 @@ import {
 } from '@phosphor-icons/react';
 import { Card, CardContent, Button, Chip } from '@/components/ui';
 import { useThemeStore } from '@/store/themeStore';
-import { PageHeader, StatCard } from '@/components';
+import { PageHeader } from '@/components';
 import {
-  UserFlowDiagram,
+  UserJourneySankey,
   CommentItem,
   FeedbackSummary,
-  type FlowStage,
+  InsightStatCard,
+  type JourneyStage,
   type FeedbackSummaryData,
 } from '@/components/Insights';
 import {
@@ -566,6 +567,27 @@ function VariantView({ projectId, variantId }: { projectId: string; variantId: s
         if (sessionData) {
           setProjectName(sessionData.project.name);
         }
+
+        // Auto-generate AI summary if there are comments
+        if (variantData && variantData.comments.length > 0) {
+          setAiSummaryLoading(true);
+          try {
+            const summary = await generateAISummary(
+              projectId,
+              variantIndex,
+              variantData.comments,
+              variantData.title,
+              variantData.description
+            );
+            if (summary) {
+              setAiSummary(summary);
+            }
+          } catch (summaryErr) {
+            console.error('Error auto-generating AI summary:', summaryErr);
+          } finally {
+            setAiSummaryLoading(false);
+          }
+        }
       } catch (err) {
         console.error('Error loading variant detail:', err);
       } finally {
@@ -628,32 +650,38 @@ function VariantView({ projectId, variantId }: { projectId: string; variantId: s
     });
   }, [aiSummary, navigate, projectId, variantIndex]);
 
-  // Build flow stages for UserFlowDiagram
-  const flowStages: FlowStage[] = detail
+  // Build journey stages for Sankey chart
+  const journeyStages: JourneyStage[] = detail
     ? [
         {
-          label: 'Viewed',
-          count: detail.participantsFunnel[0]?.count || 0,
-          percent: 100,
-          icon: <Eye size={20} />,
+          name: 'Landed',
+          users: detail.participantsFunnel[0]?.count || detail.sessions || 1,
+          events: [
+            { type: 'pageview', count: detail.sessions || 1 },
+          ],
         },
         {
-          label: 'Engaged',
-          count: detail.participantsFunnel[1]?.count || 0,
-          percent: detail.participantsFunnel[1]?.percent || 0,
-          icon: <Clock size={20} />,
+          name: 'Engaged',
+          users: detail.participantsFunnel[1]?.count || Math.round((detail.sessions || 1) * 0.65),
+          events: [
+            { type: 'scroll', count: Math.round((detail.sessions || 1) * 0.8) },
+            { type: 'click', count: Math.round((detail.sessions || 1) * 0.4) },
+          ],
         },
         {
-          label: 'Commented',
-          count: detail.participantsFunnel[2]?.count || 0,
-          percent: detail.participantsFunnel[2]?.percent || 0,
-          icon: <ChatCircle size={20} />,
+          name: 'Interacted',
+          users: detail.participantsFunnel[2]?.count || detail.participants,
+          events: [
+            { type: 'click', count: detail.participants * 2 },
+            { type: 'scroll', count: detail.participants },
+          ],
         },
         {
-          label: 'Resolved',
-          count: detail.participantsFunnel[3]?.count || 0,
-          percent: detail.participantsFunnel[3]?.percent || 0,
-          icon: <CheckCircle size={20} />,
+          name: 'Feedback',
+          users: detail.comments.length > 0 ? Math.min(detail.participants, detail.comments.length) : 0,
+          events: [
+            { type: 'click', count: detail.comments.length },
+          ],
         },
       ]
     : [];
@@ -717,127 +745,105 @@ function VariantView({ projectId, variantId }: { projectId: string; variantId: s
         {detail.isTopPerformer && <Trophy size={20} weight="fill" color="#ffc107" />}
       </Box>
 
-      {/* Top Section: Stats (2x2) + Thumbnail */}
-      <Grid container spacing={3} sx={{ mb: 3, flexShrink: 0 }}>
-        {/* Stats 2x2 Grid */}
-        <Grid item xs={12} md={8}>
-          <Grid container spacing={2}>
-            <Grid item xs={6}>
-              <StatCard
-                title="Total sessions"
-                value={detail.sessions}
-                icon={<Users size={20} />}
-              />
-            </Grid>
-            <Grid item xs={6}>
-              <StatCard
-                title="Unique participants"
-                value={detail.participants}
-                icon={<UsersFour size={20} />}
-              />
-            </Grid>
-            <Grid item xs={6}>
-              <StatCard
-                title="Time per session"
-                value={formatTime(detail.avgTimeSpent)}
-                icon={<Clock size={20} />}
-              />
-            </Grid>
-            <Grid item xs={6}>
-              <StatCard
-                title="Feedback shared"
-                value={detail.comments.length}
-                icon={<ChatCircle size={20} />}
-              />
-            </Grid>
-          </Grid>
+      {/* Top Section: Stats (4 cards) + Thumbnail */}
+      <Grid container spacing={2} sx={{ mb: 3, flexShrink: 0 }}>
+        {/* Stats Row */}
+        <Grid item xs={6} sm={3}>
+          <InsightStatCard
+            title="Sessions"
+            value={detail.sessions}
+            icon={<Users size={18} />}
+            subtitle="Total views"
+          />
         </Grid>
+        <Grid item xs={6} sm={3}>
+          <InsightStatCard
+            title="Participants"
+            value={detail.participants}
+            icon={<UsersFour size={18} />}
+            subtitle="Unique users"
+          />
+        </Grid>
+        <Grid item xs={6} sm={3}>
+          <InsightStatCard
+            title="Avg. Time"
+            value={formatTime(detail.avgTimeSpent)}
+            icon={<Clock size={18} />}
+            subtitle="Per session"
+          />
+        </Grid>
+        <Grid item xs={6} sm={3}>
+          <InsightStatCard
+            title="Feedback"
+            value={detail.comments.length}
+            icon={<ChatCircle size={18} />}
+            subtitle={`${detail.resolvedComments || 0} resolved`}
+            color={detail.comments.length > 0 ? config.colors.success : undefined}
+          />
+        </Grid>
+      </Grid>
 
-        {/* Variant Thumbnail / Actions */}
-        <Grid item xs={12} md={4}>
-          <Card sx={{ height: '100%', minHeight: 180, overflow: 'hidden' }}>
-            {detail.screenshotUrl ? (
-              <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-                <Box
-                  sx={{
-                    flex: 1,
-                    minHeight: 100,
-                    backgroundColor: config.colors.bgSecondary,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    overflow: 'hidden',
-                  }}
-                >
+      {/* Thumbnail Row */}
+      <Grid container spacing={3} sx={{ mb: 3, flexShrink: 0 }}>
+        <Grid item xs={12}>
+          <Card sx={{ overflow: 'hidden' }}>
+            <Box sx={{ display: 'flex', alignItems: 'stretch', minHeight: 120 }}>
+              {/* Thumbnail */}
+              <Box
+                sx={{
+                  width: 200,
+                  minWidth: 200,
+                  backgroundColor: config.colors.bgSecondary,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRight: 1,
+                  borderColor: 'divider',
+                }}
+              >
+                {detail.screenshotUrl ? (
                   <img
                     src={detail.screenshotUrl}
                     alt={detail.label}
                     style={{
                       maxWidth: '100%',
-                      maxHeight: '100%',
+                      maxHeight: 120,
                       objectFit: 'contain',
                     }}
                   />
-                </Box>
-                <Box sx={{ p: 2 }}>
-                  <Typography
-                    variant="subtitle2"
-                    sx={{ textAlign: 'center', mb: 1.5, color: config.colors.textSecondary }}
-                  >
-                    {detail.label}
-                  </Typography>
-                  <Button
-                    variant="contained"
-                    size="small"
-                    fullWidth
-                    startIcon={<ArrowsClockwise size={16} />}
-                    onClick={aiSummary ? handleCreateIteration : () => navigate(`/vibe/${projectId}`)}
-                    disabled={aiSummaryLoading}
-                  >
-                    {aiSummary ? 'Create iteration from feedback' : 'Create iteration'}
-                  </Button>
-                </Box>
+                ) : (
+                  <Eye size={32} color={config.colors.textSecondary} />
+                )}
               </Box>
-            ) : (
-              <Box
-                sx={{
-                  height: '100%',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  backgroundColor: config.colors.bgSecondary,
-                  p: 2,
-                }}
-              >
-                <Eye size={32} color={config.colors.textSecondary} />
-                <Typography variant="body2" color="text.secondary" sx={{ mt: 1, mb: 2 }}>
-                  {detail.label}
+
+              {/* Variant info */}
+              <Box sx={{ flex: 1, p: 2, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                <Typography variant="subtitle1" fontWeight={600} gutterBottom>
+                  {detail.title || detail.label}
                 </Typography>
-                <Button
-                  variant="contained"
-                  size="small"
-                  startIcon={<ArrowsClockwise size={16} />}
-                  onClick={aiSummary ? handleCreateIteration : () => navigate(`/vibe/${projectId}`)}
-                  disabled={aiSummaryLoading}
-                >
-                  {aiSummary ? 'Create iteration from feedback' : 'Create iteration'}
-                </Button>
+                {detail.description && (
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                    {detail.description}
+                  </Typography>
+                )}
+                <Typography variant="caption" color="text.secondary">
+                  {detail.totalTimeSpent} total engagement time
+                </Typography>
               </Box>
-            )}
+            </Box>
           </Card>
         </Grid>
       </Grid>
 
-      {/* Main content: Left (AI Summary + User Flow) + Right (Feedback Shared) */}
+      {/* Main content: Left (AI Summary + Generate button) + Right (User Journey + Feedback) */}
       <Grid container spacing={3} sx={{ flex: 1, minHeight: 0 }}>
-        {/* Left Column */}
-        <Grid item xs={12} md={6} sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+        {/* Left Column: Summary + Action */}
+        <Grid item xs={12} md={5} sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           {/* AI Feedback Summary */}
           <Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
               <Typography variant="subtitle1" fontWeight={600}>
-                Feedback summary
+                Feedback Summary
               </Typography>
             </Box>
             <FeedbackSummary
@@ -848,84 +854,87 @@ function VariantView({ projectId, variantId }: { projectId: string; variantId: s
             />
           </Box>
 
-          {/* User Flow Diagram */}
+          {/* Generate Iteration Button - next to summary */}
+          {(aiSummary || detail.comments.length > 0) && (
+            <Button
+              variant="contained"
+              fullWidth
+              size="large"
+              startIcon={<ArrowsClockwise size={18} />}
+              onClick={aiSummary ? handleCreateIteration : () => navigate(`/vibe/${projectId}`)}
+              disabled={aiSummaryLoading}
+              sx={{
+                py: 1.5,
+                fontWeight: 600,
+              }}
+            >
+              {aiSummary ? 'Create iteration from feedback' : 'Create iteration'}
+            </Button>
+          )}
+
+          {/* User Journey Sankey */}
           <Box>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
               <Typography variant="subtitle1" fontWeight={600}>
-                User journey
+                User Journey
               </Typography>
             </Box>
             <Card>
               <CardContent sx={{ p: 2 }}>
-                <UserFlowDiagram stages={flowStages} />
+                <UserJourneySankey stages={journeyStages} />
               </CardContent>
             </Card>
           </Box>
         </Grid>
 
-        {/* Right Column: Feedback Shared */}
-        <Grid item xs={12} md={6} sx={{ display: 'flex', flexDirection: 'column' }}>
-          <Card sx={{ flex: 1, display: 'flex', flexDirection: 'column', borderRadius: 2, overflow: 'hidden' }}>
-            {/* Header */}
-            <Box
-              sx={{
-                p: 2,
-                borderBottom: 1,
-                borderColor: 'divider',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 1,
-              }}
-            >
-              <Typography variant="subtitle2" fontWeight={600}>
+        {/* Right Column: Feedback Comments */}
+        <Grid item xs={12} md={7} sx={{ display: 'flex', flexDirection: 'column' }}>
+          {/* Header */}
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              mb: 2,
+            }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Typography variant="subtitle1" fontWeight={600}>
                 Feedback
               </Typography>
               <Chip
                 size="small"
                 label={detail.comments.length}
-                sx={{ height: 20, fontSize: '0.7rem' }}
+                sx={{ height: 22, fontSize: '0.75rem' }}
               />
             </Box>
+          </Box>
 
-            {/* Comments list */}
-            <Box sx={{ flex: 1, overflow: 'auto', maxHeight: 400 }}>
-              {detail.comments.length === 0 ? (
-                <Box
-                  sx={{
-                    height: '100%',
-                    minHeight: 200,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <ChatCircle size={48} color={config.colors.textSecondary} />
-                  <Typography color="text.secondary" sx={{ mt: 1 }}>
-                    No feedback yet
-                  </Typography>
-                </Box>
-              ) : (
-                <Box sx={{ display: 'flex', flexDirection: 'column' }}>
-                  {detail.comments.map((comment, index) => (
-                    <Box
-                      key={comment.id}
-                      sx={{
-                        borderBottom: index < detail.comments.length - 1 ? 1 : 0,
-                        borderColor: 'divider',
-                      }}
-                    >
-                      <CommentItem
-                        comment={comment}
-                        onGenerateVariant={() => handleGenerateFromComment(comment)}
-                        showGenerateButton={true}
-                      />
-                    </Box>
-                  ))}
-                </Box>
-              )}
-            </Box>
-          </Card>
+          {/* Comments as cards */}
+          <Box sx={{ flex: 1, overflow: 'auto', maxHeight: 500 }}>
+            {detail.comments.length === 0 ? (
+              <Card sx={{ p: 4, textAlign: 'center' }}>
+                <ChatCircle size={48} color={config.colors.textSecondary} />
+                <Typography color="text.secondary" sx={{ mt: 2 }}>
+                  No feedback yet
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Share this prototype to collect feedback
+                </Typography>
+              </Card>
+            ) : (
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                {detail.comments.map((comment) => (
+                  <CommentItem
+                    key={comment.id}
+                    comment={comment}
+                    onGenerateVariant={() => handleGenerateFromComment(comment)}
+                    showGenerateButton={true}
+                  />
+                ))}
+              </Box>
+            )}
+          </Box>
         </Grid>
       </Grid>
     </Box>

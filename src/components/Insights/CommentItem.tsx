@@ -3,7 +3,7 @@ import Typography from '@mui/material/Typography';
 import Avatar from '@mui/material/Avatar';
 import Tooltip from '@mui/material/Tooltip';
 import { PushPin, CheckCircle, Sparkle } from '@phosphor-icons/react';
-import { Button, Chip } from '@/components/ui';
+import { Button, Card, Chip } from '@/components/ui';
 import { useThemeStore } from '@/store/themeStore';
 import type { FeedbackComment } from '@/services/feedbackInsightsService';
 
@@ -43,34 +43,42 @@ export function CommentItem({ comment, onGenerateVariant, showGenerateButton = t
   const isPinned = comment.positionX !== null && comment.positionY !== null;
 
   return (
-    <Box
+    <Card
       sx={{
-        p: 2,
-        borderRadius: 1.5,
-        backgroundColor: 'transparent',
+        p: 0,
+        borderRadius: 2,
+        border: 1,
+        borderColor: comment.resolved ? 'divider' : `${config.colors.primary}30`,
+        backgroundColor: config.colors.bgPrimary,
+        opacity: comment.resolved ? 0.8 : 1,
         transition: 'all 0.2s ease',
-        opacity: comment.resolved ? 0.7 : 1,
+        overflow: 'hidden',
         '&:hover': {
-          backgroundColor: config.colors.bgSecondary,
+          borderColor: config.colors.primary,
+          boxShadow: `0 2px 8px ${config.colors.primary}15`,
         },
       }}
     >
-      {/* Header row */}
+      {/* Card header */}
       <Box
         sx={{
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          mb: 1,
+          p: 2,
+          pb: 1.5,
+          borderBottom: 1,
+          borderColor: 'divider',
+          backgroundColor: config.colors.bgSecondary,
         }}
       >
         {/* User info */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
           <Avatar
             sx={{
-              width: 32,
-              height: 32,
-              fontSize: 12,
+              width: 36,
+              height: 36,
+              fontSize: 13,
               fontWeight: 600,
               background: mode === 'modern' && config.gradients
                 ? config.gradients.primary
@@ -84,21 +92,6 @@ export function CommentItem({ comment, onGenerateVariant, showGenerateButton = t
               <Typography variant="body2" fontWeight={600}>
                 {comment.userName}
               </Typography>
-              {isPinned && (
-                <Chip
-                  size="small"
-                  label="Pinned"
-                  icon={<PushPin size={10} />}
-                  sx={{
-                    height: 18,
-                    fontSize: '0.65rem',
-                    '& .MuiChip-icon': {
-                      fontSize: 10,
-                      ml: 0.5,
-                    },
-                  }}
-                />
-              )}
               {comment.resolved && (
                 <Tooltip title="Resolved">
                   <CheckCircle size={16} color={config.colors.success} weight="fill" />
@@ -110,49 +103,86 @@ export function CommentItem({ comment, onGenerateVariant, showGenerateButton = t
             </Typography>
           </Box>
         </Box>
+
+        {/* Badges */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          {isPinned && (
+            <Chip
+              size="small"
+              label="Pinned"
+              icon={<PushPin size={10} />}
+              color="primary"
+              variant="outlined"
+              sx={{
+                height: 22,
+                fontSize: '0.7rem',
+                '& .MuiChip-icon': {
+                  fontSize: 10,
+                  ml: 0.5,
+                },
+              }}
+            />
+          )}
+        </Box>
       </Box>
 
       {/* Comment content */}
-      <Typography
-        variant="body2"
-        sx={{
-          color: config.colors.textPrimary,
-          lineHeight: 1.6,
-          mb: comment.replyCount > 0 ? 1 : 0,
-        }}
-      >
-        {comment.content}
-      </Typography>
-
-      {/* Reply count */}
-      {comment.replyCount > 0 && (
+      <Box sx={{ p: 2 }}>
         <Typography
-          variant="caption"
+          variant="body2"
           sx={{
-            color: config.colors.primary,
-            fontWeight: 500,
-            cursor: 'pointer',
-            '&:hover': { textDecoration: 'underline' },
+            color: config.colors.textPrimary,
+            lineHeight: 1.7,
+            mb: 0,
           }}
         >
-          {comment.replyCount} {comment.replyCount === 1 ? 'reply' : 'replies'}
+          {comment.content}
         </Typography>
-      )}
 
-      {/* Generate variant button */}
+        {/* Reply count */}
+        {comment.replyCount > 0 && (
+          <Typography
+            variant="caption"
+            sx={{
+              color: config.colors.primary,
+              fontWeight: 500,
+              cursor: 'pointer',
+              display: 'block',
+              mt: 1.5,
+              '&:hover': { textDecoration: 'underline' },
+            }}
+          >
+            {comment.replyCount} {comment.replyCount === 1 ? 'reply' : 'replies'}
+          </Typography>
+        )}
+      </Box>
+
+      {/* Generate variant button - card footer */}
       {showGenerateButton && onGenerateVariant && (
-        <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 1.5 }}>
+        <Box
+          sx={{
+            display: 'flex',
+            justifyContent: 'flex-end',
+            px: 2,
+            py: 1.5,
+            borderTop: 1,
+            borderColor: 'divider',
+            backgroundColor: config.colors.bgSecondary,
+          }}
+        >
           <Button
             size="small"
-            variant="text"
+            variant="outlined"
             startIcon={<Sparkle size={14} />}
             onClick={() => onGenerateVariant(comment.content)}
             sx={{
               fontSize: '0.75rem',
+              borderColor: config.colors.border,
               color: config.colors.textSecondary,
               '&:hover': {
+                borderColor: config.colors.primary,
                 color: config.colors.primary,
-                backgroundColor: `${config.colors.primary}10`,
+                backgroundColor: `${config.colors.primary}08`,
               },
             }}
           >
@@ -160,6 +190,6 @@ export function CommentItem({ comment, onGenerateVariant, showGenerateButton = t
           </Button>
         </Box>
       )}
-    </Box>
+    </Card>
   );
 }
