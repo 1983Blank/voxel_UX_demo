@@ -687,34 +687,15 @@ function escapeScriptTags(code: string): string {
 }
 
 /**
- * Escape code for safe injection into a script tag within a template literal
- * This handles backticks and ${} expressions that would break the outer template
+ * Escape code for safe injection into a script tag
  *
- * IMPORTANT: We only escape unescaped backticks and ${} patterns.
- * Already-escaped sequences in the source code should be preserved.
+ * IMPORTANT: We only escape </script> tags to prevent HTML breakage.
+ * Backticks and ${} should NOT be escaped - they are valid JavaScript
+ * template literal syntax and escaping them would break the code.
  */
 function escapeForScriptInjection(code: string): string {
-  let escaped = code;
-
-  // CRITICAL: First escape </script> tags to prevent HTML breakage
-  escaped = escapeScriptTags(escaped);
-
-  // Escape backticks to prevent breaking template literals
-  // First, temporarily replace already-escaped backticks with a placeholder
-  escaped = escaped.replace(/\\`/g, '\u0000ESCAPED_BACKTICK\u0000');
-
-  // Escape unescaped backticks
-  escaped = escaped.replace(/`/g, '\\`');
-
-  // Restore the already-escaped backticks
-  escaped = escaped.replace(/\u0000ESCAPED_BACKTICK\u0000/g, '\\`');
-
-  // Similarly for ${} expressions
-  escaped = escaped.replace(/\\\$\{/g, '\u0000ESCAPED_DOLLAR_BRACE\u0000');
-  escaped = escaped.replace(/\$\{/g, '\\${');
-  escaped = escaped.replace(/\u0000ESCAPED_DOLLAR_BRACE\u0000/g, '\\${');
-
-  return escaped;
+  // Only escape </script> tags to prevent HTML breakage
+  return escapeScriptTags(code);
 }
 
 /**
