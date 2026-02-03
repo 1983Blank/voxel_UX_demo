@@ -632,6 +632,37 @@ export async function generateInteractivePrototypesWithAgent(
         }
       },
       {
+        onVariantStart: (variantIndex) => {
+          // Initialize variant with source HTML for immediate preview
+          const approach = INDEX_TO_APPROACH[variantIndex] || 'minimal';
+          const variantId = Object.keys(prototypeStore.variants).find(
+            id => prototypeStore.variants[id].approach === approach
+          );
+
+          if (variantId && originalHtml) {
+            prototypeStore.initializeVariantWithSourceHtml(variantId, originalHtml);
+            console.log(`[InteractivePrototypeService] Initialized variant ${variantIndex} with source HTML preview`);
+          }
+        },
+        onFileGenerated: (variantIndex, file, allFiles) => {
+          // Progressive preview update as each file is generated
+          const approach = INDEX_TO_APPROACH[variantIndex] || 'minimal';
+          const variantId = Object.keys(prototypeStore.variants).find(
+            id => prototypeStore.variants[id].approach === approach
+          );
+
+          if (variantId) {
+            // Add the file to the variant's VirtualFS
+            prototypeStore.addFileToVariant(variantId, file);
+
+            // Refresh preview URL if this is an HTML, CSS, or JS file
+            if (file.path.endsWith('.html') || file.path.endsWith('.css') || file.path.endsWith('.js')) {
+              prototypeStore.refreshVariantPreview(variantId);
+            }
+
+            console.log(`[InteractivePrototypeService] Progressive update: ${file.path} (${allFiles.length} files total)`);
+          }
+        },
         onVariantComplete: (variantIndex, files) => {
           const approach = INDEX_TO_APPROACH[variantIndex] || 'minimal';
           const variantId = Object.keys(prototypeStore.variants).find(
@@ -663,7 +694,7 @@ export async function generateInteractivePrototypesWithAgent(
             previewUrl: virtualFS.createPreviewUrl(),
           });
         },
-        onVariantFail: (variantIndex, error) => {
+        onVariantFail: (variantIndex, error, structuredError) => {
           const approach = INDEX_TO_APPROACH[variantIndex] || 'minimal';
           const variantId = Object.keys(prototypeStore.variants).find(
             id => prototypeStore.variants[id].approach === approach
@@ -672,14 +703,25 @@ export async function generateInteractivePrototypesWithAgent(
           if (variantId) {
             prototypeStore.setVariantError(variantId, error);
           }
+
+          // Log structured error details for debugging
+          if (structuredError) {
+            console.error(`[InteractivePrototypeService] Structured error for variant ${variantIndex}:`, {
+              code: structuredError.code,
+              step: structuredError.stepLabel,
+              filesCompleted: structuredError.filesCompleted.length,
+              durationMs: structuredError.durationMs,
+            });
+          }
         },
       },
       {
-        parallelVariants: 2,
+        parallelVariants: 1,  // Sequential processing for better UX feedback
         parallelComponents: 2,
         enableCheckpoints: true,
         maxRetries: 2,
         timeoutMs: 30000,
+        useModificationsAssembly: true,  // Use modifications-based assembly for faster, more reliable generation
         ...config,
       }
     );

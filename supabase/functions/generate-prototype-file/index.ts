@@ -12,7 +12,7 @@ const corsHeaders = {
 
 // ============ Types ============
 
-type FileType = 'tokens.css' | 'store.json' | 'flows.json' | 'component' | 'index.html'
+type FileType = 'tokens.css' | 'store.json' | 'flows.json' | 'component' | 'index.html' | 'modifications.json'
 type VariantApproach = 'minimal' | 'feature-rich' | 'gamified' | 'accessible' | 'mobile-first' | 'enterprise'
 
 interface DesignToken {
@@ -297,6 +297,66 @@ IMPORTANT:
 - Make the component look polished and production-ready, not like a basic wireframe
 
 Return ONLY the JavaScript code, no markdown code blocks.`
+
+const MODIFICATIONS_SYSTEM_PROMPT = `You are a UX engineer adding interactivity to an existing HTML page.
+
+Instead of regenerating the full HTML, output a small JSON spec that describes ONLY the modifications needed.
+
+OUTPUT FORMAT:
+{
+  "version": 1,
+  "modifications": [
+    { "type": "add_attribute", "selector": "button.submit-btn", "attribute": "trigger-flow", "value": "submit-form" },
+    { "type": "add_attribute", "selector": ".modal-overlay", "attribute": "vx-bind:visible", "value": "modal.open" },
+    { "type": "inject_element", "selector": "body", "position": "append", "html": "<div id='toast-container'></div>" }
+  ],
+  "initialState": {
+    "modal": { "open": false },
+    "form": { "submitted": false, "loading": false }
+  },
+  "flows": [
+    {
+      "name": "submit-form",
+      "trigger": { "event": "click", "selector": "[trigger-flow='submit-form']" },
+      "steps": [
+        { "set": "form.loading", "to": true },
+        { "delay": 1000 },
+        { "set": "form.loading", "to": false },
+        { "set": "form.submitted", "to": true }
+      ]
+    }
+  ]
+}
+
+MODIFICATION TYPES:
+1. add_attribute - Add/set an attribute on matching elements
+   { "type": "add_attribute", "selector": "...", "attribute": "...", "value": "..." }
+
+2. inject_element - Insert new HTML element
+   { "type": "inject_element", "selector": "...", "position": "before|after|prepend|append", "html": "..." }
+
+3. wrap_element - Wrap element in new container
+   { "type": "wrap_element", "selector": "...", "html": "<div class='wrapper'><div data-vx-content></div></div>" }
+
+4. replace_content - Replace element text content
+   { "type": "replace_content", "selector": "...", "value": "new text" }
+
+INTERACTIVE ATTRIBUTES TO USE:
+- trigger-flow="flowName" - Trigger a flow on click
+- set-state="path" set-to="value" - Set state on click
+- toggle-state="path" - Toggle boolean state
+- vx-bind:visible="statePath" - Show/hide based on state
+- vx-bind:class="statePath" - Toggle class based on state
+- vx-bind:disabled="statePath" - Disable based on state
+
+RULES:
+1. Keep modifications minimal - only add what's needed for interactivity
+2. Use CSS selectors that match the source HTML (check classes, IDs, structure)
+3. Flows should have clear, descriptive names
+4. State paths should be logical (form.loading, modal.open, etc.)
+5. Return ONLY valid JSON, no markdown
+
+Return ONLY the JSON object.`
 
 const INDEX_SYSTEM_PROMPT = `You are adding interactivity to an EXISTING HTML page. DO NOT redesign or recreate the page.
 
@@ -680,6 +740,156 @@ Return ONLY the JavaScript code.`
   }
 }
 
+async function generateModificationsJson(
+  request: GenerateFileRequest,
+  apiKey: string
+): Promise<GenerateFileResponse> {
+  const { implementationScript, variantApproach, sourceHtml, screenshotBase64, provider, model, designTokens, productContext } = request
+
+  // Add null safety for optional fields
+  const guidelines = implementationScript.variantGuidelines || { description: variantApproach, focusAreas: [], avoidAreas: [], tonality: 'professional' }
+  const entryPoints = implementationScript.entryPoints || []
+  const flows = implementationScript.flows || []
+
+  // Format design tokens for prompt
+  const designTokensPrompt = designTokens && designTokens.length > 0
+    ? `\nDESIGN TOKENS:\n${designTokens.slice(0, 20).map(t => `- ${t.cssVariable}: ${t.value}`).join('\n')}`
+    : ''
+
+  // Format product context/UX guidelines for prompt
+  const productContextPrompt = productContext
+    ? `\nUX GUIDELINES:\n${productContext.slice(0, 2000)}`
+    : ''
+
+  // Provide a summary of the source HTML structure (not the full HTML)
+  const sourceHtmlSummary = sourceHtml
+    ? extractHtmlStructureSummary(sourceHtml)
+    : 'No source HTML provided'
+
+  const userPrompt = `Generate modifications for a "${variantApproach}" interactive prototype.
+
+VARIANT APPROACH: ${variantApproach}
+- ${guidelines.description}
+- Focus: ${guidelines.focusAreas?.join(', ') || 'user experience'}
+${designTokensPrompt}${productContextPrompt}
+
+ENTRY POINTS TO MAKE INTERACTIVE:
+${entryPoints.map(ep => `- ${ep.selector}: ${ep.action} → triggers ${ep.triggersFlow || ep.triggersState || 'state change'}`).join('\n') || '- Add interactive elements as needed'}
+
+FLOWS TO IMPLEMENT:
+${flows.map(f => `- ${f.name}: ${f.description || 'interaction flow'}`).join('\n') || '- Create appropriate flows'}
+
+INITIAL STATE:
+${JSON.stringify(implementationScript.initialState, null, 2)}
+
+SOURCE HTML STRUCTURE:
+${sourceHtmlSummary}
+
+Return a modifications JSON that adds interactivity to these elements.
+Return ONLY the JSON object.`
+
+  // Log the prompts
+  console.log('[generate-prototype-file] ═══════════════════════════════════════')
+  console.log('[generate-prototype-file] 📝 SYSTEM PROMPT (modifications.json):')
+  console.log(MODIFICATIONS_SYSTEM_PROMPT)
+  console.log('[generate-prototype-file] ═══════════════════════════════════════')
+  console.log('[generate-prototype-file] 📝 USER PROMPT (modifications.json):')
+  console.log(userPrompt)
+  console.log('[generate-prototype-file] ═══════════════════════════════════════')
+  console.log(`[generate-prototype-file] 📊 Prompt lengths: system=${MODIFICATIONS_SYSTEM_PROMPT.length} chars, user=${userPrompt.length} chars`)
+
+  let rawResponse: string
+  switch (provider) {
+    case 'openai':
+      rawResponse = await generateWithOpenAI(apiKey, model || 'gpt-4o', MODIFICATIONS_SYSTEM_PROMPT, userPrompt, screenshotBase64)
+      break
+    case 'google':
+      rawResponse = await generateWithGoogle(apiKey, model || 'gemini-2.0-flash', MODIFICATIONS_SYSTEM_PROMPT, userPrompt, screenshotBase64)
+      break
+    case 'anthropic':
+    default:
+      rawResponse = await generateWithAnthropic(apiKey, model || 'claude-sonnet-4-20250514', MODIFICATIONS_SYSTEM_PROMPT, userPrompt, screenshotBase64)
+      break
+  }
+
+  // Clean markdown if present
+  let content = rawResponse.trim()
+  if (content.startsWith('```json')) content = content.slice(7)
+  else if (content.startsWith('```')) content = content.slice(3)
+  if (content.endsWith('```')) content = content.slice(0, -3)
+  content = content.trim()
+
+  // Sanitize LLM output
+  content = sanitizeLLMOutput(content)
+
+  // Validate JSON
+  const parsed = JSON.parse(content)
+  if (!parsed.modifications || !Array.isArray(parsed.modifications)) {
+    throw new Error('Invalid modifications.json: missing modifications array')
+  }
+
+  return {
+    path: 'modifications.json',
+    content,
+    type: 'json',
+    summary: 'Interactivity modifications spec for applying to source HTML',
+  }
+}
+
+/**
+ * Extract a structural summary of HTML for the modifications prompt
+ * This keeps the prompt small while giving the LLM enough context
+ */
+function extractHtmlStructureSummary(html: string): string {
+  // Extract key selectors that might be targets for interactivity
+  const selectors: string[] = []
+
+  // Find buttons
+  const buttonMatches = html.match(/<button[^>]*class="([^"]*)"[^>]*>/gi) || []
+  buttonMatches.slice(0, 10).forEach(match => {
+    const classMatch = match.match(/class="([^"]*)"/)
+    if (classMatch) selectors.push(`button.${classMatch[1].split(' ').join('.')}`)
+  })
+
+  // Find inputs
+  const inputMatches = html.match(/<input[^>]*(?:id|name|class)="([^"]*)"[^>]*>/gi) || []
+  inputMatches.slice(0, 10).forEach(match => {
+    const idMatch = match.match(/id="([^"]*)"/)
+    const nameMatch = match.match(/name="([^"]*)"/)
+    if (idMatch) selectors.push(`input#${idMatch[1]}`)
+    else if (nameMatch) selectors.push(`input[name="${nameMatch[1]}"]`)
+  })
+
+  // Find forms
+  const formMatches = html.match(/<form[^>]*(?:id|class)="([^"]*)"[^>]*>/gi) || []
+  formMatches.slice(0, 5).forEach(match => {
+    const idMatch = match.match(/id="([^"]*)"/)
+    if (idMatch) selectors.push(`form#${idMatch[1]}`)
+  })
+
+  // Find links with specific patterns
+  const linkMatches = html.match(/<a[^>]*class="[^"]*(?:btn|button|cta|action)[^"]*"[^>]*>/gi) || []
+  linkMatches.slice(0, 5).forEach(match => {
+    const classMatch = match.match(/class="([^"]*)"/)
+    if (classMatch) selectors.push(`a.${classMatch[1].split(' ')[0]}`)
+  })
+
+  // Find modals/dialogs
+  const modalMatches = html.match(/<(?:div|dialog)[^>]*(?:id|class)="[^"]*(?:modal|dialog|overlay|popup)[^"]*"[^>]*>/gi) || []
+  modalMatches.slice(0, 5).forEach(match => {
+    const idMatch = match.match(/id="([^"]*)"/)
+    const classMatch = match.match(/class="([^"]*)"/)
+    if (idMatch) selectors.push(`#${idMatch[1]}`)
+    else if (classMatch) selectors.push(`.${classMatch[1].split(' ')[0]}`)
+  })
+
+  if (selectors.length === 0) {
+    return 'Generic page structure - use common selectors like button, form, input, .btn, etc.'
+  }
+
+  return `Key interactive elements found:\n${[...new Set(selectors)].map(s => `- ${s}`).join('\n')}`
+}
+
 async function generateIndexHtml(
   request: GenerateFileRequest,
   apiKey: string
@@ -902,6 +1112,9 @@ Deno.serve(async (req) => {
         break
       case 'index.html':
         result = await generateIndexHtml(request, apiKey)
+        break
+      case 'modifications.json':
+        result = await generateModificationsJson(request, apiKey)
         break
       default:
         throw new Error(`Unknown file type: ${request.fileType}`)

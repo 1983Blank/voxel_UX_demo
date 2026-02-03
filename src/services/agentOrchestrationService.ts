@@ -11,6 +11,8 @@
 import { supabase, isSupabaseConfigured } from './supabase';
 import { VirtualFS } from '../runtime/virtual-fs';
 import { preparePrototypeHtml } from '../runtime/vx-runtime-bundle';
+import { applyModificationsToHtml } from '../runtime/apply-modifications';
+import type { ModificationsJson } from '../types/agentTypes';
 import type { VariantPlan } from './variantPlanService';
 import type { GeneratedFile, VariantApproach } from '../types/implementationScript';
 import type {
@@ -23,8 +25,9 @@ import type {
   OrchestrationResult,
   AgentEvents,
   AgentProgressCallback,
+  GenerationError,
 } from '../types/agentTypes';
-import { getAllSteps, GENERATION_STEPS } from '../types/agentTypes';
+import { getAllSteps, GENERATION_STEPS, createGenerationError, formatGenerationError } from '../types/agentTypes';
 import { saveCheckpoint, loadCheckpoints } from './checkpointService';
 import {
   createCheckpointSession,
@@ -259,7 +262,7 @@ async function callGenerateImplementationScript(
 }
 
 async function callGeneratePrototypeFile(
-  fileType: 'tokens.css' | 'store.json' | 'flows.json' | 'component' | 'index.html',
+  fileType: 'tokens.css' | 'store.json' | 'flows.json' | 'component' | 'index.html' | 'modifications.json',
   implementationScript: GenerateScriptResponse,
   approach: VariantApproach,
   context: GenerationContext,
@@ -514,15 +517,19 @@ async function generateVariant(
       accessToken,
       { abortSignal }
     );
-    generatedFiles.push({
+    const tokensFile = {
       path: tokensResult.path,
       content: tokensResult.content,
       type: tokensResult.type,
-    });
+    };
+    generatedFiles.push(tokensFile);
     previousFiles.push({
       path: tokensResult.path,
       summary: tokensResult.summary,
     });
+
+    // Emit file generated event for progressive preview
+    events?.onFileGenerated?.(variantIndex, tokensFile, [...generatedFiles]);
 
     // Save step to Supabase with file content
     if (serverVariantId) {
@@ -574,15 +581,19 @@ async function generateVariant(
       accessToken,
       { abortSignal }
     );
-    generatedFiles.push({
+    const storeFile = {
       path: storeResult.path,
       content: storeResult.content,
       type: storeResult.type,
-    });
+    };
+    generatedFiles.push(storeFile);
     previousFiles.push({
       path: storeResult.path,
       summary: storeResult.summary,
     });
+
+    // Emit file generated event for progressive preview
+    events?.onFileGenerated?.(variantIndex, storeFile, [...generatedFiles]);
 
     // Save step to Supabase with file content
     if (serverVariantId) {
@@ -633,15 +644,19 @@ async function generateVariant(
       accessToken,
       { abortSignal }
     );
-    generatedFiles.push({
+    const flowsFile = {
       path: flowsResult.path,
       content: flowsResult.content,
       type: flowsResult.type,
-    });
+    };
+    generatedFiles.push(flowsFile);
     previousFiles.push({
       path: flowsResult.path,
       summary: flowsResult.summary,
     });
+
+    // Emit file generated event for progressive preview
+    events?.onFileGenerated?.(variantIndex, flowsFile, [...generatedFiles]);
 
     if (config.enableCheckpoints) {
       await saveCheckpoint(context.sessionId, variantIndex, flowsStepKey, flowsResult);
@@ -701,16 +716,20 @@ async function generateVariant(
         accessToken,
         { componentName, previousFiles, abortSignal }
       );
-      generatedFiles.push({
+      const componentFile = {
         path: componentResult.path,
         content: componentResult.content,
         type: componentResult.type,
-      });
+      };
+      generatedFiles.push(componentFile);
       previousFiles.push({
         path: componentResult.path,
         exports: componentResult.exports,
         summary: componentResult.summary,
       });
+
+      // Emit file generated event for progressive preview
+      events?.onFileGenerated?.(variantIndex, componentFile, [...generatedFiles]);
 
       if (config.enableCheckpoints) {
         await saveCheckpoint(context.sessionId, variantIndex, componentStepKey, componentResult);
@@ -748,68 +767,117 @@ async function generateVariant(
     }
   }
 
-  // Step 2e: Generate index.html (LLM)
+  // Step 2e: Generate index.html (LLM) or modifications.json (smaller LLM call)
+  const useModifications = config.useModificationsAssembly === true;
   const indexStepKey = 'index_html';
   progress = updateStepInProgress(progress, indexStepKey, { status: 'in_progress' });
   progress = updateProgress(progress, {
-    currentStep: 'Assembling prototype...',
-    currentFile: 'index.html',
+    currentStep: useModifications ? 'Creating modifications...' : 'Assembling prototype...',
+    currentFile: useModifications ? 'modifications.json' : 'index.html',
     phase: 'assembly',
   });
   onProgress(progress);
 
   // Update server phase to 'assembly'
   if (serverVariantId) {
-    await updateVariantPhase(serverVariantId, 'assembly', 'Assembling prototype...');
+    await updateVariantPhase(serverVariantId, 'assembly', useModifications ? 'Creating modifications...' : 'Assembling prototype...');
   }
 
-  events?.onStepStart?.(variantIndex, indexStepKey, 'Assemble prototype');
+  events?.onStepStart?.(variantIndex, indexStepKey, useModifications ? 'Create modifications' : 'Assemble prototype');
 
   const indexStartTime = Date.now();
-  console.log(`[AgentOrchestration] ⏳ Variant ${variantIndex}: Starting index.html generation...`);
+  console.log(`[AgentOrchestration] ⏳ Variant ${variantIndex}: Starting ${useModifications ? 'modifications.json' : 'index.html'} generation...`);
 
   try {
     checkAborted(abortSignal);
 
-    // Create a race between the actual call and a hard timeout
-    const indexPromise = callGeneratePrototypeFile(
-      'index.html',
-      implementationScript,
-      approach,
-      context,
-      accessToken,
-      { previousFiles, abortSignal }
-    );
+    let htmlWithRuntime: string;
 
-    const hardTimeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => {
-        reject(new Error('index.html generation timed out after 90 seconds'));
-      }, 90000); // 90 second hard timeout
-    });
+    if (useModifications) {
+      // Modifications-based assembly: generate small JSON spec and apply to source HTML
+      const modificationsPromise = callGeneratePrototypeFile(
+        'modifications.json',
+        implementationScript,
+        approach,
+        context,
+        accessToken,
+        { previousFiles, abortSignal }
+      );
 
-    const indexResult = await Promise.race([indexPromise, hardTimeoutPromise]);
-    console.log(`[AgentOrchestration] ✅ Variant ${variantIndex}: index.html generated in ${Math.round((Date.now() - indexStartTime) / 1000)}s`);
+      const hardTimeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => {
+          reject(new Error('modifications.json generation timed out after 60 seconds'));
+        }, 60000); // 60 second timeout (should be faster than index.html)
+      });
 
-    // Prepare the HTML for blob URL preview:
-    // 1. Inject the VxRuntime bundle (self-contained, no external imports)
-    // 2. Inject all component scripts inline (ES modules don't work with blob URLs)
-    const componentFiles = generatedFiles
-      .filter(f => f.path.startsWith('components/') && f.path.endsWith('.js'))
-      .map(f => ({ path: f.path, content: f.content }));
+      const modificationsResult = await Promise.race([modificationsPromise, hardTimeoutPromise]);
+      console.log(`[AgentOrchestration] ✅ Variant ${variantIndex}: modifications.json generated in ${Math.round((Date.now() - indexStartTime) / 1000)}s`);
 
-    const htmlWithRuntime = preparePrototypeHtml(indexResult.content, componentFiles);
+      // Parse the modifications JSON
+      const modifications: ModificationsJson = JSON.parse(modificationsResult.content);
+
+      // Get tokens CSS if available
+      const tokensFile = generatedFiles.find(f => f.path.endsWith('tokens.css'));
+      const tokensCss = tokensFile?.content;
+
+      // Apply modifications to source HTML
+      const modifiedHtml = applyModificationsToHtml(context.sourceHtml, modifications, tokensCss);
+
+      // Prepare with runtime and components
+      const componentFiles = generatedFiles
+        .filter(f => f.path.startsWith('components/') && f.path.endsWith('.js'))
+        .map(f => ({ path: f.path, content: f.content }));
+
+      htmlWithRuntime = preparePrototypeHtml(modifiedHtml, componentFiles);
+
+      // Also save the modifications.json file
+      generatedFiles.push({
+        path: modificationsResult.path,
+        content: modificationsResult.content,
+        type: 'json',
+      });
+    } else {
+      // Traditional approach: generate full index.html
+      const indexPromise = callGeneratePrototypeFile(
+        'index.html',
+        implementationScript,
+        approach,
+        context,
+        accessToken,
+        { previousFiles, abortSignal }
+      );
+
+      const hardTimeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => {
+          reject(new Error('index.html generation timed out after 90 seconds'));
+        }, 90000); // 90 second hard timeout
+      });
+
+      const indexResult = await Promise.race([indexPromise, hardTimeoutPromise]);
+      console.log(`[AgentOrchestration] ✅ Variant ${variantIndex}: index.html generated in ${Math.round((Date.now() - indexStartTime) / 1000)}s`);
+
+      // Prepare the HTML for blob URL preview:
+      // 1. Inject the VxRuntime bundle (self-contained, no external imports)
+      // 2. Inject all component scripts inline (ES modules don't work with blob URLs)
+      const componentFiles = generatedFiles
+        .filter(f => f.path.startsWith('components/') && f.path.endsWith('.js'))
+        .map(f => ({ path: f.path, content: f.content }));
+
+      htmlWithRuntime = preparePrototypeHtml(indexResult.content, componentFiles);
+    }
 
     generatedFiles.push({
-      path: indexResult.path,
+      path: 'index.html',
       content: htmlWithRuntime,
-      type: indexResult.type,
+      type: 'html',
     });
 
     if (config.enableCheckpoints) {
       // Save checkpoint with the runtime-injected HTML
       await saveCheckpoint(context.sessionId, variantIndex, indexStepKey, {
-        ...indexResult,
+        path: 'index.html',
         content: htmlWithRuntime,
+        type: 'html',
       });
     }
 
@@ -818,9 +886,9 @@ async function generateVariant(
       await saveStepCheckpoint(
         serverVariantId,
         indexStepKey,
-        'Assemble prototype',
+        useModifications ? 'Create modifications' : 'Assemble prototype',
         'completed',
-        { path: indexResult.path, content: htmlWithRuntime, type: indexResult.type },
+        { path: 'index.html', content: htmlWithRuntime, type: 'html' },
         Date.now() - indexStartTime
       );
 
@@ -831,11 +899,11 @@ async function generateVariant(
     progress = updateStepInProgress(progress, indexStepKey, {
       status: 'completed',
       duration: Date.now() - indexStartTime,
-      filePath: indexResult.path,
+      filePath: 'index.html',
     });
     progress = updateProgress(progress, {
       completedSteps: progress.completedSteps + 1,
-      filesCompleted: [...progress.filesCompleted, indexResult.path],
+      filesCompleted: [...progress.filesCompleted, 'index.html'],
       phase: 'complete',
       completedAt: Date.now(),
     });
@@ -843,20 +911,36 @@ async function generateVariant(
 
     events?.onStepComplete?.(variantIndex, indexStepKey, Date.now() - indexStartTime);
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Index generation failed';
-    const duration = Math.round((Date.now() - indexStartTime) / 1000);
-    console.error(`[AgentOrchestration] ❌ Variant ${variantIndex}: index.html failed after ${duration}s:`, errorMessage);
+    const durationMs = Date.now() - indexStartTime;
+    const duration = Math.round(durationMs / 1000);
 
-    progress = updateStepInProgress(progress, indexStepKey, { status: 'failed', error: errorMessage });
-    progress = updateProgress(progress, { phase: 'failed', error: errorMessage });
+    // Create structured error with context
+    const structuredError = createGenerationError(
+      error,
+      indexStepKey,
+      'Assemble prototype',
+      variantIndex,
+      progress.filesCompleted,
+      durationMs
+    );
+
+    const formattedError = formatGenerationError(structuredError);
+    console.error(`[AgentOrchestration] ❌ Variant ${variantIndex}: index.html failed after ${duration}s:`, formattedError);
+
+    progress = updateStepInProgress(progress, indexStepKey, { status: 'failed', error: formattedError });
+    progress = updateProgress(progress, { phase: 'failed', error: formattedError });
     onProgress(progress);
-    events?.onStepFail?.(variantIndex, indexStepKey, errorMessage);
+    events?.onStepFail?.(variantIndex, indexStepKey, formattedError);
 
     // Mark variant as failed in Supabase
     if (serverVariantId) {
-      await updateVariantPhase(serverVariantId, 'failed', undefined, errorMessage);
+      await updateVariantPhase(serverVariantId, 'failed', undefined, formattedError);
     }
-    throw error;
+
+    // Throw with the structured error for the parent to handle
+    const enhancedError = new Error(formattedError);
+    (enhancedError as Error & { structuredError: GenerationError }).structuredError = structuredError;
+    throw enhancedError;
   }
 
   console.log(`[AgentOrchestration] 🎉 Variant ${variantIndex}: Generation complete!`);
@@ -879,11 +963,12 @@ export async function orchestrateGeneration(
   onProgress?: AgentProgressCallback,
   events?: AgentEvents,
   config: OrchestrationConfig = {
-    parallelVariants: 2,
+    parallelVariants: 1,  // Sequential variant processing for better UX feedback
     parallelComponents: 2,
     enableCheckpoints: true,
     maxRetries: 2,
     timeoutMs: 30000,
+    useModificationsAssembly: true,  // Use modifications-based assembly for faster, more reliable generation
   }
 ): Promise<OrchestrationResult> {
   if (!isSupabaseConfigured()) {
@@ -986,6 +1071,7 @@ export async function orchestrateGeneration(
         });
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Generation failed';
+        const structuredError = (error as Error & { structuredError?: GenerationError }).structuredError;
 
         // Update progress to show failed state
         const currentProgress = progressMap.get(variantIndex);
@@ -1008,7 +1094,7 @@ export async function orchestrateGeneration(
           })),
         });
 
-        events?.onVariantFail?.(variantIndex, errorMessage);
+        events?.onVariantFail?.(variantIndex, errorMessage, structuredError);
       }
     });
 

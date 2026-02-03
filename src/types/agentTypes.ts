@@ -125,11 +125,12 @@ export interface GenerateScriptResponse {
 // ============================================================================
 
 export type GeneratableFileType =
-  | 'tokens.css'      // Design tokens CSS (no LLM needed)
-  | 'store.json'      // Initial state JSON (no LLM needed)
-  | 'flows.json'      // Flow definitions (minimal LLM)
-  | 'component'       // Web component JS (LLM per component)
-  | 'index.html';     // Entry point HTML (LLM needed)
+  | 'tokens.css'        // Design tokens CSS (no LLM needed)
+  | 'store.json'        // Initial state JSON (no LLM needed)
+  | 'flows.json'        // Flow definitions (minimal LLM)
+  | 'component'         // Web component JS (LLM per component)
+  | 'index.html'        // Entry point HTML (LLM needed)
+  | 'modifications.json'; // Modifications spec for patching source HTML (small LLM call)
 
 export interface GenerateFileRequest {
   /** Type of file to generate */
@@ -209,15 +210,143 @@ export interface OrchestrationConfig {
   timeoutMs: number;
   /** Optional AbortSignal for cancellation */
   abortSignal?: AbortSignal;
+  /**
+   * Use modifications-based assembly instead of full HTML generation.
+   * When enabled, generates a small modifications.json spec and applies
+   * it to the source HTML, rather than regenerating the entire page.
+   * Benefits: faster, more reliable, preserves source styling.
+   * Default: false (use traditional index.html generation)
+   */
+  useModificationsAssembly?: boolean;
 }
 
 export const DEFAULT_ORCHESTRATION_CONFIG: OrchestrationConfig = {
-  parallelVariants: 2,
+  parallelVariants: 1,  // Sequential variant processing for better UX feedback
   parallelComponents: 2,
   enableCheckpoints: true,
   maxRetries: 2,
   timeoutMs: 30000,
+  useModificationsAssembly: true,  // Use modifications-based assembly for faster, more reliable generation
 };
+
+// ============================================================================
+// Structured Error Types
+// ============================================================================
+
+export type GenerationErrorCode =
+  | 'TIMEOUT'
+  | 'LLM_ERROR'
+  | 'NETWORK_ERROR'
+  | 'VALIDATION_ERROR'
+  | 'ABORTED';
+
+export interface GenerationError {
+  code: GenerationErrorCode;
+  message: string;
+  step: string;
+  stepLabel: string;
+  variantIndex: number;
+  filesCompleted: string[];
+  durationMs: number;
+  details?: string;
+}
+
+/**
+ * Format a GenerationError into a user-friendly message
+ */
+export function formatGenerationError(error: GenerationError): string {
+  const completedText = error.filesCompleted.length > 0
+    ? `${error.filesCompleted.length} file${error.filesCompleted.length > 1 ? 's' : ''} completed`
+    : 'No files completed';
+
+  switch (error.code) {
+    case 'TIMEOUT':
+      return `"${error.stepLabel}" timed out after ${Math.round(error.durationMs / 1000)}s. ${completedText}.`;
+    case 'ABORTED':
+      return `Generation stopped during "${error.stepLabel}". ${completedText}.`;
+    case 'NETWORK_ERROR':
+      return `Network error during "${error.stepLabel}": ${error.message}. ${completedText}.`;
+    case 'LLM_ERROR':
+      return `AI generation failed during "${error.stepLabel}": ${error.message}. ${completedText}.`;
+    case 'VALIDATION_ERROR':
+      return `Validation failed during "${error.stepLabel}": ${error.message}. ${completedText}.`;
+    default:
+      return `"${error.stepLabel}" failed: ${error.message}. ${completedText}.`;
+  }
+}
+
+/**
+ * Create a GenerationError from an exception
+ */
+export function createGenerationError(
+  error: Error | unknown,
+  step: string,
+  stepLabel: string,
+  variantIndex: number,
+  filesCompleted: string[],
+  durationMs: number
+): GenerationError {
+  const message = error instanceof Error ? error.message : 'Unknown error';
+
+  // Determine error code from message
+  let code: GenerationErrorCode = 'LLM_ERROR';
+  if (message.includes('timed out') || message.includes('timeout')) {
+    code = 'TIMEOUT';
+  } else if (message.includes('abort') || message.includes('stopped')) {
+    code = 'ABORTED';
+  } else if (message.includes('network') || message.includes('fetch') || message.includes('Failed to fetch')) {
+    code = 'NETWORK_ERROR';
+  } else if (message.includes('validation') || message.includes('invalid')) {
+    code = 'VALIDATION_ERROR';
+  }
+
+  return {
+    code,
+    message,
+    step,
+    stepLabel,
+    variantIndex,
+    filesCompleted,
+    durationMs,
+    details: error instanceof Error ? error.stack : undefined,
+  };
+}
+
+// ============================================================================
+// Modifications-Based Assembly Types (Phase 3)
+// ============================================================================
+
+export type HtmlModificationType =
+  | 'add_attribute'
+  | 'inject_element'
+  | 'wrap_element'
+  | 'replace_content';
+
+export interface HtmlModification {
+  /** Type of modification */
+  type: HtmlModificationType;
+  /** CSS selector to target element(s) */
+  selector: string;
+  /** Attribute name (for add_attribute) */
+  attribute?: string;
+  /** Value to set (for add_attribute or replace_content) */
+  value?: string;
+  /** HTML to inject (for inject_element or wrap_element) */
+  html?: string;
+  /** Position for injection (for inject_element) */
+  position?: 'before' | 'after' | 'prepend' | 'append';
+}
+
+export interface ModificationsJson {
+  /** Schema version */
+  version: 1;
+  /** List of modifications to apply to source HTML */
+  modifications: HtmlModification[];
+  /** Initial state for the runtime */
+  initialState: Record<string, unknown>;
+  /** Flow definitions */
+  flows: Flow[];
+}
 
 export interface OrchestrationResult {
   /** Successfully generated variants */
@@ -290,10 +419,16 @@ export interface AgentEvents {
   onStepComplete?: (variantIndex: number, stepKey: string, duration: number) => void;
   /** Called when a step fails */
   onStepFail?: (variantIndex: number, stepKey: string, error: string) => void;
+  /** Called when a file is generated (for progressive preview updates) */
+  onFileGenerated?: (
+    variantIndex: number,
+    file: GeneratedFile,
+    allFiles: GeneratedFile[]
+  ) => void;
   /** Called when a variant completes */
   onVariantComplete?: (variantIndex: number, files: GeneratedFile[]) => void;
-  /** Called when a variant fails */
-  onVariantFail?: (variantIndex: number, error: string) => void;
+  /** Called when a variant fails with structured error */
+  onVariantFail?: (variantIndex: number, error: string, structuredError?: GenerationError) => void;
   /** Called when all variants are done */
   onAllComplete?: (result: OrchestrationResult) => void;
   /** Called when generation is aborted by user */

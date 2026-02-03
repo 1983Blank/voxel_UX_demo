@@ -133,6 +133,11 @@ interface PrototypeStoreState {
   updateFile: (variantId: string, path: string, content: string) => void;
   deleteFile: (variantId: string, path: string) => void;
 
+  // Actions - Progressive Preview Updates
+  addFileToVariant: (variantId: string, file: GeneratedFile) => void;
+  refreshVariantPreview: (variantId: string) => void;
+  initializeVariantWithSourceHtml: (variantId: string, sourceHtml: string) => void;
+
   // Actions - Runtime state
   setRuntimeState: (state: Record<string, unknown>) => void;
   updateRuntimeState: (path: string, value: unknown) => void;
@@ -167,6 +172,102 @@ function generateId(): string {
 
 function createVariantId(approach: VariantApproach): string {
   return `variant-${approach}-${Date.now()}`;
+}
+
+/**
+ * Create initial preview HTML with the user's source screen and a building indicator.
+ * This gives immediate visual feedback that the system is working with their UI.
+ */
+function createInitialPreviewHtml(sourceHtml: string): string {
+  // If the source HTML is a complete document, inject the indicator
+  if (sourceHtml.includes('</body>')) {
+    return sourceHtml.replace(
+      '</body>',
+      `
+  <div class="vx-building-indicator" style="
+    position: fixed;
+    bottom: 16px;
+    right: 16px;
+    background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+    color: white;
+    padding: 12px 20px;
+    border-radius: 12px;
+    font-family: system-ui, -apple-system, sans-serif;
+    font-size: 14px;
+    font-weight: 500;
+    z-index: 9999;
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    animation: vx-pulse 2s ease-in-out infinite;
+  ">
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="animation: vx-spin 1s linear infinite;">
+      <circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="2" stroke-dasharray="24 8" stroke-linecap="round"/>
+    </svg>
+    Building interactive prototype...
+  </div>
+  <style>
+    @keyframes vx-pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.85; transform: scale(0.98); }
+    }
+    @keyframes vx-spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</body>`
+    );
+  }
+
+  // If it's a partial HTML fragment, wrap it
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Building Prototype...</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, -apple-system, sans-serif; }
+    @keyframes vx-pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.85; transform: scale(0.98); }
+    }
+    @keyframes vx-spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  ${sourceHtml}
+  <div class="vx-building-indicator" style="
+    position: fixed;
+    bottom: 16px;
+    right: 16px;
+    background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+    color: white;
+    padding: 12px 20px;
+    border-radius: 12px;
+    font-family: system-ui, -apple-system, sans-serif;
+    font-size: 14px;
+    font-weight: 500;
+    z-index: 9999;
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    animation: vx-pulse 2s ease-in-out infinite;
+  ">
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="animation: vx-spin 1s linear infinite;">
+      <circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="2" stroke-dasharray="24 8" stroke-linecap="round"/>
+    </svg>
+    Building interactive prototype...
+  </div>
+</body>
+</html>`;
 }
 
 // ============ Store ============
@@ -612,6 +713,91 @@ export const usePrototypeStore = create<PrototypeStoreState>()(
           };
           set({ variants });
         }
+      },
+
+      // ============ Progressive Preview Actions ============
+
+      addFileToVariant: (variantId, file) => {
+        const variants = { ...get().variants };
+        if (!variants[variantId]) return;
+
+        // Get or create VirtualFS
+        let fs = get()._virtualFSInstances[variantId];
+        if (!fs) {
+          fs = new VirtualFS({ variantId });
+          set({
+            _virtualFSInstances: {
+              ...get()._virtualFSInstances,
+              [variantId]: fs,
+            },
+          });
+        }
+
+        // Add file to VirtualFS
+        fs.writeFile(file.path, file.content, file.type);
+
+        // Update variant's files list (avoid duplicates)
+        const existingFileIndex = variants[variantId].files.findIndex(f => f.path === file.path);
+        const updatedFiles = existingFileIndex >= 0
+          ? variants[variantId].files.map((f, i) => i === existingFileIndex ? file : f)
+          : [...variants[variantId].files, file];
+
+        variants[variantId] = {
+          ...variants[variantId],
+          files: updatedFiles,
+          snapshot: fs.toSnapshot(),
+          updatedAt: new Date(),
+        };
+
+        set({ variants });
+      },
+
+      refreshVariantPreview: (variantId) => {
+        const fs = get().getVirtualFS(variantId);
+        if (!fs) return;
+
+        const variants = { ...get().variants };
+        if (variants[variantId]) {
+          // Regenerate preview URL from current VirtualFS state
+          const previewUrl = fs.createPreviewUrl();
+          variants[variantId] = {
+            ...variants[variantId],
+            previewUrl,
+            snapshot: fs.toSnapshot(),
+            updatedAt: new Date(),
+          };
+          set({ variants });
+        }
+      },
+
+      initializeVariantWithSourceHtml: (variantId, sourceHtml) => {
+        const variants = { ...get().variants };
+        if (!variants[variantId]) return;
+
+        // Create initial preview HTML with source content and building indicator
+        const initialHtml = createInitialPreviewHtml(sourceHtml);
+
+        // Create VirtualFS with initial HTML
+        const fs = new VirtualFS({ variantId });
+        fs.writeFile('index.html', initialHtml, 'html');
+
+        // Update variant
+        variants[variantId] = {
+          ...variants[variantId],
+          files: [{ path: 'index.html', content: initialHtml, type: 'html' }],
+          snapshot: fs.toSnapshot(),
+          previewUrl: fs.createPreviewUrl(),
+          status: 'generating',
+          updatedAt: new Date(),
+        };
+
+        set({
+          variants,
+          _virtualFSInstances: {
+            ...get()._virtualFSInstances,
+            [variantId]: fs,
+          },
+        });
       },
 
       // ============ Runtime State Actions ============
