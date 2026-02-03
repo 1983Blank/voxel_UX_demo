@@ -132,7 +132,7 @@ export function UserJourneySankey({ stages }: UserJourneySankeyProps) {
                         minWidth: 48,
                         maxWidth: '90%',
                         height: 48,
-                        backgroundColor: config.colors.primary,
+                        backgroundColor: stageColor,
                         borderRadius: 1.5,
                         display: 'flex',
                         alignItems: 'center',
