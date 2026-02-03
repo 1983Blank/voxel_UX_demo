@@ -8,6 +8,11 @@ import Tooltip from '@mui/material/Tooltip';
 import Alert from '@mui/material/Alert';
 import Skeleton from '@mui/material/Skeleton';
 import Switch from '@mui/material/Switch';
+import Dialog from '@mui/material/Dialog';
+import DialogTitle from '@mui/material/DialogTitle';
+import DialogContent from '@mui/material/DialogContent';
+import DialogActions from '@mui/material/DialogActions';
+import Divider from '@mui/material/Divider';
 import FlagIcon from '@mui/icons-material/Flag';
 import ListAltIcon from '@mui/icons-material/ListAlt';
 import MenuBookIcon from '@mui/icons-material/MenuBook';
@@ -24,6 +29,7 @@ import TextSnippetOutlinedIcon from '@mui/icons-material/TextSnippetOutlined';
 import VideocamOutlinedIcon from '@mui/icons-material/VideocamOutlined';
 import AudiotrackOutlinedIcon from '@mui/icons-material/AudiotrackOutlined';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
+import CloseIcon from '@mui/icons-material/Close';
 import LightbulbIcon from '@mui/icons-material/Lightbulb';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
@@ -429,6 +435,8 @@ function UXGuidelinesCard({
   const [extractionProgress, setExtractionProgress] = useState<ExtractionProgress | null>(null);
   // Show guidelines by default if they exist
   const [showGuidelines, setShowGuidelines] = useState(!!uxGuidelinesSet);
+  // Modal state for viewing all guidelines
+  const [modalOpen, setModalOpen] = useState(false);
 
   // Update showGuidelines when uxGuidelinesSet changes
   useEffect(() => {
@@ -599,10 +607,13 @@ function UXGuidelinesCard({
             <Chip
               label={uxGuidelinesSet ? `${uxGuidelinesSet.guidelines.length} guidelines` : `${files.length} files`}
               size="small"
+              onClick={uxGuidelinesSet ? () => setModalOpen(true) : undefined}
               sx={{
                 backgroundColor: `${config.color}15`,
                 color: config.color,
                 fontWeight: 500,
+                cursor: uxGuidelinesSet ? 'pointer' : 'default',
+                '&:hover': uxGuidelinesSet ? { backgroundColor: `${config.color}25` } : {},
               }}
             />
           </Box>
@@ -706,9 +717,28 @@ function UXGuidelinesCard({
                   </Box>
                 ))}
                 {uxGuidelinesSet.guidelines.length > 4 && (
-                  <Typography variant="caption" color="text.secondary" sx={{ pl: 1 }}>
-                    +{uxGuidelinesSet.guidelines.length - 4} more guidelines
+                  <Typography
+                    variant="caption"
+                    color="primary"
+                    sx={{
+                      pl: 1,
+                      cursor: 'pointer',
+                      '&:hover': { textDecoration: 'underline' },
+                    }}
+                    onClick={() => setModalOpen(true)}
+                  >
+                    +{uxGuidelinesSet.guidelines.length - 4} more guidelines · View All
                   </Typography>
+                )}
+                {uxGuidelinesSet.guidelines.length <= 4 && uxGuidelinesSet.guidelines.length > 0 && (
+                  <Button
+                    size="small"
+                    variant="text"
+                    onClick={() => setModalOpen(true)}
+                    sx={{ fontSize: '0.7rem', mt: 0.5 }}
+                  >
+                    View All Guidelines
+                  </Button>
                 )}
               </Box>
             </Box>
@@ -813,7 +843,188 @@ function UXGuidelinesCard({
           )}
         </Box>
       </CardContent>
+
+      {/* Guidelines Modal */}
+      {uxGuidelinesSet && (
+        <UXGuidelinesModal
+          open={modalOpen}
+          onClose={() => setModalOpen(false)}
+          guidelinesSet={uxGuidelinesSet}
+          onDeleteGuideline={onDeleteGuideline}
+          onClearGuidelines={onClearGuidelines}
+        />
+      )}
     </Card>
+  );
+}
+
+// UX Guidelines Full-Screen Modal
+interface UXGuidelinesModalProps {
+  open: boolean;
+  onClose: () => void;
+  guidelinesSet: UXGuidelinesSet;
+  onDeleteGuideline: (id: string) => void;
+  onClearGuidelines: () => void;
+}
+
+function UXGuidelinesModal({
+  open,
+  onClose,
+  guidelinesSet,
+  onDeleteGuideline,
+  onClearGuidelines,
+}: UXGuidelinesModalProps) {
+  // Group guidelines by category
+  const groupedGuidelines = guidelinesSet.guidelines.reduce((acc, guideline) => {
+    if (!acc[guideline.category]) {
+      acc[guideline.category] = [];
+    }
+    acc[guideline.category].push(guideline);
+    return acc;
+  }, {} as Record<UXGuidelineCategory, UXGuideline[]>);
+
+  const categories = Object.keys(groupedGuidelines) as UXGuidelineCategory[];
+
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      maxWidth="lg"
+      fullWidth
+      PaperProps={{
+        sx: {
+          maxHeight: '90vh',
+          borderRadius: 3,
+        },
+      }}
+    >
+      <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pb: 1 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <Box
+            sx={{
+              width: 40,
+              height: 40,
+              borderRadius: 2,
+              backgroundColor: '#4ade8015',
+              color: '#4ade80',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <AutoAwesomeIcon />
+          </Box>
+          <Box>
+            <Typography variant="h6" fontWeight={600}>
+              UX Principles & Guidelines
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              {guidelinesSet.guidelines.length} guidelines extracted from {guidelinesSet.sourceVideoName || 'product video'}
+            </Typography>
+          </Box>
+        </Box>
+        <IconButton onClick={onClose} size="small">
+          <CloseIcon />
+        </IconButton>
+      </DialogTitle>
+
+      <Divider />
+
+      <DialogContent sx={{ p: 3 }}>
+        {guidelinesSet.guidelines.length === 0 ? (
+          <Box sx={{ textAlign: 'center', py: 4 }}>
+            <Typography color="text.secondary">No guidelines extracted yet.</Typography>
+          </Box>
+        ) : (
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+            {categories.map((category) => (
+              <Box key={category}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+                  <Chip
+                    label={guidelineCategoryLabels[category]}
+                    size="small"
+                    sx={{
+                      backgroundColor: `${guidelineCategoryColors[category]}15`,
+                      color: guidelineCategoryColors[category],
+                      fontWeight: 600,
+                    }}
+                  />
+                  <Typography variant="caption" color="text.secondary">
+                    {groupedGuidelines[category].length} guideline{groupedGuidelines[category].length !== 1 ? 's' : ''}
+                  </Typography>
+                </Box>
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                  {groupedGuidelines[category].map((guideline) => (
+                    <Box
+                      key={guideline.id}
+                      sx={{
+                        p: 2,
+                        borderRadius: 2,
+                        backgroundColor: 'rgba(0,0,0,0.02)',
+                        border: '1px solid',
+                        borderColor: 'divider',
+                        '&:hover': {
+                          backgroundColor: 'rgba(0,0,0,0.04)',
+                          borderColor: guidelineCategoryColors[category],
+                        },
+                      }}
+                    >
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
+                        <Typography variant="subtitle2" fontWeight={600}>
+                          {guideline.title}
+                        </Typography>
+                        <IconButton
+                          size="small"
+                          onClick={() => onDeleteGuideline(guideline.id)}
+                          sx={{ opacity: 0.5, '&:hover': { opacity: 1, color: 'error.main' }, ml: 1 }}
+                        >
+                          <DeleteOutlinedIcon fontSize="small" />
+                        </IconButton>
+                      </Box>
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: guideline.examples?.length ? 1.5 : 0 }}>
+                        {guideline.description}
+                      </Typography>
+                      {guideline.examples && guideline.examples.length > 0 && (
+                        <Box sx={{ mt: 1 }}>
+                          <Typography variant="caption" color="text.secondary" fontWeight={500}>
+                            Examples:
+                          </Typography>
+                          <Box component="ul" sx={{ m: 0, pl: 2, mt: 0.5 }}>
+                            {guideline.examples.map((example, idx) => (
+                              <Typography component="li" key={idx} variant="caption" color="text.secondary">
+                                {example}
+                              </Typography>
+                            ))}
+                          </Box>
+                        </Box>
+                      )}
+                    </Box>
+                  ))}
+                </Box>
+              </Box>
+            ))}
+          </Box>
+        )}
+      </DialogContent>
+
+      <Divider />
+
+      <DialogActions sx={{ p: 2, justifyContent: 'space-between' }}>
+        <Button
+          color="error"
+          variant="text"
+          onClick={() => {
+            onClearGuidelines();
+            onClose();
+          }}
+        >
+          Clear All Guidelines
+        </Button>
+        <Button variant="contained" onClick={onClose}>
+          Done
+        </Button>
+      </DialogActions>
+    </Dialog>
   );
 }
 
