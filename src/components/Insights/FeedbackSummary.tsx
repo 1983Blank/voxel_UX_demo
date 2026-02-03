@@ -2,8 +2,9 @@ import { useState } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import CircularProgress from '@mui/material/CircularProgress';
+import IconButton from '@mui/material/IconButton';
 import { Sparkle, ArrowClockwise, CheckCircle, Warning, TrendUp } from '@phosphor-icons/react';
-import { Card, CardContent, Button, Chip } from '@/components/ui';
+import { Button, Chip } from '@/components/ui';
 import { useThemeStore } from '@/store/themeStore';
 
 export interface FeedbackSummaryData {
@@ -43,45 +44,37 @@ export function FeedbackSummary({
   // No data state
   if (!data && !isLoading) {
     return (
-      <Card variant="outlined">
-        <CardContent>
-          <Box sx={{ textAlign: 'center', py: 2 }}>
-            <Sparkle size={32} color={config.colors.textSecondary} />
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-              {commentCount > 0
-                ? 'Generate an AI summary of feedback'
-                : 'No feedback to summarize yet'}
-            </Typography>
-            {commentCount > 0 && onRegenerate && (
-              <Button
-                variant="outlined"
-                size="small"
-                startIcon={<Sparkle size={14} />}
-                onClick={onRegenerate}
-                sx={{ mt: 2 }}
-              >
-                Generate summary
-              </Button>
-            )}
-          </Box>
-        </CardContent>
-      </Card>
+      <Box sx={{ textAlign: 'center', py: 2 }}>
+        <Sparkle size={24} color={config.colors.textSecondary} />
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, fontSize: '0.7rem' }}>
+          {commentCount > 0
+            ? 'Generate an AI summary of feedback'
+            : 'No feedback to summarize yet'}
+        </Typography>
+        {commentCount > 0 && onRegenerate && (
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={<Sparkle size={12} />}
+            onClick={onRegenerate}
+            sx={{ mt: 1.5, fontSize: '0.7rem', py: 0.5 }}
+          >
+            Generate summary
+          </Button>
+        )}
+      </Box>
     );
   }
 
   // Loading state
   if (isLoading) {
     return (
-      <Card variant="outlined">
-        <CardContent>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, py: 2 }}>
-            <CircularProgress size={24} />
-            <Typography variant="body2" color="text.secondary">
-              Analyzing feedback...
-            </Typography>
-          </Box>
-        </CardContent>
-      </Card>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, py: 2 }}>
+        <CircularProgress size={18} />
+        <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+          Analyzing feedback...
+        </Typography>
+      </Box>
     );
   }
 
@@ -91,147 +84,151 @@ export function FeedbackSummary({
   const SentimentIcon = sentimentInfo.icon;
 
   return (
-    <Card variant="outlined">
-      <CardContent sx={{ p: 2.5 }}>
-        {/* Header with sentiment indicator */}
-        <Box
-          sx={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'flex-start',
-            mb: 2,
-          }}
-        >
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Sparkle size={18} color={config.colors.primary} weight="fill" />
-            <Typography variant="subtitle2" fontWeight={600}>
-              AI Summary
-            </Typography>
-          </Box>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Chip
-              size="small"
-              label={sentimentInfo.label}
-              icon={<SentimentIcon size={12} />}
-              sx={{
-                backgroundColor: `${sentimentInfo.color}15`,
+    <Box>
+      {/* Header with sentiment indicator */}
+      <Box
+        sx={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          mb: 1,
+        }}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+          <Sparkle size={14} color={config.colors.primary} weight="fill" />
+          <Typography variant="caption" fontWeight={600} sx={{ fontSize: '0.7rem' }}>
+            AI Summary
+          </Typography>
+        </Box>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+          <Chip
+            size="small"
+            label={sentimentInfo.label}
+            icon={<SentimentIcon size={10} />}
+            sx={{
+              height: 20,
+              fontSize: '0.6rem',
+              backgroundColor: `${sentimentInfo.color}15`,
+              color: sentimentInfo.color,
+              fontWeight: 500,
+              '& .MuiChip-icon': {
                 color: sentimentInfo.color,
-                fontWeight: 500,
-                '& .MuiChip-icon': {
-                  color: sentimentInfo.color,
-                },
-              }}
-            />
-            {onRegenerate && (
-              <Button
+              },
+            }}
+          />
+          {onRegenerate && (
+            <IconButton
+              size="small"
+              onClick={onRegenerate}
+              sx={{ p: 0.25 }}
+            >
+              <ArrowClockwise size={12} />
+            </IconButton>
+          )}
+        </Box>
+      </Box>
+
+      {/* Summary text */}
+      <Typography
+        variant="body2"
+        sx={{
+          color: config.colors.textPrimary,
+          fontSize: '0.75rem',
+          lineHeight: 1.6,
+          mb: 1.5,
+        }}
+      >
+        {data.summary}
+      </Typography>
+
+      {/* Key themes */}
+      {data.keyThemes.length > 0 && (
+        <Box sx={{ mb: 1.5 }}>
+          <Typography
+            variant="caption"
+            sx={{
+              color: config.colors.textSecondary,
+              fontWeight: 600,
+              fontSize: '0.6rem',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+              display: 'block',
+              mb: 0.5,
+            }}
+          >
+            Key themes
+          </Typography>
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+            {data.keyThemes.map((theme, idx) => (
+              <Chip
+                key={idx}
                 size="small"
-                variant="text"
-                onClick={onRegenerate}
-                sx={{ minWidth: 'auto', p: 0.5 }}
-              >
-                <ArrowClockwise size={16} />
-              </Button>
-            )}
+                label={theme}
+                variant="outlined"
+                sx={{
+                  fontSize: '0.6rem',
+                  height: 20,
+                }}
+              />
+            ))}
           </Box>
         </Box>
+      )}
 
-        {/* Summary text */}
-        <Typography
-          variant="body2"
-          sx={{
-            color: config.colors.textPrimary,
-            lineHeight: 1.7,
-            mb: 2,
-          }}
-        >
-          {data.summary}
-        </Typography>
-
-        {/* Key themes */}
-        {data.keyThemes.length > 0 && (
-          <Box sx={{ mb: 2 }}>
-            <Typography
-              variant="caption"
+      {/* Action items (collapsible) */}
+      {data.actionItems.length > 0 && (
+        <Box>
+          <Button
+            size="small"
+            variant="text"
+            onClick={() => setShowActionItems(!showActionItems)}
+            sx={{
+              p: 0,
+              fontSize: '0.65rem',
+              color: config.colors.primary,
+              fontWeight: 500,
+              minWidth: 'auto',
+            }}
+          >
+            {showActionItems ? 'Hide' : 'Show'} {data.actionItems.length} suggested improvements
+          </Button>
+          {showActionItems && (
+            <Box
               sx={{
-                color: config.colors.textSecondary,
-                fontWeight: 600,
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-                display: 'block',
-                mb: 1,
+                mt: 1,
+                pl: 1.5,
+                borderLeft: `2px solid ${config.colors.primary}`,
               }}
             >
-              Key themes
-            </Typography>
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
-              {data.keyThemes.map((theme, idx) => (
-                <Chip
-                  key={idx}
-                  size="small"
-                  label={theme}
-                  variant="outlined"
-                  sx={{
-                    fontSize: '0.7rem',
-                    height: 24,
-                  }}
-                />
+              {data.actionItems.map((item, idx) => (
+                <Box key={idx} sx={{ display: 'flex', gap: 0.75, mb: 0.5 }}>
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      color: config.colors.primary,
+                      fontWeight: 600,
+                      fontSize: '0.65rem',
+                      minWidth: 14,
+                    }}
+                  >
+                    {idx + 1}.
+                  </Typography>
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      color: config.colors.textSecondary,
+                      fontSize: '0.7rem',
+                      lineHeight: 1.4,
+                    }}
+                  >
+                    {item}
+                  </Typography>
+                </Box>
               ))}
             </Box>
-          </Box>
-        )}
-
-        {/* Action items (collapsible) */}
-        {data.actionItems.length > 0 && (
-          <Box>
-            <Button
-              size="small"
-              variant="text"
-              onClick={() => setShowActionItems(!showActionItems)}
-              sx={{
-                p: 0,
-                fontSize: '0.75rem',
-                color: config.colors.primary,
-                fontWeight: 500,
-              }}
-            >
-              {showActionItems ? 'Hide' : 'Show'} {data.actionItems.length} suggested improvements
-            </Button>
-            {showActionItems && (
-              <Box
-                sx={{
-                  mt: 1.5,
-                  pl: 2,
-                  borderLeft: `2px solid ${config.colors.primary}`,
-                }}
-              >
-                {data.actionItems.map((item, idx) => (
-                  <Box key={idx} sx={{ display: 'flex', gap: 1, mb: 1 }}>
-                    <Typography
-                      variant="caption"
-                      sx={{
-                        color: config.colors.primary,
-                        fontWeight: 600,
-                        minWidth: 16,
-                      }}
-                    >
-                      {idx + 1}.
-                    </Typography>
-                    <Typography
-                      variant="body2"
-                      sx={{
-                        color: config.colors.textSecondary,
-                        fontSize: '0.8rem',
-                      }}
-                    >
-                      {item}
-                    </Typography>
-                  </Box>
-                ))}
-              </Box>
-            )}
-          </Box>
-        )}
-      </CardContent>
-    </Card>
+          )}
+        </Box>
+      )}
+    </Box>
   );
 }

@@ -1,7 +1,7 @@
-import { useMemo } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Tooltip from '@mui/material/Tooltip';
+import { Eye, Mouse, CursorClick, ChatCircle, CaretRight } from '@phosphor-icons/react';
 import { useThemeStore } from '@/store/themeStore';
 
 export interface JourneyEvent {
@@ -20,134 +20,16 @@ interface UserJourneySankeyProps {
   stages: JourneyStage[];
 }
 
-interface SankeyNode {
-  id: string;
-  label: string;
-  value: number;
-  x: number;
-  y: number;
-  height: number;
-  color: string;
-}
-
-interface SankeyLink {
-  source: string;
-  target: string;
-  value: number;
-  sourceY: number;
-  targetY: number;
-  height: number;
-}
+// Stage icons mapping
+const stageIcons: Record<string, React.ElementType> = {
+  'Page Visit': Eye,
+  'Scrolled': Mouse,
+  'Clicked': CursorClick,
+  'Feedback': ChatCircle,
+};
 
 export function UserJourneySankey({ stages }: UserJourneySankeyProps) {
   const { config } = useThemeStore();
-
-  // Event type colors
-  const eventColors = {
-    pageview: config.colors.primary,
-    scroll: config.colors.success,
-    click: '#f59e0b', // amber
-  };
-
-  // Calculate Sankey layout
-  const { nodes, links, width, height } = useMemo(() => {
-    if (stages.length === 0) {
-      return { nodes: [], links: [], width: 600, height: 200 };
-    }
-
-    const padding = 20;
-    const nodeWidth = 24;
-    const minNodeHeight = 8;
-    const chartWidth = 600;
-    const chartHeight = 280;
-    const stageGap = (chartWidth - padding * 2 - nodeWidth) / Math.max(stages.length - 1, 1);
-
-    // Create nodes for each stage and event type
-    const sankeyNodes: SankeyNode[] = [];
-    const sankeyLinks: SankeyLink[] = [];
-
-    // Find max users for scaling
-    const maxUsers = Math.max(...stages.map(s => s.users), 1);
-
-    stages.forEach((stage, stageIndex) => {
-      const x = padding + stageIndex * stageGap;
-      const totalEvents = stage.events.reduce((sum, e) => sum + e.count, 0);
-
-      // Stage node (aggregate)
-      const stageHeight = Math.max(minNodeHeight, (stage.users / maxUsers) * (chartHeight - 100));
-      const stageY = (chartHeight - stageHeight) / 2;
-
-      sankeyNodes.push({
-        id: `stage-${stageIndex}`,
-        label: stage.name,
-        value: stage.users,
-        x,
-        y: stageY,
-        height: stageHeight,
-        color: config.colors.primary,
-      });
-
-      // Event breakdown nodes (to the right of stage)
-      if (stage.events.length > 0 && stageIndex < stages.length - 1) {
-        let eventY = stageY;
-        stage.events.forEach((event) => {
-          const eventHeight = Math.max(
-            minNodeHeight / 2,
-            (event.count / Math.max(totalEvents, 1)) * stageHeight
-          );
-
-          sankeyNodes.push({
-            id: `event-${stageIndex}-${event.type}`,
-            label: `${event.count} ${event.type}s`,
-            value: event.count,
-            x: x + nodeWidth + 8,
-            y: eventY,
-            height: eventHeight,
-            color: eventColors[event.type],
-          });
-
-          eventY += eventHeight + 2;
-        });
-      }
-
-      // Create links to next stage
-      if (stageIndex < stages.length - 1) {
-        const nextStage = stages[stageIndex + 1];
-        const dropoff = stage.users - nextStage.users;
-        const nextHeight = Math.max(minNodeHeight, (nextStage.users / maxUsers) * (chartHeight - 100));
-        const nextY = (chartHeight - nextHeight) / 2;
-
-        // Main flow link
-        sankeyLinks.push({
-          source: `stage-${stageIndex}`,
-          target: `stage-${stageIndex + 1}`,
-          value: nextStage.users,
-          sourceY: stageY,
-          targetY: nextY,
-          height: Math.min(stageHeight, nextHeight),
-        });
-
-        // Dropoff indicator (if significant)
-        if (dropoff > 0 && dropoff / stage.users > 0.1) {
-          sankeyLinks.push({
-            source: `stage-${stageIndex}`,
-            target: `dropoff-${stageIndex}`,
-            value: dropoff,
-            sourceY: stageY + stageHeight - (dropoff / stage.users) * stageHeight,
-            targetY: chartHeight - 30,
-            height: (dropoff / stage.users) * stageHeight,
-          });
-        }
-      }
-    });
-
-    return {
-      nodes: sankeyNodes,
-      links: sankeyLinks,
-      width: chartWidth,
-      height: chartHeight,
-    };
-  }, [stages, config.colors]);
 
   if (stages.length === 0) {
     return (
@@ -159,140 +41,205 @@ export function UserJourneySankey({ stages }: UserJourneySankeyProps) {
     );
   }
 
-  // Generate curved path for links
-  const generateLinkPath = (link: SankeyLink, nodeWidth: number) => {
-    const sourceNode = nodes.find(n => n.id === link.source);
-    const targetNode = nodes.find(n => n.id === link.target);
-
-    if (!sourceNode || !targetNode) return '';
-
-    const x1 = sourceNode.x + nodeWidth;
-    const y1 = link.sourceY + link.height / 2;
-    const x2 = targetNode.x;
-    const y2 = link.targetY + link.height / 2;
-
-    const midX = (x1 + x2) / 2;
-
-    return `M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`;
-  };
+  // Get max users for calculating percentages and bar widths
+  const maxUsers = Math.max(...stages.map(s => s.users), 1);
 
   return (
-    <Box sx={{ position: 'relative' }}>
-      <svg width="100%" viewBox={`0 0 ${width} ${height}`} style={{ overflow: 'visible' }}>
-        <defs>
-          {/* Gradient for links */}
-          <linearGradient id="linkGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor={config.colors.primary} stopOpacity={0.4} />
-            <stop offset="100%" stopColor={config.colors.primary} stopOpacity={0.1} />
-          </linearGradient>
-          <linearGradient id="dropoffGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stopColor={config.colors.error} stopOpacity={0.3} />
-            <stop offset="100%" stopColor={config.colors.error} stopOpacity={0.05} />
-          </linearGradient>
-        </defs>
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {/* Horizontal funnel visualization */}
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'stretch',
+          gap: 0,
+          flex: 1,
+          minHeight: 180,
+        }}
+      >
+        {stages.map((stage, index) => {
+          const percentage = Math.round((stage.users / maxUsers) * 100);
+          const dropoff = index > 0 ? stages[index - 1].users - stage.users : 0;
+          const dropoffPercent = index > 0 ? Math.round((dropoff / stages[index - 1].users) * 100) : 0;
+          const Icon = stageIcons[stage.name] || Eye;
+          const isLast = index === stages.length - 1;
 
-        {/* Links */}
-        {links.map((link, index) => {
-          const isDropoff = link.target.startsWith('dropoff');
+          // Color gradient from primary to success/warning based on position
+          const stageColor = index === 0
+            ? config.colors.primary
+            : index === stages.length - 1
+              ? (stage.users > 0 ? config.colors.success : config.colors.textSecondary)
+              : `color-mix(in srgb, ${config.colors.primary} ${100 - (index / stages.length) * 50}%, ${config.colors.success})`;
 
           return (
-            <g key={`link-${index}`}>
-              <path
-                d={generateLinkPath(link, 24)}
-                fill="none"
-                stroke={isDropoff ? `url(#dropoffGradient)` : `url(#linkGradient)`}
-                strokeWidth={Math.max(link.height, 2)}
-                strokeLinecap="round"
-                opacity={0.6}
-              />
-            </g>
+            <Box
+              key={stage.name}
+              sx={{
+                flex: 1,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                position: 'relative',
+              }}
+            >
+              {/* Stage content */}
+              <Box
+                sx={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flex: 1,
+                  width: '100%',
+                  position: 'relative',
+                }}
+              >
+                {/* Funnel bar */}
+                <Box
+                  sx={{
+                    position: 'relative',
+                    width: '100%',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                  }}
+                >
+                  {/* Main bar */}
+                  <Tooltip
+                    title={
+                      <Box sx={{ textAlign: 'center' }}>
+                        <Typography variant="caption" sx={{ fontWeight: 600 }}>
+                          {stage.name}
+                        </Typography>
+                        <br />
+                        <Typography variant="caption">
+                          {stage.users} users ({percentage}%)
+                        </Typography>
+                        {stage.events.map((event, i) => (
+                          <Box key={i}>
+                            <Typography variant="caption" sx={{ fontSize: '0.65rem', opacity: 0.8 }}>
+                              {event.count} {event.type}s
+                            </Typography>
+                          </Box>
+                        ))}
+                      </Box>
+                    }
+                    arrow
+                    placement="top"
+                  >
+                    <Box
+                      sx={{
+                        width: `${Math.max(percentage, 20)}%`,
+                        minWidth: 48,
+                        maxWidth: '90%',
+                        height: 48,
+                        backgroundColor: config.colors.primary,
+                        borderRadius: 1.5,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease',
+                        opacity: 0.85 + (index === 0 ? 0.15 : 0),
+                        '&:hover': {
+                          transform: 'scale(1.02)',
+                          opacity: 1,
+                        },
+                      }}
+                    >
+                      <Icon size={20} color="white" weight="bold" />
+                    </Box>
+                  </Tooltip>
+
+                  {/* User count */}
+                  <Typography
+                    variant="h6"
+                    sx={{
+                      fontWeight: 700,
+                      fontSize: '1.1rem',
+                      color: config.colors.textPrimary,
+                      mt: 1,
+                    }}
+                  >
+                    {stage.users}
+                  </Typography>
+
+                  {/* Stage name */}
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      fontSize: '0.7rem',
+                      color: config.colors.textSecondary,
+                      textAlign: 'center',
+                      fontWeight: 500,
+                    }}
+                  >
+                    {stage.name}
+                  </Typography>
+
+                  {/* Dropoff indicator */}
+                  {dropoffPercent > 5 && (
+                    <Typography
+                      variant="caption"
+                      sx={{
+                        fontSize: '0.6rem',
+                        color: config.colors.error,
+                        mt: 0.5,
+                        opacity: 0.8,
+                      }}
+                    >
+                      -{dropoffPercent}%
+                    </Typography>
+                  )}
+                </Box>
+              </Box>
+
+              {/* Connector arrow */}
+              {!isLast && (
+                <Box
+                  sx={{
+                    position: 'absolute',
+                    right: -12,
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    zIndex: 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                  }}
+                >
+                  <CaretRight
+                    size={24}
+                    color={config.colors.textSecondary}
+                    weight="bold"
+                    style={{ opacity: 0.3 }}
+                  />
+                </Box>
+              )}
+            </Box>
           );
         })}
-
-        {/* Nodes */}
-        {nodes.filter(n => n.id.startsWith('stage')).map((node) => (
-          <Tooltip
-            key={node.id}
-            title={`${node.label}: ${node.value} users`}
-            arrow
-            placement="top"
-          >
-            <g style={{ cursor: 'pointer' }}>
-              <rect
-                x={node.x}
-                y={node.y}
-                width={24}
-                height={node.height}
-                rx={4}
-                fill={node.color}
-                opacity={0.9}
-              />
-              {/* Stage label */}
-              <text
-                x={node.x + 12}
-                y={node.y + node.height + 16}
-                textAnchor="middle"
-                fontSize={11}
-                fontWeight={500}
-                fill={config.colors.textPrimary}
-              >
-                {node.label}
-              </text>
-              {/* User count */}
-              <text
-                x={node.x + 12}
-                y={node.y + node.height + 30}
-                textAnchor="middle"
-                fontSize={10}
-                fill={config.colors.textSecondary}
-              >
-                {node.value}
-              </text>
-            </g>
-          </Tooltip>
-        ))}
-
-        {/* Event indicators */}
-        {nodes.filter(n => n.id.startsWith('event')).map((node) => (
-          <Tooltip key={node.id} title={node.label} arrow placement="right">
-            <rect
-              x={node.x}
-              y={node.y}
-              width={8}
-              height={Math.max(node.height, 4)}
-              rx={2}
-              fill={node.color}
-              opacity={0.8}
-              style={{ cursor: 'pointer' }}
-            />
-          </Tooltip>
-        ))}
-      </svg>
+      </Box>
 
       {/* Legend */}
       <Box
         sx={{
           display: 'flex',
           justifyContent: 'center',
-          gap: 3,
+          gap: 2.5,
           mt: 2,
-          pt: 2,
+          pt: 1.5,
           borderTop: 1,
           borderColor: 'divider',
         }}
       >
-        {Object.entries(eventColors).map(([type, color]) => (
-          <Box key={type} sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-            <Box
-              sx={{
-                width: 10,
-                height: 10,
-                borderRadius: '2px',
-                backgroundColor: color,
-              }}
-            />
-            <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'capitalize' }}>
-              {type}s
+        {[
+          { label: 'Page views', icon: Eye, color: config.colors.primary },
+          { label: 'Scrolls', icon: Mouse, color: config.colors.success },
+          { label: 'Clicks', icon: CursorClick, color: '#f59e0b' },
+        ].map(({ label, icon: LegendIcon, color }) => (
+          <Box key={label} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            <LegendIcon size={12} color={color} />
+            <Typography variant="caption" sx={{ fontSize: '0.65rem', color: config.colors.textSecondary }}>
+              {label}
             </Typography>
           </Box>
         ))}

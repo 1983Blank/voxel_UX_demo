@@ -18,7 +18,7 @@ interface InsightStatCardProps {
 }
 
 /**
- * Linear.app inspired stat card with minimal design
+ * Compact stat card with minimal design
  */
 export function InsightStatCard({
   title,
@@ -38,19 +38,19 @@ export function InsightStatCard({
         height: '100%',
         border: 1,
         borderColor: 'divider',
-        borderRadius: 2,
+        borderRadius: 1.5,
         overflow: 'hidden',
         transition: 'all 0.2s ease',
         '&:hover': {
           borderColor: `${accentColor}50`,
-          boxShadow: `0 4px 12px ${accentColor}10`,
+          boxShadow: `0 2px 8px ${accentColor}10`,
         },
       }}
     >
       {/* Top accent bar */}
       <Box
         sx={{
-          height: 3,
+          height: 2,
           background: mode === 'modern' && config.gradients
             ? config.gradients.primary
             : accentColor,
@@ -58,14 +58,14 @@ export function InsightStatCard({
         }}
       />
 
-      <Box sx={{ p: 2.5 }}>
+      <Box sx={{ p: 1.5, py: 1.25 }}>
         {/* Header with icon */}
         <Box
           sx={{
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            mb: 2,
+            mb: 0.75,
           }}
         >
           <Typography
@@ -73,7 +73,7 @@ export function InsightStatCard({
             sx={{
               color: config.colors.textSecondary,
               fontWeight: 500,
-              fontSize: '0.7rem',
+              fontSize: '0.65rem',
               textTransform: 'uppercase',
               letterSpacing: '0.05em',
             }}
@@ -85,9 +85,9 @@ export function InsightStatCard({
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              width: 32,
-              height: 32,
-              borderRadius: 1.5,
+              width: 24,
+              height: 24,
+              borderRadius: 1,
               backgroundColor: `${accentColor}12`,
               color: accentColor,
             }}
@@ -98,14 +98,14 @@ export function InsightStatCard({
 
         {/* Value */}
         <Typography
-          variant="h4"
+          variant="h5"
           sx={{
             fontWeight: 600,
-            fontSize: '1.75rem',
+            fontSize: '1.35rem',
             lineHeight: 1,
             color: config.colors.textPrimary,
             fontFamily: config.fonts.display,
-            mb: subtitle || trend ? 1 : 0,
+            mb: subtitle || trend ? 0.5 : 0,
           }}
         >
           {value}
@@ -117,7 +117,7 @@ export function InsightStatCard({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            minHeight: 20,
+            minHeight: 16,
           }}
         >
           {subtitle && (
@@ -125,7 +125,7 @@ export function InsightStatCard({
               variant="caption"
               sx={{
                 color: config.colors.textSecondary,
-                fontSize: '0.7rem',
+                fontSize: '0.6rem',
               }}
             >
               {subtitle}
@@ -138,9 +138,9 @@ export function InsightStatCard({
                 display: 'flex',
                 alignItems: 'center',
                 gap: 0.5,
-                px: 1,
-                py: 0.25,
-                borderRadius: 1,
+                px: 0.75,
+                py: 0.125,
+                borderRadius: 0.75,
                 backgroundColor:
                   trend.direction === 'up'
                     ? `${config.colors.success}15`
@@ -150,16 +150,16 @@ export function InsightStatCard({
               }}
             >
               {trend.direction === 'up' && (
-                <TrendUp size={12} color={config.colors.success} weight="bold" />
+                <TrendUp size={10} color={config.colors.success} weight="bold" />
               )}
               {trend.direction === 'down' && (
-                <TrendDown size={12} color={config.colors.error} weight="bold" />
+                <TrendDown size={10} color={config.colors.error} weight="bold" />
               )}
               <Typography
                 variant="caption"
                 sx={{
                   fontWeight: 600,
-                  fontSize: '0.65rem',
+                  fontSize: '0.6rem',
                   color:
                     trend.direction === 'up'
                       ? config.colors.success
@@ -171,18 +171,6 @@ export function InsightStatCard({
                 {trend.value}
                 {typeof trend.value === 'number' ? '%' : ''}
               </Typography>
-              {trend.label && (
-                <Typography
-                  variant="caption"
-                  sx={{
-                    fontSize: '0.6rem',
-                    color: config.colors.textSecondary,
-                    ml: 0.25,
-                  }}
-                >
-                  {trend.label}
-                </Typography>
-              )}
             </Box>
           )}
         </Box>
