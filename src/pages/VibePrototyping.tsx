@@ -1177,14 +1177,14 @@ function CanvasVariantCard({
   enableInteractivity?: boolean;
   useLLMEnhancement?: boolean;
 }) {
-  // Show streaming preview if available during loading
-  const showStreamingPreview = isLoading && streamingHtml && streamingHtml.length > 100;
+  // Show streaming preview if available during loading OR if no htmlUrl (interactive mode fallback)
+  const showStreamingPreview = streamingHtml && streamingHtml.length > 100 && (isLoading || !htmlUrl);
   // In wireframe mode, always show wireframe if available (even if prototype exists)
   // In prototype mode, show prototype if available, fall back to wireframe
   const forceWireframeView = viewMode === 'wireframes' && (wireframeUrl || wireframeHtml);
-  const showWireframePreview = forceWireframeView || (!htmlUrl && !isLoading && (wireframeUrl || wireframeHtml));
-  // Show prototype only if in prototype mode and available
-  const showPrototypePreview = viewMode === 'prototypes' && htmlUrl && !isLoading;
+  const showWireframePreview = forceWireframeView || (!htmlUrl && !showStreamingPreview && !isLoading && (wireframeUrl || wireframeHtml));
+  // Show prototype only if in prototype mode and available (and not showing streaming)
+  const showPrototypePreview = viewMode === 'prototypes' && htmlUrl && !isLoading && !showStreamingPreview;
 
   return (
     <Card
@@ -1247,7 +1247,7 @@ function CanvasVariantCard({
             >
               <iframe
                 srcDoc={streamingHtml!}
-                title={`${label} (streaming)`}
+                title={`${label}${isLoading ? ' (streaming)' : ''}`}
                 style={{
                   width: '200%',
                   height: '200%',
@@ -1255,30 +1255,32 @@ function CanvasVariantCard({
                   transform: 'scale(0.5)',
                   transformOrigin: 'top left',
                   pointerEvents: 'none',
-                  opacity: 0.7,
+                  opacity: isLoading ? 0.7 : 1,
                 }}
               />
-              {/* Streaming progress overlay */}
-              <Box
-                sx={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  background: 'linear-gradient(to bottom, rgba(0,0,0,0.1), rgba(0,0,0,0.3))',
-                }}
-              >
-                <Box sx={{ textAlign: 'center', p: 1, bgcolor: 'rgba(0,0,0,0.6)', borderRadius: 2 }}>
-                  <CircularProgress size={20} sx={{ color: '#4fc3f7', mb: 0.5 }} />
-                  <Typography variant="caption" sx={{ color: 'white', display: 'block' }}>
-                    {Math.round(progress)}% - Live Preview
-                  </Typography>
+              {/* Streaming progress overlay - only show during loading */}
+              {isLoading && (
+                <Box
+                  sx={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    background: 'linear-gradient(to bottom, rgba(0,0,0,0.1), rgba(0,0,0,0.3))',
+                  }}
+                >
+                  <Box sx={{ textAlign: 'center', p: 1, bgcolor: 'rgba(0,0,0,0.6)', borderRadius: 2 }}>
+                    <CircularProgress size={20} sx={{ color: '#4fc3f7', mb: 0.5 }} />
+                    <Typography variant="caption" sx={{ color: 'white', display: 'block' }}>
+                      {Math.round(progress)}% - Live Preview
+                    </Typography>
+                  </Box>
                 </Box>
-              </Box>
+              )}
               <Box
                 sx={{
                   position: 'absolute',
@@ -1286,12 +1288,12 @@ function CanvasVariantCard({
                   left: 8,
                   px: 1.5,
                   py: 0.5,
-                  bgcolor: 'rgba(79, 195, 247, 0.9)',
+                  bgcolor: isLoading ? 'rgba(79, 195, 247, 0.9)' : 'rgba(16, 185, 129, 0.9)',
                   borderRadius: 1,
                 }}
               >
                 <Typography variant="caption" sx={{ color: 'white', fontWeight: 500 }}>
-                  {label} (streaming)
+                  {label}{isLoading ? ' (streaming)' : ' (interactive)'}
                 </Typography>
               </Box>
             </Box>
@@ -1393,6 +1395,7 @@ function InlineExpansionGrid({
   viewMode = 'prototypes',
   enableInteractivity = false,
   useLLMEnhancement = true,
+  streamingHtml,
 }: {
   wireframes: Array<{ variantIndex: number; wireframeUrl: string; wireframeHtml?: string }>;
   focusedIndex: number;
@@ -1402,17 +1405,22 @@ function InlineExpansionGrid({
   viewMode?: 'wireframes' | 'prototypes';
   enableInteractivity?: boolean;
   useLLMEnhancement?: boolean;
+  streamingHtml?: string | null;
 }) {
   const { config } = useThemeStore();
   const labels = ['Variant A', 'Variant B', 'Variant C', 'Variant D'];
   const focusedVariant = getVariantByIndex(focusedIndex);
   const focusedWireframe = wireframes.find(w => w.variantIndex === focusedIndex);
   // In wireframe mode, prioritize wireframe; in prototype mode, prioritize prototype
+  // streamingHtml is used for interactive mode (VirtualFS) when no html_url exists
   const focusedUrl = viewMode === 'wireframes'
     ? (focusedWireframe?.wireframeUrl || focusedVariant?.html_url)
     : (focusedVariant?.html_url || focusedWireframe?.wireframeUrl);
-  const focusedHtml = focusedWireframe?.wireframeHtml;
-  const isWireframe = viewMode === 'wireframes' || (!focusedVariant?.html_url && (focusedWireframe?.wireframeHtml || focusedWireframe?.wireframeUrl));
+  // For HTML content: streamingHtml (interactive mode) > wireframe HTML
+  const focusedHtml = streamingHtml || focusedWireframe?.wireframeHtml;
+  // Determine if showing wireframe or prototype
+  const hasPrototype = !!focusedVariant?.html_url || !!streamingHtml;
+  const isWireframe = viewMode === 'wireframes' || (!hasPrototype && (focusedWireframe?.wireframeHtml || focusedWireframe?.wireframeUrl));
   const isComplete = focusedVariant?.status === 'complete';
 
   // Fetch HTML content to use srcDoc (bypasses Supabase CSP restrictions)
@@ -1425,7 +1433,10 @@ function InlineExpansionGrid({
     focusedVariant: focusedVariant ? { html_url: focusedVariant.html_url, status: focusedVariant.status } : null,
     focusedWireframe: focusedWireframe ? { wireframeUrl: focusedWireframe.wireframeUrl, hasHtml: !!focusedWireframe.wireframeHtml } : null,
     focusedUrl,
+    hasStreamingHtml: !!streamingHtml,
+    streamingHtmlLength: streamingHtml?.length || 0,
     hasFocusedHtml: !!focusedHtml,
+    hasPrototype,
     isWireframe,
     isComplete,
     hasFetchedHtml: !!fetchedHtml,
@@ -2827,7 +2838,7 @@ export const VibePrototyping: React.FC = () => {
                   [result.variantIndex]: indexHtml.content,
                 }));
               }
-              console.log('[VibePrototyping] Variant complete:', result.variantIndex, 'files:', result.files.length);
+              console.log('[VibePrototyping] Variant complete:', result.variantIndex, 'files:', result.files.length, 'indexHtml length:', indexHtml?.content?.length || 0);
             },
             screenshot
           );
@@ -2882,7 +2893,8 @@ export const VibePrototyping: React.FC = () => {
       setVariants(generatedVariants);
       setStatus('complete');
       setProgress(null);
-      setStreamingHtml({}); // Clear streaming state
+      // Don't clear streamingHtml - keep it for preview when html_url isn't available (interactive mode)
+      // streamingHtml will be cleared when starting a new generation instead
       lastSavedLengthRef.current = {}; // Reset saved length tracking
 
       showSuccess('All variants generated successfully!');
@@ -4858,7 +4870,8 @@ export const VibePrototyping: React.FC = () => {
               getVariantByIndex={getVariantByIndex}
               viewMode={viewMode}
               enableInteractivity={interactivityEnabled}
-                        useLLMEnhancement={useLLMEnhancement}
+              useLLMEnhancement={useLLMEnhancement}
+              streamingHtml={streamingHtml[focusedVariantIndex]}
             />
           )}
 
@@ -4928,6 +4941,7 @@ export const VibePrototyping: React.FC = () => {
                           htmlUrl={variant?.html_url}
                           wireframeUrl={wireframe?.wireframeUrl}
                           wireframeHtml={wireframe?.wireframeHtml}
+                          streamingHtml={streamingHtml[idx + 1]}
                           onClick={() => handleVariantClick(idx + 1)}
                           viewMode={viewMode}
                           enableInteractivity={interactivityEnabled}
@@ -4943,7 +4957,8 @@ export const VibePrototyping: React.FC = () => {
 
           {/* Complete or Generating state with focus - inline expansion view (preview mode) */}
           {/* Allow exploring completed variants while others are still generating */}
-          {(isComplete || (isGenerating && focusedVariant?.status === 'complete')) && focusedVariantIndex && editMode === 'cursor' && (
+          {/* Also handles interactive mode where variants may be in streamingHtml but not vibe_variants */}
+          {(isComplete || (isGenerating && (focusedVariant?.status === 'complete' || completedVariantIndices.has(focusedVariantIndex || 0)))) && focusedVariantIndex && editMode === 'cursor' && (
             <InlineExpansionGrid
               wireframes={wireframes}
               focusedIndex={focusedVariantIndex}
@@ -4952,7 +4967,8 @@ export const VibePrototyping: React.FC = () => {
               getVariantByIndex={getVariantByIndex}
               viewMode={viewMode}
               enableInteractivity={interactivityEnabled}
-                        useLLMEnhancement={useLLMEnhancement}
+              useLLMEnhancement={useLLMEnhancement}
+              streamingHtml={streamingHtml[focusedVariantIndex]}
             />
           )}
 
