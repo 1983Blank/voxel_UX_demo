@@ -111,18 +111,48 @@ function repairJson(json: string): string {
   // Remove trailing commas before } or ]
   repaired = repaired.replace(/,(\s*[}\]])/g, '$1')
 
+  // Fix missing commas between array elements (common LLM issue)
+  // Look for patterns like "text" "text" (missing comma between strings)
+  repaired = repaired.replace(/"(\s*)"(?=[^:,\]}])/g, '", "')
+
+  // Fix missing commas between object properties
+  // Look for patterns like "value"\n"key": (missing comma)
+  repaired = repaired.replace(/("|\d+|true|false|null)\s*\n\s*"/g, '$1,\n"')
+
   // Fix unescaped newlines in strings (common LLM issue)
-  // This is tricky - we need to be inside a string
-  repaired = repaired.replace(/:\s*"([^"]*)\n([^"]*)"/g, (match, before, after) => {
+  // This is tricky - we need to be inside a string value
+  repaired = repaired.replace(/:\s*"([^"]*)\n([^"]*)"/g, (_match, before, after) => {
     return `: "${before}\\n${after}"`
   })
 
   // Fix unescaped quotes inside strings (very common)
   // Look for patterns like "text "quoted" text"
-  repaired = repaired.replace(/"([^"]*)"([^",:}\]]+)"([^"]*)"/g, '"$1\\"$2\\"$3"')
+  repaired = repaired.replace(/"([^"]*)"([^",:}\]\s]+)"([^"]*)"/g, '"$1\\"$2\\"$3"')
+
+  // Fix single quotes used instead of double quotes for property values
+  repaired = repaired.replace(/:\s*'([^']*)'/g, ': "$1"')
 
   // Remove any control characters except \n, \r, \t
   repaired = repaired.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '')
+
+  // Fix truncated strings at the end (add closing quote if missing)
+  if (repaired.match(/"[^"]*$/)) {
+    repaired = repaired + '"'
+  }
+
+  // Ensure proper array/object closure
+  const openBraces = (repaired.match(/{/g) || []).length
+  const closeBraces = (repaired.match(/}/g) || []).length
+  const openBrackets = (repaired.match(/\[/g) || []).length
+  const closeBrackets = (repaired.match(/]/g) || []).length
+
+  // Add missing closing braces/brackets
+  for (let i = 0; i < openBraces - closeBraces; i++) {
+    repaired += '}'
+  }
+  for (let i = 0; i < openBrackets - closeBrackets; i++) {
+    repaired += ']'
+  }
 
   return repaired
 }
