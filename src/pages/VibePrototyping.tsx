@@ -2182,12 +2182,23 @@ export const VibePrototyping: React.FC = () => {
                 }
                 // Update database to persist the corrected status
                 supabase.from('vibe_sessions').update({ status: 'wireframe_ready' }).eq('id', sessionId);
+              }
 
-                // Check for active checkpoint to potentially recover partial progress
+              // Always check for active checkpoint if variants aren't all complete
+              // This enables recovery after page refresh during generation
+              if (!allVariantsComplete) {
                 try {
                   const checkpoint = await getActiveCheckpoint(sessionId);
                   if (checkpoint && checkpoint.variants.some(v => v.steps.length > 0)) {
-                    console.log('[VibePrototyping] Found active checkpoint with progress, offering recovery');
+                    console.log('[VibePrototyping] Found active checkpoint with progress:', {
+                      sessionId: checkpoint.session.id,
+                      status: checkpoint.session.status,
+                      variants: checkpoint.variants.map(v => ({
+                        index: v.variant_index,
+                        phase: v.phase,
+                        steps: v.steps.length
+                      }))
+                    });
                     setRecoveredCheckpoint(checkpoint);
                     setShowRecoveryDialog(true);
                   }
@@ -2805,9 +2816,18 @@ export const VibePrototyping: React.FC = () => {
               // Also update prototype store for persistence
               usePrototypeStore.getState().setAgentProgress(progressList);
             },
-            // Variant complete callback
+            // Variant complete callback - update preview with generated HTML
             (result) => {
               setCompletedVariantIndices((prev) => new Set([...prev, result.variantIndex]));
+              // Extract index.html content for streaming preview
+              const indexHtml = result.files.find(f => f.path === 'index.html');
+              if (indexHtml) {
+                setStreamingHtml((prev) => ({
+                  ...prev,
+                  [result.variantIndex]: indexHtml.content,
+                }));
+              }
+              console.log('[VibePrototyping] Variant complete:', result.variantIndex, 'files:', result.files.length);
             },
             screenshot
           );
