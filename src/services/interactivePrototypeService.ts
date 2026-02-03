@@ -609,15 +609,15 @@ export async function generateInteractivePrototypesWithAgent(
         screenshotBase64,
         designTokens: designTokens || [],
       },
-      (agentProgressList) => {
+      (agentProgressList: AgentProgress[]) => {
         // Report agent progress
         onAgentProgress?.(agentProgressList);
 
         // Convert to simple progress for backwards compatibility
-        const activeVariant = agentProgressList.find(p => p.phase !== 'queued' && p.phase !== 'complete');
+        const activeVariant = agentProgressList.find((p: AgentProgress) => p.phase !== 'queued' && p.phase !== 'complete');
         if (activeVariant) {
-          const totalSteps = agentProgressList.reduce((sum, p) => sum + p.totalSteps, 0);
-          const completedSteps = agentProgressList.reduce((sum, p) => sum + p.completedSteps, 0);
+          const totalSteps = agentProgressList.reduce((sum: number, p: AgentProgress) => sum + p.totalSteps, 0);
+          const completedSteps = agentProgressList.reduce((sum: number, p: AgentProgress) => sum + p.completedSteps, 0);
           const percent = Math.round((completedSteps / totalSteps) * 100);
 
           onProgress?.({

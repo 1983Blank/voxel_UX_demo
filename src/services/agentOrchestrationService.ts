@@ -16,11 +16,12 @@ import type {
   AgentProgress,
   AgentStepProgress,
   GenerateScriptResponse,
+  GenerateFileResponse,
   GenerationContext,
   OrchestrationConfig,
   OrchestrationResult,
   AgentEvents,
-  StepDefinition,
+  AgentProgressCallback,
 } from '../types/agentTypes';
 import { getAllSteps, GENERATION_STEPS } from '../types/agentTypes';
 import { saveCheckpoint, loadCheckpoints } from './checkpointService';
