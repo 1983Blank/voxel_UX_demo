@@ -1671,26 +1671,6 @@ export const VibePrototyping: React.FC = () => {
     setError,
   ]);
 
-  // Debug mode - toggle with keyboard shortcut (Ctrl+Shift+D)
-  const [debugMode, setDebugMode] = useState(false);
-  const [debugLogs, setDebugLogs] = useState<DebugLogEntry[]>([]);
-
-  // Helper to add debug log entries
-  const addDebugLog = useCallback((type: DebugLogEntry['type'], endpoint: string, data: unknown) => {
-    setDebugLogs(prev => [...prev.slice(-19), { timestamp: new Date(), type, endpoint, data }]);
-  }, []);
-
-  // Debug mode keyboard shortcut
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.shiftKey && e.key === 'D') {
-        e.preventDefault();
-        setDebugMode(prev => !prev);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
 
   // Streaming HTML for live preview during generation
   const [streamingHtml, setStreamingHtml] = useState<Record<number, string>>({});
@@ -2077,7 +2057,7 @@ export const VibePrototyping: React.FC = () => {
         hasMetadata: !!metadata,
         metadataComponents: metadata?.components?.length || 0,
       };
-      addDebugLog('request', 'understand-request', understandingRequest);
+      console.log('[VibePrototyping] understand-request:', understandingRequest);
 
       const understandingResult = await generateUnderstanding(
         session.id,
@@ -2097,7 +2077,7 @@ export const VibePrototyping: React.FC = () => {
       );
 
       // Log the response received
-      addDebugLog('response', 'understand-request', {
+      console.log('[VibePrototyping] understand-request response:', {
         success: true,
         model: understandingResult.model,
         provider: understandingResult.provider,
@@ -2128,7 +2108,7 @@ export const VibePrototyping: React.FC = () => {
       const errorMsg = err instanceof Error ? err.message : 'Failed to analyze request';
 
       // Log the error
-      addDebugLog('error', 'understand-request', {
+      console.error('[VibePrototyping] understand-request error:', {
         error: errorMsg,
         stack: err instanceof Error ? err.stack : undefined,
       });
@@ -2140,7 +2120,7 @@ export const VibePrototyping: React.FC = () => {
       setIsProcessingPrompt(false);
       setPendingPrompt(null);
     }
-  }, [screen, screenId, promptValue, sourceMetadata, contexts, generatePhaseContent, addDebugLog]);
+  }, [screen, screenId, promptValue, sourceMetadata, contexts, generatePhaseContent]);
 
   // Handle understanding approval - proceeds to planning phase
   const handleApproveUnderstanding = useCallback(async () => {
