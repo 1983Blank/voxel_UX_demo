@@ -499,6 +499,24 @@ Deno.serve(async (req) => {
     // Parse request
     const request: GenerateScriptRequest = await req.json()
 
+    // Log what we received
+    console.log(`[generate-implementation-script] 📥 Received request for variant ${request.variantPlan?.variant_index}`)
+    console.log(`[generate-implementation-script] 📋 Request details:`, {
+      variantIndex: request.variantPlan?.variant_index,
+      variantTitle: request.variantPlan?.title,
+      approach: request.variantApproach,
+      hasUnderstanding: !!request.screenUnderstanding,
+      understandingGoal: request.screenUnderstanding?.primaryGoal,
+      designTokensCount: request.designTokens?.length || 0,
+      hasUiMetadata: !!request.uiMetadata,
+      productContextLength: request.productContext?.length || 0,
+      hasScreenshot: !!request.screenshotBase64,
+      screenshotSize: request.screenshotBase64 ? `${Math.round(request.screenshotBase64.length / 1024)}KB` : 'none',
+      provider: request.provider,
+      model: request.model,
+    })
+    console.log(`[generate-implementation-script] 📋 Plan key changes:`, request.variantPlan?.key_changes)
+
     if (!request.variantPlan || !request.variantApproach) {
       return new Response(
         JSON.stringify({ error: 'variantPlan and variantApproach are required' }),

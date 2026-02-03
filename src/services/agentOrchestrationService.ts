@@ -71,6 +71,22 @@ async function callGenerateImplementationScript(
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
   const functionUrl = `${supabaseUrl}/functions/v1/generate-implementation-script`;
 
+  // Log what we're sending to the LLM
+  console.log('[AgentOrchestration] 📤 Calling generate-implementation-script:', {
+    variantIndex: plan.variant_index,
+    approach,
+    planTitle: plan.title,
+    hasUnderstanding: !!context.understanding,
+    designTokensCount: context.designTokens?.length || 0,
+    hasUiMetadata: !!context.uiMetadata,
+    productContextLength: context.productContext?.length || 0,
+    hasScreenshot: !!context.screenshotBase64,
+    screenshotSize: context.screenshotBase64 ? `${Math.round(context.screenshotBase64.length / 1024)}KB` : 'none',
+    sourceHtmlLength: context.sourceHtml?.length || 0,
+    provider: context.provider,
+    model: context.model,
+  });
+
   const response = await fetch(functionUrl, {
     method: 'POST',
     headers: {
@@ -86,6 +102,8 @@ async function callGenerateImplementationScript(
       variantApproach: approach,
       provider: context.provider,
       model: context.model,
+      // Also send screenshot for vision-based understanding
+      screenshotBase64: context.screenshotBase64,
     }),
     signal: abortSignal,
   });
@@ -113,6 +131,33 @@ async function callGeneratePrototypeFile(
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
   const functionUrl = `${supabaseUrl}/functions/v1/generate-prototype-file`;
 
+  const sourceHtmlToSend = fileType === 'index.html' ? context.sourceHtml?.slice(0, 50000) : undefined;
+  const screenshotToSend = fileType === 'index.html' ? context.screenshotBase64 : undefined;
+
+  // Log what we're sending to the LLM
+  console.log(`[AgentOrchestration] 📤 Calling generate-prototype-file (${fileType}):`, {
+    fileType,
+    approach,
+    componentName: options?.componentName || 'N/A',
+    componentsNeeded: implementationScript.componentsNeeded,
+    entryPointsCount: implementationScript.entryPoints?.length || 0,
+    flowsCount: implementationScript.flows?.length || 0,
+    designTokensCount: context.designTokens?.length || 0,
+    previousFilesCount: options?.previousFiles?.length || 0,
+    sourceHtmlLength: sourceHtmlToSend?.length || 0,
+    hasScreenshot: !!screenshotToSend,
+    screenshotSize: screenshotToSend ? `${Math.round(screenshotToSend.length / 1024)}KB` : 'none',
+    provider: context.provider,
+    model: context.model,
+  });
+
+  // For index.html, log a preview of what entry points and flows we're asking for
+  if (fileType === 'index.html') {
+    console.log('[AgentOrchestration] 📋 Entry points for index.html:', implementationScript.entryPoints);
+    console.log('[AgentOrchestration] 📋 Flows for index.html:', implementationScript.flows?.map(f => ({ name: f.name, description: f.description })));
+    console.log('[AgentOrchestration] 📋 Initial state:', implementationScript.initialState);
+  }
+
   const response = await fetch(functionUrl, {
     method: 'POST',
     headers: {
@@ -126,8 +171,8 @@ async function callGeneratePrototypeFile(
       designTokens: context.designTokens,
       componentName: options?.componentName,
       previousFiles: options?.previousFiles,
-      sourceHtml: fileType === 'index.html' ? context.sourceHtml?.slice(0, 50000) : undefined,
-      screenshotBase64: fileType === 'index.html' ? context.screenshotBase64 : undefined,
+      sourceHtml: sourceHtmlToSend,
+      screenshotBase64: screenshotToSend,
       provider: context.provider,
       model: context.model,
     }),

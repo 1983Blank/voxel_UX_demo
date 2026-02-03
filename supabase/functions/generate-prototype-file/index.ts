@@ -725,6 +725,32 @@ Deno.serve(async (req) => {
     // Parse request
     const request: GenerateFileRequest = await req.json()
 
+    // Log what we received
+    console.log(`[generate-prototype-file] 📥 Received request for: ${request.fileType}`)
+    console.log(`[generate-prototype-file] 📋 Request details:`, {
+      fileType: request.fileType,
+      variantApproach: request.variantApproach,
+      componentName: request.componentName || 'N/A',
+      componentsNeeded: request.implementationScript?.componentsNeeded,
+      entryPointsCount: request.implementationScript?.entryPoints?.length || 0,
+      flowsCount: request.implementationScript?.flows?.length || 0,
+      designTokensCount: request.designTokens?.length || 0,
+      previousFilesCount: request.previousFiles?.length || 0,
+      sourceHtmlLength: request.sourceHtml?.length || 0,
+      hasScreenshot: !!request.screenshotBase64,
+      screenshotSize: request.screenshotBase64 ? `${Math.round(request.screenshotBase64.length / 1024)}KB` : 'none',
+      provider: request.provider,
+      model: request.model,
+    })
+
+    // For index.html, log the implementation details
+    if (request.fileType === 'index.html') {
+      console.log('[generate-prototype-file] 📋 Entry points:', JSON.stringify(request.implementationScript?.entryPoints, null, 2))
+      console.log('[generate-prototype-file] 📋 Flows:', JSON.stringify(request.implementationScript?.flows?.map(f => ({ name: f.name, desc: f.description })), null, 2))
+      console.log('[generate-prototype-file] 📋 Initial state:', JSON.stringify(request.implementationScript?.initialState, null, 2))
+      console.log('[generate-prototype-file] 📋 Source HTML preview (first 500 chars):', request.sourceHtml?.slice(0, 500))
+    }
+
     if (!request.fileType || !request.implementationScript || !request.variantApproach) {
       return new Response(
         JSON.stringify({ error: 'fileType, implementationScript, and variantApproach are required' }),
