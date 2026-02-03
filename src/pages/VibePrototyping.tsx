@@ -3023,26 +3023,26 @@ export const VibePrototyping: React.FC = () => {
   const focusedVariant = focusedVariantIndex ? getVariantByIndex(focusedVariantIndex) : null;
   const focusedPlan = focusedVariantIndex ? getPlanByIndex(focusedVariantIndex) : null;
 
-  // Get progress for each variant - calculate per-variant progress from overall
+  // Get progress for each variant - calculate from agent progress steps
   const getVariantProgress = useCallback((index: number) => {
-    // Check local completed set first (prevents race conditions)
-    if (completedVariantIndices.has(index)) return 100;
-    // Check store for completed status
+    // First check if we have agent progress for this variant (most accurate)
+    const variantAgentProgress = agentProgress.find(ap => ap.variantIndex === index);
+    if (variantAgentProgress) {
+      // Calculate progress based on completed steps
+      if (variantAgentProgress.totalSteps > 0) {
+        return Math.round((variantAgentProgress.completedSteps / variantAgentProgress.totalSteps) * 100);
+      }
+    }
+
+    // Fallback: Check store for completed status
     const variant = getVariantByIndex(index);
     if (variant?.status === 'complete') return 100;
-    // If currently building this variant, calculate per-variant progress
-    if (progress?.stage === 'generating' && progress.variantIndex === index) {
-      // Calculate per-variant progress from overall progress
-      // Each variant takes ~25% of total, so variant 1 is 0-25%, variant 2 is 25-50%, etc.
-      const variantCount = selectedVariants.length || 4;
-      const variantStartPercent = ((index - 1) / variantCount) * 100;
-      const variantEndPercent = (index / variantCount) * 100;
-      const variantRange = variantEndPercent - variantStartPercent;
-      const currentProgress = Math.max(0, progress.percent - variantStartPercent);
-      return Math.min(100, (currentProgress / variantRange) * 100);
-    }
+
+    // Fallback: Check completed set (for when agent progress is cleared)
+    if (completedVariantIndices.has(index)) return 100;
+
     return 0;
-  }, [progress, getVariantByIndex, completedVariantIndices, selectedVariants]);
+  }, [agentProgress, getVariantByIndex, completedVariantIndices]);
 
   // Loading state
   if (isLoading) {
@@ -4164,47 +4164,6 @@ export const VibePrototyping: React.FC = () => {
                     </IconButton>
                   </Tooltip>
                 ))}
-              </Box>
-
-              <Divider orientation="vertical" flexItem />
-
-              {/* Interactivity Toggle with LLM option */}
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                <Tooltip title={interactivityEnabled ? 'Disable Interactivity' : 'Enable Interactivity (buttons, forms, modals)'}>
-                  <IconButton
-                    size="small"
-                    onClick={() => setInteractivityEnabled(!interactivityEnabled)}
-                    sx={{
-                      bgcolor: interactivityEnabled ? 'primary.main' : 'transparent',
-                      color: interactivityEnabled ? 'white' : 'inherit',
-                      '&:hover': {
-                        bgcolor: interactivityEnabled ? 'primary.dark' : 'action.hover',
-                      },
-                    }}
-                  >
-                    <Lightning size={18} weight={interactivityEnabled ? 'fill' : 'regular'} />
-                  </IconButton>
-                </Tooltip>
-                {interactivityEnabled && (
-                  <Tooltip title={useLLMEnhancement ? 'Using AI-powered smart interactions' : 'Using basic interactions (click to enable AI)'}>
-                    <Chip
-                      label={useLLMEnhancement ? 'AI' : 'Basic'}
-                      size="small"
-                      onClick={() => setUseLLMEnhancement(!useLLMEnhancement)}
-                      sx={{
-                        height: 22,
-                        fontSize: 11,
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        bgcolor: useLLMEnhancement ? 'rgba(118, 75, 162, 0.15)' : 'grey.200',
-                        color: useLLMEnhancement ? '#764ba2' : 'text.secondary',
-                        '&:hover': {
-                          bgcolor: useLLMEnhancement ? 'rgba(118, 75, 162, 0.25)' : 'grey.300',
-                        },
-                      }}
-                    />
-                  </Tooltip>
-                )}
               </Box>
 
               <Divider orientation="vertical" flexItem />
