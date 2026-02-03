@@ -22,6 +22,7 @@ import {
   UsersFour,
   Clock,
   EnvelopeSimple,
+  Camera,
 } from '@phosphor-icons/react';
 import { Card, CardContent, Button, Chip } from '@/components/ui';
 import { useThemeStore } from '@/store/themeStore';
@@ -46,6 +47,7 @@ import {
   type Viewer,
   type FeedbackComment,
 } from '@/services/feedbackInsightsService';
+import { captureAndSaveVariantScreenshot } from '@/services/screenshotService';
 
 const formatTime = (seconds: number) => {
   const mins = Math.floor(seconds / 60);
@@ -455,6 +457,7 @@ function VariantView({ projectId, variantId }: { projectId: string; variantId: s
   const [projectName, setProjectName] = useState('Project');
   const [aiSummary, setAiSummary] = useState<FeedbackSummaryData | null>(null);
   const [aiSummaryLoading, setAiSummaryLoading] = useState(false);
+  const [capturingScreenshot, setCapturingScreenshot] = useState(false);
 
   const variantIndex = parseInt(variantId, 10);
 
@@ -555,6 +558,41 @@ function VariantView({ projectId, variantId }: { projectId: string; variantId: s
       },
     });
   }, [aiSummary, navigate, projectId, variantIndex]);
+
+  // Handle capturing screenshot for variants without one
+  const handleCaptureScreenshot = useCallback(async () => {
+    if (!detail || !detail.htmlUrl) {
+      console.error('Cannot capture screenshot: no HTML URL available');
+      return;
+    }
+
+    setCapturingScreenshot(true);
+    try {
+      // Fetch HTML content from the URL
+      const response = await fetch(detail.htmlUrl);
+      if (!response.ok) {
+        throw new Error('Failed to fetch variant HTML');
+      }
+      const html = await response.text();
+
+      // Capture and save screenshot
+      const screenshotUrl = await captureAndSaveVariantScreenshot(
+        projectId,
+        variantIndex,
+        html
+      );
+
+      if (screenshotUrl) {
+        // Update local state with new screenshot URL
+        setDetail(prev => prev ? { ...prev, screenshotUrl } : null);
+        console.log('Screenshot captured successfully:', screenshotUrl);
+      }
+    } catch (err) {
+      console.error('Error capturing screenshot:', err);
+    } finally {
+      setCapturingScreenshot(false);
+    }
+  }, [detail, projectId, variantIndex]);
 
   // Build journey stages for Sankey chart
   // Uses real event types: pageview, scroll, click
@@ -723,14 +761,51 @@ function VariantView({ projectId, variantId }: { projectId: string; variantId: s
               />
             ) : (
               <>
-                <Eye size={32} color={config.colors.textSecondary} />
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  sx={{ mt: 1, fontWeight: 500 }}
-                >
-                  No thumbnail available
-                </Typography>
+                {detail.htmlUrl ? (
+                  <>
+                    {capturingScreenshot ? (
+                      <>
+                        <CircularProgress size={24} />
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          sx={{ mt: 1, fontSize: '0.65rem' }}
+                        >
+                          Capturing...
+                        </Typography>
+                      </>
+                    ) : (
+                      <>
+                        <Camera size={28} color={config.colors.textSecondary} />
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          onClick={handleCaptureScreenshot}
+                          startIcon={<Camera size={12} />}
+                          sx={{
+                            mt: 1,
+                            fontSize: '0.65rem',
+                            py: 0.5,
+                            px: 1.5,
+                          }}
+                        >
+                          Capture thumbnail
+                        </Button>
+                      </>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <Eye size={28} color={config.colors.textSecondary} />
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{ mt: 1, fontSize: '0.65rem' }}
+                    >
+                      No thumbnail available
+                    </Typography>
+                  </>
+                )}
               </>
             )}
           </Card>
