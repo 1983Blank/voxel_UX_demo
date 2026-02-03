@@ -139,6 +139,12 @@ import {
   shouldUseServerOrchestration,
 } from '@/services/interactivePrototypeService';
 import {
+  getActiveCheckpoint,
+  buildFilesFromCheckpoint,
+  buildAgentProgressFromCheckpoint,
+  type CheckpointData,
+} from '@/services/generationCheckpointService';
+import {
   type StartServerGenerationParams,
 } from '@/services/serverGenerationService';
 import { useServerGeneration } from '@/hooks/useServerGeneration';
@@ -1790,6 +1796,10 @@ export const VibePrototyping: React.FC = () => {
   // Server generation hook (for server-persistent generation with streaming)
   const serverGeneration = useServerGeneration(currentSession?.id || null);
 
+  // Checkpoint recovery state
+  const [recoveredCheckpoint, setRecoveredCheckpoint] = useState<CheckpointData | null>(null);
+  const [showRecoveryDialog, setShowRecoveryDialog] = useState(false);
+
   // Store generated visual wireframes
   const [wireframes, setWireframes] = useState<VisualWireframeResult[]>([]);
 
@@ -2172,6 +2182,18 @@ export const VibePrototyping: React.FC = () => {
                 }
                 // Update database to persist the corrected status
                 supabase.from('vibe_sessions').update({ status: 'wireframe_ready' }).eq('id', sessionId);
+
+                // Check for active checkpoint to potentially recover partial progress
+                try {
+                  const checkpoint = await getActiveCheckpoint(sessionId);
+                  if (checkpoint && checkpoint.variants.some(v => v.steps.length > 0)) {
+                    console.log('[VibePrototyping] Found active checkpoint with progress, offering recovery');
+                    setRecoveredCheckpoint(checkpoint);
+                    setShowRecoveryDialog(true);
+                  }
+                } catch (err) {
+                  console.warn('[VibePrototyping] Failed to check for checkpoint:', err);
+                }
               }
 
               // Also generate phase content for loaded sessions
@@ -5174,6 +5196,105 @@ export const VibePrototyping: React.FC = () => {
           )}
         </Box>
       </Box>
+
+      {/* Checkpoint Recovery Dialog */}
+      <Dialog
+        open={showRecoveryDialog}
+        onClose={() => setShowRecoveryDialog(false)}
+        maxWidth="sm"
+        fullWidth
+        TransitionComponent={Fade}
+      >
+        <DialogTitle sx={{ fontFamily: config.fonts.display }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <ArrowCounterClockwise size={24} />
+            Resume Previous Session?
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            We found an interrupted generation session with some progress saved.
+          </Typography>
+          {recoveredCheckpoint && (
+            <Box sx={{ mb: 2, p: 2, bgcolor: 'background.paper', borderRadius: 1, border: '1px solid', borderColor: 'divider' }}>
+              <Typography variant="body2" sx={{ mb: 1 }}>
+                <strong>Saved progress:</strong>
+              </Typography>
+              {recoveredCheckpoint.variants.map((variant) => {
+                const completedSteps = variant.steps.filter(s => s.status === 'completed').length;
+                const totalSteps = variant.total_steps || variant.steps.length || 0;
+                return (
+                  <Box key={variant.id} sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                    <Chip
+                      size="small"
+                      label={`Variant ${variant.variant_index}`}
+                      color={variant.phase === 'complete' ? 'success' : variant.phase === 'failed' ? 'error' : 'default'}
+                    />
+                    <Typography variant="caption" color="text.secondary">
+                      {completedSteps} / {totalSteps} steps · {variant.phase}
+                    </Typography>
+                  </Box>
+                );
+              })}
+            </Box>
+          )}
+          <Typography variant="body2" color="text.secondary">
+            Would you like to recover from where you left off, or start fresh?
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => {
+              setShowRecoveryDialog(false);
+              setRecoveredCheckpoint(null);
+            }}
+            color="inherit"
+          >
+            Start Fresh
+          </Button>
+          <Button
+            onClick={async () => {
+              if (recoveredCheckpoint && plan?.plans) {
+                setShowRecoveryDialog(false);
+                // Rebuild progress from checkpoint
+                const agentProgressFromCheckpoint = buildAgentProgressFromCheckpoint(
+                  recoveredCheckpoint.variants,
+                  plan.plans
+                );
+                setAgentProgress(agentProgressFromCheckpoint);
+                usePrototypeStore.getState().setAgentProgress(agentProgressFromCheckpoint);
+
+                // Rebuild VirtualFS from completed steps for each variant
+                for (const variant of recoveredCheckpoint.variants) {
+                  const files = buildFilesFromCheckpoint(variant.steps);
+                  if (files.length > 0) {
+                    const htmlContent: Record<number, string> = {};
+                    const indexHtml = files.find(f => f.path === 'index.html');
+                    if (indexHtml) {
+                      htmlContent[variant.variant_index] = indexHtml.content;
+                    }
+                    if (Object.keys(htmlContent).length > 0) {
+                      setStreamingHtml(prev => ({ ...prev, ...htmlContent }));
+                    }
+                  }
+                }
+
+                // Mark completed variants
+                const completedIndices = recoveredCheckpoint.variants
+                  .filter(v => v.phase === 'complete')
+                  .map(v => v.variant_index);
+                setCompletedVariantIndices(new Set(completedIndices));
+
+                showSuccess('Progress recovered! You can continue or restart generation.');
+              }
+              setRecoveredCheckpoint(null);
+            }}
+            variant="contained"
+          >
+            Resume
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Share Dialog */}
       <Dialog

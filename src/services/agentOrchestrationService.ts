@@ -25,6 +25,16 @@ import type {
 } from '../types/agentTypes';
 import { getAllSteps, GENERATION_STEPS } from '../types/agentTypes';
 import { saveCheckpoint, loadCheckpoints } from './checkpointService';
+import {
+  createCheckpointSession,
+  getVariantId,
+  updateVariantPhase,
+  saveStepCheckpoint,
+  saveVariantVirtualFS,
+  updateSessionStatus,
+  updateCurrentVariant,
+  type CheckpointSession,
+} from './generationCheckpointService';
 
 // ============================================================================
 // Types
@@ -175,7 +185,8 @@ async function generateVariant(
   config: OrchestrationConfig,
   accessToken: string,
   onProgress: (progress: AgentProgress) => void,
-  events?: AgentEvents
+  events?: AgentEvents,
+  checkpointSessionId?: string | null
 ): Promise<{ files: GeneratedFile[]; implementationScript: GenerateScriptResponse }> {
   const variantIndex = plan.variant_index;
   const approach = INDEX_TO_APPROACH[variantIndex] || 'minimal';
@@ -185,6 +196,15 @@ async function generateVariant(
   onProgress(progress);
 
   events?.onVariantStart?.(variantIndex, approach);
+
+  // Get Supabase variant ID for checkpoint saves
+  let serverVariantId: string | null = null;
+  if (checkpointSessionId && config.enableCheckpoints) {
+    serverVariantId = await getVariantId(checkpointSessionId, variantIndex);
+    if (serverVariantId) {
+      await updateVariantPhase(serverVariantId, 'script', 'Designing behavior...');
+    }
+  }
 
   const generatedFiles: GeneratedFile[] = [];
   const previousFiles: Array<{ path: string; exports?: string[]; summary?: string }> = [];
@@ -203,9 +223,21 @@ async function generateVariant(
   try {
     implementationScript = await callGenerateImplementationScript(plan, context, approach, accessToken);
 
-    // Save checkpoint if enabled
+    // Save checkpoint if enabled (local IndexedDB)
     if (config.enableCheckpoints) {
       await saveCheckpoint(context.sessionId, variantIndex, scriptStepKey, implementationScript);
+    }
+
+    // Save to Supabase for page refresh recovery
+    if (serverVariantId) {
+      await saveStepCheckpoint(
+        serverVariantId,
+        scriptStepKey,
+        'Design behavior',
+        'completed',
+        undefined,
+        Date.now() - scriptStartTime
+      );
     }
 
     progress = updateStepInProgress(progress, scriptStepKey, {
@@ -222,6 +254,11 @@ async function generateVariant(
     progress = updateProgress(progress, { phase: 'failed', error: errorMessage });
     onProgress(progress);
     events?.onStepFail?.(variantIndex, scriptStepKey, errorMessage);
+
+    // Save failure to Supabase
+    if (serverVariantId) {
+      await updateVariantPhase(serverVariantId, 'failed', undefined, errorMessage);
+    }
     throw error;
   }
 
@@ -238,6 +275,11 @@ async function generateVariant(
     phase: 'files',
   });
   onProgress(progress);
+
+  // Update server phase to 'files'
+  if (serverVariantId) {
+    await updateVariantPhase(serverVariantId, 'files', 'Creating design tokens...');
+  }
 
   // Step 2a: Generate tokens.css (no LLM)
   const tokensStepKey = 'tokens_css';
@@ -265,6 +307,18 @@ async function generateVariant(
       path: tokensResult.path,
       summary: tokensResult.summary,
     });
+
+    // Save step to Supabase with file content
+    if (serverVariantId) {
+      await saveStepCheckpoint(
+        serverVariantId,
+        tokensStepKey,
+        'Create design tokens',
+        'completed',
+        { path: tokensResult.path, content: tokensResult.content, type: tokensResult.type },
+        Date.now() - tokensStartTime
+      );
+    }
 
     progress = updateStepInProgress(progress, tokensStepKey, {
       status: 'completed',
@@ -311,6 +365,18 @@ async function generateVariant(
       path: storeResult.path,
       summary: storeResult.summary,
     });
+
+    // Save step to Supabase with file content
+    if (serverVariantId) {
+      await saveStepCheckpoint(
+        serverVariantId,
+        storeStepKey,
+        'Set up state',
+        'completed',
+        { path: storeResult.path, content: storeResult.content, type: storeResult.type },
+        Date.now() - storeStartTime
+      );
+    }
 
     progress = updateStepInProgress(progress, storeStepKey, {
       status: 'completed',
@@ -359,6 +425,18 @@ async function generateVariant(
 
     if (config.enableCheckpoints) {
       await saveCheckpoint(context.sessionId, variantIndex, flowsStepKey, flowsResult);
+    }
+
+    // Save step to Supabase with file content
+    if (serverVariantId) {
+      await saveStepCheckpoint(
+        serverVariantId,
+        flowsStepKey,
+        'Configure flows',
+        'completed',
+        { path: flowsResult.path, content: flowsResult.content, type: flowsResult.type },
+        Date.now() - flowsStartTime
+      );
     }
 
     progress = updateStepInProgress(progress, flowsStepKey, {
@@ -417,6 +495,18 @@ async function generateVariant(
         await saveCheckpoint(context.sessionId, variantIndex, componentStepKey, componentResult);
       }
 
+      // Save step to Supabase with file content
+      if (serverVariantId) {
+        await saveStepCheckpoint(
+          serverVariantId,
+          componentStepKey,
+          `Build ${componentName}`,
+          'completed',
+          { path: componentResult.path, content: componentResult.content, type: componentResult.type },
+          Date.now() - componentStartTime
+        );
+      }
+
       progress = updateStepInProgress(progress, componentStepKey, {
         status: 'completed',
         duration: Date.now() - componentStartTime,
@@ -447,6 +537,11 @@ async function generateVariant(
   });
   onProgress(progress);
 
+  // Update server phase to 'assembly'
+  if (serverVariantId) {
+    await updateVariantPhase(serverVariantId, 'assembly', 'Assembling prototype...');
+  }
+
   events?.onStepStart?.(variantIndex, indexStepKey, 'Assemble prototype');
 
   const indexStartTime = Date.now();
@@ -469,6 +564,21 @@ async function generateVariant(
       await saveCheckpoint(context.sessionId, variantIndex, indexStepKey, indexResult);
     }
 
+    // Save step to Supabase with file content
+    if (serverVariantId) {
+      await saveStepCheckpoint(
+        serverVariantId,
+        indexStepKey,
+        'Assemble prototype',
+        'completed',
+        { path: indexResult.path, content: indexResult.content, type: indexResult.type },
+        Date.now() - indexStartTime
+      );
+
+      // Save final VirtualFS and mark variant as complete
+      await saveVariantVirtualFS(serverVariantId, generatedFiles);
+    }
+
     progress = updateStepInProgress(progress, indexStepKey, {
       status: 'completed',
       duration: Date.now() - indexStartTime,
@@ -489,6 +599,11 @@ async function generateVariant(
     progress = updateProgress(progress, { phase: 'failed', error: errorMessage });
     onProgress(progress);
     events?.onStepFail?.(variantIndex, indexStepKey, errorMessage);
+
+    // Mark variant as failed in Supabase
+    if (serverVariantId) {
+      await updateVariantPhase(serverVariantId, 'failed', undefined, errorMessage);
+    }
     throw error;
   }
 
@@ -531,6 +646,18 @@ export async function orchestrateGeneration(
   const fullContext: GenerationContext = { ...context, sessionId };
   const startTime = Date.now();
 
+  // Create server checkpoint session for recovery on page refresh
+  let checkpointSession: CheckpointSession | null = null;
+  if (config.enableCheckpoints) {
+    checkpointSession = await createCheckpointSession(
+      sessionId,
+      context.sourceHtml || '',
+      plans,
+      context.screenshotBase64
+    );
+    console.log('[AgentOrchestration] Created checkpoint session:', checkpointSession?.id);
+  }
+
   // Initialize progress for all variants
   const progressMap = new Map<number, AgentProgress>();
   for (const plan of plans) {
@@ -560,6 +687,11 @@ export async function orchestrateGeneration(
   }
 
   for (const batch of batches) {
+    // Update current variant index for each batch
+    if (checkpointSession?.id) {
+      await updateCurrentVariant(checkpointSession.id, batch[0].variant_index);
+    }
+
     const batchPromises = batch.map(async (plan) => {
       const variantIndex = plan.variant_index;
       const approach = INDEX_TO_APPROACH[variantIndex] || 'minimal';
@@ -574,7 +706,8 @@ export async function orchestrateGeneration(
             progressMap.set(variantIndex, progress);
             reportProgress();
           },
-          events
+          events,
+          checkpointSession?.id
         );
 
         // Create VirtualFS and preview URL
@@ -615,6 +748,16 @@ export async function orchestrateGeneration(
   }
 
   results.totalDuration = Date.now() - startTime;
+
+  // Update session status on completion
+  if (checkpointSession?.id) {
+    const allComplete = results.failures.length === 0;
+    await updateSessionStatus(
+      checkpointSession.id,
+      allComplete ? 'completed' : 'failed',
+      results.failures.length > 0 ? `${results.failures.length} variant(s) failed` : undefined
+    );
+  }
 
   events?.onAllComplete?.(results);
 

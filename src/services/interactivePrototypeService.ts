@@ -888,9 +888,10 @@ export function shouldUseInteractiveMode(): boolean {
 
 /**
  * Feature flag for server-side orchestration
- * When enabled, generation runs on the server and survives page refresh
+ * When enabled, generation runs on the server (but blocks until complete)
+ * For streaming + recovery, use client orchestration with checkpoints instead
  */
-export const USE_SERVER_ORCHESTRATION = true;
+export const USE_SERVER_ORCHESTRATION = false;
 
 /**
  * Check if server orchestration should be used
