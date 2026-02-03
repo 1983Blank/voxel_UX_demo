@@ -139,7 +139,6 @@ import {
   shouldUseServerOrchestration,
 } from '@/services/interactivePrototypeService';
 import {
-  startServerGeneration,
   type StartServerGenerationParams,
 } from '@/services/serverGenerationService';
 import { useServerGeneration } from '@/hooks/useServerGeneration';
@@ -2720,7 +2719,7 @@ export const VibePrototyping: React.FC = () => {
               vibeSessionId: currentSession.id,
               sourceHtml: screen.editedHtml,
               screenshotBase64: screenshot,
-              designTokens: designTokens || [],
+              designTokens: [], // Server generation extracts tokens from sourceHtml
               plans: plan.plans,
             };
 

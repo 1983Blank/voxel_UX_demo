@@ -17,7 +17,6 @@ import {
   startServerGeneration,
   continueServerGeneration,
   getActiveGeneration,
-  getGenerationProgress,
   getGenerationVariants,
   getGenerationSteps,
   subscribeToGeneration,
@@ -34,8 +33,8 @@ import {
   type RealtimeCallbacks,
 } from '../services/serverGenerationService';
 import type { RealtimeChannel } from '@supabase/supabase-js';
-import type { AgentProgress, AgentPhase } from '../types/agentTypes';
-import type { VariantApproach, GeneratedFile } from '../types/implementationScript';
+import type { AgentProgress } from '../types/agentTypes';
+import type { GeneratedFile } from '../types/implementationScript';
 import type { VariantPlan } from '../services/variantPlanService';
 
 // ============================================================================
@@ -79,14 +78,6 @@ export interface UseServerGenerationResult extends ServerGenerationState {
   /** Clear generation state */
   clear: () => void;
 }
-
-// Map variant index to approach
-const INDEX_TO_APPROACH: Record<number, VariantApproach> = {
-  1: 'minimal',
-  2: 'feature-rich',
-  3: 'gamified',
-  4: 'accessible',
-};
 
 // ============================================================================
 // Hook Implementation
