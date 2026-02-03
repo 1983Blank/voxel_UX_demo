@@ -79,6 +79,37 @@ interface GenerateFileResponse {
   summary?: string
 }
 
+// ============ LLM Output Sanitization ============
+
+/**
+ * Sanitize LLM-generated code to fix common issues
+ * - Smart quotes that break JavaScript
+ * - Fancy Unicode characters
+ * - Zero-width characters
+ */
+function sanitizeLLMOutput(content: string): string {
+  let sanitized = content
+
+  // Replace smart/curly quotes with straight quotes (common LLM issue)
+  sanitized = sanitized.replace(/[\u201C\u201D\u201E\u201F\u2033\u2036]/g, '"') // Various double quotes
+  sanitized = sanitized.replace(/[\u2018\u2019\u201A\u201B\u2032\u2035]/g, "'") // Various single quotes
+  sanitized = sanitized.replace(/[\u00AB\u00BB]/g, '"') // Guillemets
+
+  // Replace fancy dashes with regular hyphens/dashes
+  sanitized = sanitized.replace(/[\u2013\u2014\u2015]/g, '-')
+
+  // Replace non-breaking spaces with regular spaces
+  sanitized = sanitized.replace(/[\u00A0\u2007\u202F]/g, ' ')
+
+  // Remove zero-width characters that can cause issues
+  sanitized = sanitized.replace(/[\u200B\u200C\u200D\uFEFF]/g, '')
+
+  // Replace ellipsis character with three dots
+  sanitized = sanitized.replace(/\u2026/g, '...')
+
+  return sanitized
+}
+
 // ============ Non-LLM File Generators ============
 
 function generateTokensCss(designTokens: DesignToken[]): GenerateFileResponse {
@@ -266,86 +297,71 @@ IMPORTANT:
 
 Return ONLY the JavaScript code, no markdown code blocks.`
 
-const INDEX_SYSTEM_PROMPT = `You are a UX engineer enhancing an existing UI with interactive behavior.
+const INDEX_SYSTEM_PROMPT = `You are adding interactivity to an EXISTING HTML page. DO NOT redesign or recreate the page.
 
-CRITICAL PRIORITY #1: PRESERVE THE EXACT VISUAL DESIGN
-Your output MUST look visually identical to the source HTML. This means:
-- COPY the exact HTML structure from the source
-- COPY all CSS classes, styles, colors, fonts, spacing from the source
-- COPY all visual elements (sidebar, headers, tables, cards, etc.)
-- ONLY add interactive attributes to existing elements
+ABSOLUTE RULE: COPY THE SOURCE HTML EXACTLY
+- Start with the EXACT source HTML provided below
+- Copy EVERY element, class, style, and attribute VERBATIM
+- The only changes allowed are adding interactive attributes
 
-CRITICAL PRIORITY #2: Do NOT use ES modules. Use inline scripts and window.initVxRuntime().
+WHAT YOU CAN DO:
+1. Add trigger-flow="flowName" to buttons/links for click actions
+2. Add set-state="path" set-to="value" to elements for state changes
+3. Add toggle-state="path" to elements for boolean toggles
+4. Add a <script> block at the end of body with initVxRuntime()
 
-APPROACH: ENHANCE, DON'T REPLACE
-1. Take the source HTML structure as your BASE
-2. Keep all the original CSS styles inline in <style> tags
-3. Add these attributes to existing elements for interactivity:
-   - set-state="path" set-to="value": Set state on click
-   - toggle-state="path": Toggle boolean on click
-   - trigger-flow="flowName": Execute a flow on click
-4. Add minimal VxRuntime initialization script
+WHAT YOU CANNOT DO:
+- Change any CSS colors, fonts, spacing, or layout
+- Remove, rename, or restructure any HTML elements
+- Change any class names or inline styles
+- Add new elements (except modal/overlay containers for flows)
+- Use Web Components or ES modules
 
-TEMPLATE - Copy source HTML structure and add interactivity:
+OUTPUT FORMAT:
 \`\`\`html
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>[Same title as source]</title>
-
-  <!-- COPY ALL CSS FROM SOURCE HTML HERE -->
-  <style>
-    /* Copy ALL styles from the source HTML */
-    /* Include all the original colors, fonts, spacing, layouts */
-  </style>
+  [COPY EXACT HEAD FROM SOURCE - all meta tags, styles, links]
 </head>
 <body>
-  <!-- COPY THE ENTIRE BODY STRUCTURE FROM SOURCE HTML -->
-  <!-- Only add interactive attributes (set-state, toggle-state, trigger-flow) -->
+  [COPY EXACT BODY FROM SOURCE - only add trigger-flow/set-state/toggle-state attributes]
 
-  <!-- Example: Original button from source, enhanced with interactivity -->
-  <button class="btn-primary" trigger-flow="add-contact">Add Contact</button>
+  <!-- Add any needed modal containers for flows -->
+  <div id="modal-container" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:1000;">
+    <div style="background:white; margin:10% auto; padding:24px; max-width:500px; border-radius:8px;">
+      <!-- Modal content matching the source design -->
+    </div>
+  </div>
 
-  <!-- Initialize runtime -->
   <script>
     document.addEventListener('DOMContentLoaded', function() {
-      window.initVxRuntime({
-        initialState: {
-          // State based on the UI needs
-        },
-        flows: [
-          // Flows that implement the requested behavior
-        ],
-        debug: true
-      });
+      if (typeof window.initVxRuntime === 'function') {
+        window.initVxRuntime({
+          initialState: { /* state for the flows */ },
+          flows: [
+            {
+              name: "flow-name",
+              trigger: { event: "click", selector: "[trigger-flow='flow-name']" },
+              steps: [{ set: "state.path", to: value }]
+            }
+          ],
+          debug: true
+        });
+      }
     });
   </script>
 </body>
 </html>
 \`\`\`
 
-INTERACTIVE ATTRIBUTES (add to EXISTING elements):
-- trigger-flow="flowName": Execute a named flow on click
-- set-state="path" set-to="value": Set state value on click
-- toggle-state="path": Toggle boolean state on click
+FLOW EXAMPLES:
+- Open modal: { set: "modal.open", to: true }
+- Close modal: { set: "modal.open", to: false }
+- Toggle state: { toggle: "isEnabled" }
+- Chain actions: multiple steps in the steps array
 
-FLOW FORMAT for initVxRuntime:
-{
-  name: "add-contact",
-  description: "Opens the add contact modal",
-  trigger: { event: "click", selector: "[trigger-flow='add-contact']" },
-  steps: [
-    { set: "modal.addContact.open", to: true }
-  ]
-}
-
-Remember:
-- Your HTML output should look EXACTLY like the source visually
-- Copy CSS verbatim, copy HTML structure, only add interactive attributes
-- NO Web Components - use the original HTML elements with interactive attributes
-- Do NOT create new designs or layouts
+CRITICAL: The visual appearance must be IDENTICAL to the source. If you change anything visually, you have failed.
 
 Return ONLY the HTML, no markdown code blocks.`
 
@@ -563,6 +579,9 @@ Return ONLY the JSON object with "flows" array.`
   if (content.endsWith('```')) content = content.slice(0, -3)
   content = content.trim()
 
+  // Sanitize LLM output to fix smart quotes and other issues
+  content = sanitizeLLMOutput(content)
+
   // Validate JSON
   JSON.parse(content)
 
@@ -635,6 +654,9 @@ Return ONLY the JavaScript code.`
   }
   if (content.endsWith('```')) content = content.slice(0, -3)
   content = content.trim()
+
+  // Sanitize LLM output to fix smart quotes and other issues
+  content = sanitizeLLMOutput(content)
 
   // Extract exports
   const exportMatch = content.match(/export\s*\{\s*([^}]+)\s*\}/)
@@ -733,6 +755,9 @@ Return ONLY the HTML, no markdown.`
   else if (content.startsWith('```')) content = content.slice(3)
   if (content.endsWith('```')) content = content.slice(0, -3)
   content = content.trim()
+
+  // Sanitize LLM output to fix smart quotes and other issues
+  content = sanitizeLLMOutput(content)
 
   return {
     path: 'index.html',

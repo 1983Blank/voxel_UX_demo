@@ -340,6 +340,37 @@ Return ONLY the JSON object, no markdown code blocks.`
   return prompt
 }
 
+// ============ LLM Output Sanitization ============
+
+/**
+ * Sanitize LLM-generated code to fix common issues
+ * - Smart quotes that break JavaScript/JSON
+ * - Fancy Unicode characters
+ * - Zero-width characters
+ */
+function sanitizeLLMOutput(content: string): string {
+  let sanitized = content
+
+  // Replace smart/curly quotes with straight quotes (common LLM issue)
+  sanitized = sanitized.replace(/[\u201C\u201D\u201E\u201F\u2033\u2036]/g, '"') // Various double quotes
+  sanitized = sanitized.replace(/[\u2018\u2019\u201A\u201B\u2032\u2035]/g, "'") // Various single quotes
+  sanitized = sanitized.replace(/[\u00AB\u00BB]/g, '"') // Guillemets
+
+  // Replace fancy dashes with regular hyphens/dashes
+  sanitized = sanitized.replace(/[\u2013\u2014\u2015]/g, '-')
+
+  // Replace non-breaking spaces with regular spaces
+  sanitized = sanitized.replace(/[\u00A0\u2007\u202F]/g, ' ')
+
+  // Remove zero-width characters that can cause issues
+  sanitized = sanitized.replace(/[\u200B\u200C\u200D\uFEFF]/g, '')
+
+  // Replace ellipsis character with three dots
+  sanitized = sanitized.replace(/\u2026/g, '...')
+
+  return sanitized
+}
+
 // ============ Response Parser ============
 
 function parseResponse(response: string): GenerateScriptResponse {
@@ -356,6 +387,9 @@ function parseResponse(response: string): GenerateScriptResponse {
     cleaned = cleaned.slice(0, -3)
   }
   cleaned = cleaned.trim()
+
+  // Sanitize LLM output to fix smart quotes and other issues
+  cleaned = sanitizeLLMOutput(cleaned)
 
   // Parse JSON
   const parsed = JSON.parse(cleaned)

@@ -377,64 +377,182 @@ export function generateVxRuntimeBundle(): string {
   // Initialize Runtime
   // ============================================================================
 
+  // Mark the runtime as loaded (for verification)
+  window.__VX_RUNTIME_LOADED__ = true;
+
   window.VxStoreClass = VxStore;
   window.VxComponentClass = VxComponent;
   window.VxFlowEngineClass = VxFlowEngine;
 
   window.initVxRuntime = function(options = {}) {
-    const { initialState = {}, flows = [], debug = false } = options;
+    try {
+      const { initialState = {}, flows = [], debug = false } = options;
 
-    window.VxStore = new VxStore(initialState);
+      window.VxStore = new VxStore(initialState);
 
-    if (flows.length > 0) {
-      window.VxFlowEngine = new VxFlowEngine(window.VxStore, flows, { debug });
+      if (flows.length > 0) {
+        window.VxFlowEngine = new VxFlowEngine(window.VxStore, flows, { debug });
+      }
+
+      if (debug) {
+        console.log('[VxRuntime] Initialized with state:', initialState);
+        console.log('[VxRuntime] Registered flows:', flows.map(f => f.name));
+      }
+
+      // Auto-bind trigger-flow attributes
+      document.querySelectorAll('[trigger-flow]').forEach(el => {
+        el.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const flowName = el.getAttribute('trigger-flow');
+          if (flowName && window.VxFlowEngine) {
+            console.log('[VxRuntime] Executing flow:', flowName);
+            window.VxFlowEngine.executeFlow(flowName);
+          }
+        });
+      });
+
+      // Auto-bind set-state attributes
+      document.querySelectorAll('[set-state]').forEach(el => {
+        el.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const path = el.getAttribute('set-state');
+          const value = el.getAttribute('set-to');
+          if (path && window.VxStore) {
+            let parsedValue = value;
+            try { parsedValue = JSON.parse(value); } catch {}
+            console.log('[VxRuntime] Setting state:', path, '=', parsedValue);
+            window.VxStore.set(path, parsedValue);
+          }
+        });
+      });
+
+      // Auto-bind toggle-state attributes
+      document.querySelectorAll('[toggle-state]').forEach(el => {
+        el.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const path = el.getAttribute('toggle-state');
+          if (path && window.VxStore) {
+            console.log('[VxRuntime] Toggling state:', path);
+            window.VxStore.toggle(path);
+          }
+        });
+      });
+
+      // Auto-bind visibility based on state (vx-show attribute)
+      function updateVisibility() {
+        document.querySelectorAll('[vx-show]').forEach(el => {
+          const path = el.getAttribute('vx-show');
+          const negate = path.startsWith('!');
+          const actualPath = negate ? path.slice(1) : path;
+          const value = window.VxStore.get(actualPath);
+          const shouldShow = negate ? !value : !!value;
+          el.style.display = shouldShow ? '' : 'none';
+        });
+      }
+
+      // Initial visibility update
+      updateVisibility();
+
+      // Subscribe to state changes for visibility
+      window.VxStore.subscribe(() => {
+        updateVisibility();
+      });
+
+      // Intercept all link clicks to prevent navigation away from prototype
+      // Only allow links with trigger-flow or set-state attributes to work
+      document.addEventListener('click', function(e) {
+        const target = e.target;
+        const link = target.closest('a');
+        if (link) {
+          const href = link.getAttribute('href');
+          // Allow trigger-flow and set-state links
+          if (link.hasAttribute('trigger-flow') || link.hasAttribute('set-state') || link.hasAttribute('toggle-state')) {
+            e.preventDefault();
+            return;
+          }
+          // Allow anchor links (#)
+          if (href && href.startsWith('#')) {
+            return;
+          }
+          // Prevent all other navigation
+          if (href && href !== '#' && !href.startsWith('javascript:')) {
+            e.preventDefault();
+            console.log('[VxRuntime] Blocked navigation to:', href);
+          }
+        }
+      }, true);
+
+      console.log('[VxRuntime] Initialized successfully');
+      return { store: window.VxStore, flowEngine: window.VxFlowEngine };
+    } catch (e) {
+      console.error('[VxRuntime] Failed to initialize:', e);
+      return null;
     }
-
-    if (debug) {
-      console.log('[VxRuntime] Initialized with state:', initialState);
-      console.log('[VxRuntime] Registered flows:', flows.map(f => f.name));
-    }
-
-    // Auto-bind trigger-flow attributes
-    document.querySelectorAll('[trigger-flow]').forEach(el => {
-      el.addEventListener('click', () => {
-        const flowName = el.getAttribute('trigger-flow');
-        if (flowName && window.VxFlowEngine) {
-          window.VxFlowEngine.executeFlow(flowName);
-        }
-      });
-    });
-
-    // Auto-bind set-state attributes
-    document.querySelectorAll('[set-state]').forEach(el => {
-      el.addEventListener('click', () => {
-        const path = el.getAttribute('set-state');
-        const value = el.getAttribute('set-to');
-        if (path && window.VxStore) {
-          let parsedValue = value;
-          try { parsedValue = JSON.parse(value); } catch {}
-          window.VxStore.set(path, parsedValue);
-        }
-      });
-    });
-
-    // Auto-bind toggle-state attributes
-    document.querySelectorAll('[toggle-state]').forEach(el => {
-      el.addEventListener('click', () => {
-        const path = el.getAttribute('toggle-state');
-        if (path && window.VxStore) {
-          window.VxStore.toggle(path);
-        }
-      });
-    });
-
-    return { store: window.VxStore, flowEngine: window.VxFlowEngine };
   };
 
-  console.log('[VxRuntime] Bundle loaded successfully');
+  // Add global error handler for better debugging
+  window.addEventListener('error', function(e) {
+    if (e.message && e.message.includes('VxComponent')) {
+      console.error('[VxRuntime] Component error:', e.message, e.filename, e.lineno);
+    }
+  });
+
+  console.log('[VxRuntime] Bundle loaded successfully (VxComponentClass:', typeof VxComponent, ')');
 })();
 </script>
 `.trim();
+}
+
+/**
+ * Ensure HTML has proper structure (html, head, body tags)
+ * LLM-generated HTML often lacks this structure
+ */
+function ensureProperHtmlStructure(html: string): string {
+  const hasHtmlTag = /<html[^>]*>/i.test(html);
+  const hasHeadTag = /<head[^>]*>/i.test(html);
+  const hasBodyTag = /<body[^>]*>/i.test(html);
+  const hasDoctype = /<!DOCTYPE/i.test(html);
+
+  // If it has all the structure, return as-is
+  if (hasHtmlTag && hasHeadTag && hasBodyTag) {
+    return html;
+  }
+
+  console.log('[VxRuntime] HTML missing structure, wrapping with proper tags');
+
+  // Extract any style and script tags from the content
+  const styleMatches = html.match(/<style[^>]*>[\s\S]*?<\/style>/gi) || [];
+  const scriptMatches = html.match(/<script[^>]*>[\s\S]*?<\/script>/gi) || [];
+
+  // Remove extracted styles and scripts from content to put in proper places
+  let bodyContent = html;
+  for (const style of styleMatches) {
+    bodyContent = bodyContent.replace(style, '');
+  }
+  for (const script of scriptMatches) {
+    bodyContent = bodyContent.replace(script, '');
+  }
+
+  // Build proper HTML structure
+  const doctype = hasDoctype ? '' : '<!DOCTYPE html>\n';
+  const styles = styleMatches.join('\n');
+  const scripts = scriptMatches.join('\n');
+
+  return `${doctype}<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Prototype</title>
+  ${styles}
+</head>
+<body>
+${bodyContent.trim()}
+${scripts}
+</body>
+</html>`;
 }
 
 /**
@@ -446,21 +564,24 @@ export function injectVxRuntimeBundle(html: string): string {
 
   // If the HTML already has a VxRuntime bundle, don't inject again
   if (html.includes('VxRuntime Bundle')) {
+    console.log('[VxRuntime] Bundle already present, skipping injection');
     return html;
   }
 
-  // Inject bundle after <head> opening tag or before </head>
-  if (html.includes('</head>')) {
-    return html.replace('</head>', `${bundle}\n</head>`);
+  // First ensure the HTML has proper structure
+  let processed = ensureProperHtmlStructure(html);
+
+  console.log('[VxRuntime] Injecting runtime bundle into HTML...');
+
+  // Now we're guaranteed to have a <head> tag - inject there
+  if (processed.includes('</head>')) {
+    console.log('[VxRuntime] Injecting bundle in <head>');
+    return processed.replace('</head>', `${bundle}\n</head>`);
   }
 
-  // If no head, inject after doctype or at beginning
-  if (html.includes('<!DOCTYPE')) {
-    return html.replace(/<!DOCTYPE[^>]*>/i, (match) => `${match}\n<head>${bundle}</head>`);
-  }
-
-  // Fallback: prepend to HTML
-  return `<head>${bundle}</head>\n${html}`;
+  // Should never reach here after ensureProperHtmlStructure, but just in case
+  console.log('[VxRuntime] Fallback: prepending bundle to HTML');
+  return `${bundle}\n${processed}`;
 }
 
 /**
@@ -472,28 +593,118 @@ interface ComponentScript {
 }
 
 /**
+ * Sanitize code that may contain LLM-generated characters that break JavaScript
+ * Handles smart quotes, fancy characters, and other common LLM output issues
+ */
+function sanitizeLLMCode(code: string): string {
+  let sanitized = code;
+
+  // Replace smart/curly quotes with straight quotes (common LLM issue)
+  sanitized = sanitized.replace(/[\u201C\u201D\u201E\u201F\u2033\u2036]/g, '"'); // Various double quotes
+  sanitized = sanitized.replace(/[\u2018\u2019\u201A\u201B\u2032\u2035]/g, "'"); // Various single quotes
+  sanitized = sanitized.replace(/[\u00AB\u00BB]/g, '"'); // Guillemets
+
+  // Replace fancy dashes with regular hyphens/dashes
+  sanitized = sanitized.replace(/[\u2013\u2014\u2015]/g, '-');
+
+  // Replace non-breaking spaces with regular spaces
+  sanitized = sanitized.replace(/[\u00A0\u2007\u202F]/g, ' ');
+
+  // Remove zero-width characters that can cause issues
+  sanitized = sanitized.replace(/[\u200B\u200C\u200D\uFEFF]/g, '');
+
+  // Replace ellipsis character with three dots
+  sanitized = sanitized.replace(/\u2026/g, '...');
+
+  return sanitized;
+}
+
+/**
+ * Clean up component code to remove ES module syntax that doesn't work inline
+ */
+function cleanComponentCode(code: string): string {
+  // First sanitize LLM-generated characters
+  let cleaned = sanitizeLLMCode(code);
+
+  // Remove export statements
+  cleaned = cleaned.replace(/export\s*\{\s*[^}]*\s*\};?/g, '');
+  cleaned = cleaned.replace(/export\s+default\s+/g, '');
+  cleaned = cleaned.replace(/export\s+/g, '');
+
+  // Remove import statements
+  cleaned = cleaned.replace(/import\s+.*?from\s+['"][^'"]+['"];?\s*/g, '');
+  cleaned = cleaned.replace(/import\s+['"][^'"]+['"];?\s*/g, '');
+
+  // Replace VxComponent with window.VxComponentClass if needed
+  cleaned = cleaned.replace(/extends\s+VxComponent\b/g, 'extends window.VxComponentClass');
+
+  // Ensure window.VxComponentClass is used
+  if (!cleaned.includes('window.VxComponentClass') && cleaned.includes('extends')) {
+    console.warn('[VxComponent] Component may not extend VxComponentClass properly');
+  }
+
+  // CRITICAL: Escape </script> in string literals to prevent breaking HTML
+  // This is a common issue when code contains template literals with HTML
+  cleaned = cleaned.replace(/<\/script>/gi, '<\\/script>');
+
+  // Also handle the case where it might be in a string
+  cleaned = cleaned.replace(/<\/script/gi, () => '<\\/script');
+
+  return cleaned;
+}
+
+/**
  * Inject component scripts inline into HTML
  * This is necessary because ES module imports don't work with blob URLs
  */
 export function injectComponentScripts(html: string, components: ComponentScript[]): string {
   if (!components || components.length === 0) {
+    console.log('[VxRuntime] No components to inject');
     return html;
   }
+
+  console.log(`[VxRuntime] Injecting ${components.length} component scripts...`);
 
   // Build inline script tags for all components
   const componentScripts = components
     .filter(c => c.path.endsWith('.js') && c.content)
     .map(c => {
+      // Clean up the component code to remove ES module syntax
+      const cleanedCode = cleanComponentCode(c.content);
+
+      // Escape the path for use in strings
+      const safePath = c.path.replace(/'/g, "\\'");
+
       // Wrap component code to ensure it doesn't pollute global scope
       // and handles any syntax errors gracefully
+      // Use a deferred execution to ensure runtime is fully loaded
       return `
-<!-- Component: ${c.path} -->
+<!-- Component: ${safePath} -->
 <script>
 (function() {
-  try {
-${c.content}
-  } catch (e) {
-    console.error('[VxComponent] Error loading ${c.path}:', e);
+  'use strict';
+
+  function loadComponent() {
+    if (typeof window.VxComponentClass === 'undefined') {
+      console.error('[VxComponent] VxComponentClass not available for ${safePath}! Retrying...');
+      // Retry after a short delay
+      setTimeout(loadComponent, 50);
+      return;
+    }
+    try {
+${cleanedCode}
+      console.log('[VxComponent] Loaded: ${safePath}');
+    } catch (e) {
+      console.error('[VxComponent] Error loading ${safePath}:', e.message);
+      console.error('[VxComponent] Stack:', e.stack);
+    }
+  }
+
+  // Use DOMContentLoaded or run immediately if DOM is ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', loadComponent);
+  } else {
+    loadComponent();
   }
 })();
 </script>`;
@@ -517,6 +728,23 @@ ${c.content}
 }
 
 /**
+ * Sanitize JavaScript within HTML script tags
+ * Finds all script tags and sanitizes their content for LLM artifacts
+ */
+function sanitizeScriptsInHtml(html: string): string {
+  // Find and sanitize all inline script contents
+  return html.replace(/<script([^>]*)>([\s\S]*?)<\/script>/gi, (match, attrs, content) => {
+    // Don't touch scripts with src attribute (external scripts)
+    if (attrs.includes('src=')) {
+      return match;
+    }
+    // Sanitize the script content
+    const sanitizedContent = sanitizeLLMCode(content);
+    return `<script${attrs}>${sanitizedContent}</script>`;
+  });
+}
+
+/**
  * Prepare generated HTML for preview in an iframe with blob URL
  * Injects runtime bundle and component scripts inline
  */
@@ -524,8 +752,11 @@ export function preparePrototypeHtml(
   html: string,
   components: ComponentScript[] = []
 ): string {
-  // First inject the runtime bundle
-  let processed = injectVxRuntimeBundle(html);
+  // First sanitize any LLM-generated scripts in the HTML
+  let processed = sanitizeScriptsInHtml(html);
+
+  // Then inject the runtime bundle
+  processed = injectVxRuntimeBundle(processed);
 
   // Then inject component scripts
   processed = injectComponentScripts(processed, components);

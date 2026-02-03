@@ -3457,25 +3457,6 @@ export const VibePrototyping: React.FC = () => {
                 flexShrink: 0,
               }}
             >
-              {/* Stop button when generating */}
-              {isGenerating && (
-                <Button
-                  variant="outlined"
-                  color="error"
-                  onClick={handleStopGeneration}
-                  size="small"
-                  startIcon={<Stop size={14} weight="fill" />}
-                  sx={{
-                    borderColor: 'error.main',
-                    '&:hover': {
-                      bgcolor: 'error.main',
-                      color: 'white',
-                    },
-                  }}
-                >
-                  Stop Generation
-                </Button>
-              )}
               {isUnderstandingReady && (
                 <>
                   {clarificationInput.trim() && (
@@ -3795,25 +3776,43 @@ export const VibePrototyping: React.FC = () => {
                     <Paperclip size={20} />
                   </IconButton>
                 </Tooltip>
-                <Button
-                  variant="contained"
-                  size="small"
-                  onClick={handleBuild}
-                  disabled={!promptValue.trim() || isAnalyzing || isPlanning || isGenerating || availableKeys.length === 0}
-                  sx={{
-                    textTransform: 'none',
-                    minWidth: 70,
-                    bgcolor: 'grey.800',
-                    transition: 'all 0.2s ease',
-                    '&:hover': { bgcolor: 'grey.900', transform: 'translateY(-1px)' },
-                  }}
-                >
-                  {isAnalyzing || isPlanning || isGenerating ? (
-                    <CircularProgress size={16} color="inherit" />
-                  ) : (
-                    'Build'
-                  )}
-                </Button>
+                {isGenerating ? (
+                  <Button
+                    variant="contained"
+                    size="small"
+                    onClick={handleStopGeneration}
+                    sx={{
+                      textTransform: 'none',
+                      minWidth: 90,
+                      bgcolor: 'error.main',
+                      transition: 'all 0.2s ease',
+                      '&:hover': { bgcolor: 'error.dark', transform: 'translateY(-1px)' },
+                    }}
+                    startIcon={<Stop size={16} weight="fill" />}
+                  >
+                    Stop
+                  </Button>
+                ) : (
+                  <Button
+                    variant="contained"
+                    size="small"
+                    onClick={handleBuild}
+                    disabled={!promptValue.trim() || isAnalyzing || isPlanning || availableKeys.length === 0}
+                    sx={{
+                      textTransform: 'none',
+                      minWidth: 70,
+                      bgcolor: 'grey.800',
+                      transition: 'all 0.2s ease',
+                      '&:hover': { bgcolor: 'grey.900', transform: 'translateY(-1px)' },
+                    }}
+                  >
+                    {isAnalyzing || isPlanning ? (
+                      <CircularProgress size={16} color="inherit" />
+                    ) : (
+                      'Build'
+                    )}
+                  </Button>
+                )}
               </Box>
             </Box>
           </Box>
