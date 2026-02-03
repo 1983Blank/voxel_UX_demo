@@ -4739,7 +4739,7 @@ export const VibePrototyping: React.FC = () => {
                     (focusedVariant.edited_html || focusedVariant.html_url) ? (
                       <iframe
                         {...(focusedVariant.edited_html
-                          ? { srcDoc: focusedVariant.edited_html }
+                          ? { srcDoc: relaxCsp(focusedVariant.edited_html) }
                           : { src: focusedVariant.html_url }
                         )}
                         title={`Preview Variant ${focusedVariantIndex}`}

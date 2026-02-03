@@ -22,10 +22,10 @@ import type { AgentProgress, AgentPhase } from '../types/agentTypes';
 
 /**
  * Server orchestration feature flag.
- * Set to true when the generation_sessions table is deployed.
+ * Set to true when the generation_sessions table is deployed and working.
  * When false, all checkpoint functions return early without making DB queries.
  */
-const SERVER_ORCHESTRATION_ENABLED = true;
+const SERVER_ORCHESTRATION_ENABLED = false;
 
 // ============================================================================
 // Types
