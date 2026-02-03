@@ -501,6 +501,18 @@ export function generateVxRuntimeBundle(): string {
   });
 
   console.log('[VxRuntime] Bundle loaded successfully (VxComponentClass:', typeof VxComponent, ')');
+
+  // Auto-initialize if config is available (from modifications-based assembly)
+  if (window.__VX_RUNTIME_CONFIG__) {
+    console.log('[VxRuntime] Found pre-configured config, auto-initializing...');
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', function() {
+        window.initVxRuntime(window.__VX_RUNTIME_CONFIG__);
+      });
+    } else {
+      window.initVxRuntime(window.__VX_RUNTIME_CONFIG__);
+    }
+  }
 })();
 </script>
 `.trim();

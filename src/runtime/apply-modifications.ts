@@ -44,8 +44,9 @@ export function applyModificationsToHtml(
     injectTokensCss(doc, tokensCss);
   }
 
-  // Inject VxRuntime initialization script
-  injectRuntimeInit(doc, modifications);
+  // Inject VxRuntime configuration as a data script (NOT the init call)
+  // The actual initVxRuntime will be called by preparePrototypeHtml after the runtime bundle is loaded
+  injectRuntimeConfig(doc, modifications);
 
   // Remove any existing building indicator
   const buildingIndicator = doc.querySelector('.vx-building-indicator');
@@ -53,8 +54,9 @@ export function applyModificationsToHtml(
     buildingIndicator.remove();
   }
 
-  // Serialize back to HTML string
-  return doc.documentElement.outerHTML;
+  // Serialize back to HTML string with DOCTYPE
+  const doctype = '<!DOCTYPE html>\n';
+  return doctype + doc.documentElement.outerHTML;
 }
 
 /**
@@ -157,40 +159,39 @@ function injectTokensCss(doc: Document, tokensCss: string): void {
 }
 
 /**
- * Inject VxRuntime initialization script
+ * Inject VxRuntime configuration as a global variable
+ * The actual initialization happens later via preparePrototypeHtml
  */
-function injectRuntimeInit(doc: Document, modifications: ModificationsJson): void {
-  // Remove any existing runtime script
-  const existingScript = doc.querySelector('script[data-vx-runtime]');
+function injectRuntimeConfig(doc: Document, modifications: ModificationsJson): void {
+  // Remove any existing config script
+  const existingScript = doc.querySelector('script[data-vx-config]');
   if (existingScript) {
     existingScript.remove();
   }
 
-  // Create initialization script
+  // Create config script that stores the config for later use
   const script = doc.createElement('script');
-  script.setAttribute('data-vx-runtime', 'true');
+  script.setAttribute('data-vx-config', 'true');
 
   const initConfig = {
-    initialState: modifications.initialState,
-    flows: modifications.flows,
+    initialState: modifications.initialState || {},
+    flows: modifications.flows || [],
     debug: true,
   };
 
-  script.textContent = `
-    document.addEventListener('DOMContentLoaded', function() {
-      if (typeof window.initVxRuntime === 'function') {
-        window.initVxRuntime(${JSON.stringify(initConfig, null, 2)});
-        console.log('[VxRuntime] Initialized with modifications-based config');
-      } else {
-        console.warn('[VxRuntime] initVxRuntime not found, runtime may not be loaded');
-      }
-    });
-  `;
+  // Store config as a global variable that the runtime will pick up
+  // Use a safer JSON serialization approach
+  const configJson = JSON.stringify(initConfig)
+    .replace(/</g, '\\u003c')  // Escape < to prevent script injection
+    .replace(/>/g, '\\u003e')  // Escape > to prevent script injection
+    .replace(/&/g, '\\u0026'); // Escape & for safety
 
-  // Append to body
-  const body = doc.body || doc.querySelector('body');
-  if (body) {
-    body.appendChild(script);
+  script.textContent = `window.__VX_RUNTIME_CONFIG__ = ${configJson};`;
+
+  // Insert in head so it's available before runtime loads
+  const head = doc.head || doc.querySelector('head');
+  if (head) {
+    head.insertBefore(script, head.firstChild);
   }
 }
 
@@ -238,7 +239,7 @@ export function createProgressivePreviewHtml(
         console.warn(`[ProgressivePreview] Failed to apply modification:`, mod, error);
       }
     }
-    injectRuntimeInit(doc, modifications);
+    injectRuntimeConfig(doc, modifications);
   }
 
   return doc.documentElement.outerHTML;
