@@ -82,12 +82,10 @@ import {
   Cube,
   UsersThree,
   Plus,
-  SquaresFour,
   Play,
 } from '@phosphor-icons/react';
 
 import { useSnackbar } from '@/components/SnackbarProvider';
-import { LLMDebugPanel, LLMDebugButton } from '@/components/DebugPanel';
 import { useScreensStore } from '@/store/screensStore';
 import { useVibeStore, type ChatMessage } from '@/store/vibeStore';
 import { useContextStore } from '@/store/contextStore';
@@ -131,9 +129,6 @@ import {
   revertToIteration,
   type VibeIteration,
 } from '@/services/iterationService';
-import {
-  generateVariantsFromEdits,
-} from '@/services/variantEditsService';
 import {
   generateInteractivePrototypesWithAgent,
   shouldUseServerOrchestration,
@@ -396,294 +391,6 @@ function AIPhase({
           {displayedContent}
           {isStreaming && <span style={{ opacity: 0.5 }}>|</span>}
         </Typography>
-      </Box>
-    </Box>
-  );
-}
-
-// Debug log entry type
-interface DebugLogEntry {
-  timestamp: Date;
-  type: 'request' | 'response' | 'error';
-  endpoint: string;
-  data: unknown;
-}
-
-// Debug Panel Component
-function DebugPanel({
-  isOpen,
-  onClose,
-  status,
-  progress,
-  error,
-  currentSession,
-  understanding,
-  plan,
-  variants,
-  sourceMetadata,
-  currentPrompt,
-  debugLogs,
-}: {
-  isOpen: boolean;
-  onClose: () => void;
-  status: string;
-  progress: { stage: string; message: string; percent: number } | null;
-  error: string | null;
-  currentSession: { id: string; prompt: string; screen_id: string } | null;
-  understanding: { text: string; model: string; provider: string; approved: boolean } | null;
-  plan: { plans: { title: string; description: string }[]; model: string; provider: string } | null;
-  variants: { variant_index: number; status: string; html_url?: string }[];
-  sourceMetadata: UIMetadata | null;
-  currentPrompt: string;
-  debugLogs: DebugLogEntry[];
-}) {
-  const { config } = useThemeStore();
-  const [expandedLogs, setExpandedLogs] = useState<Record<number, boolean>>({});
-
-  if (!isOpen) return null;
-
-  const getStatusColor = (s: string) => {
-    if (s.includes('ready') || s === 'complete') return config.colors.success;
-    if (s.includes('error') || s === 'failed') return config.colors.error;
-    if (s === 'idle') return config.colors.textSecondary;
-    return config.colors.primary;
-  };
-
-  const getLogColor = (type: DebugLogEntry['type']) => {
-    switch (type) {
-      case 'request': return '#2196f3';
-      case 'response': return '#4caf50';
-      case 'error': return '#f44336';
-      default: return '#9e9e9e';
-    }
-  };
-
-  const toggleLog = (index: number) => {
-    setExpandedLogs(prev => ({ ...prev, [index]: !prev[index] }));
-  };
-
-  const formatData = (data: unknown): string => {
-    try {
-      return JSON.stringify(data, null, 2);
-    } catch {
-      return String(data);
-    }
-  };
-
-  return (
-    <Box
-      sx={{
-        position: 'fixed',
-        bottom: 16,
-        right: 16,
-        width: 450,
-        maxHeight: '70vh',
-        bgcolor: 'background.paper',
-        borderRadius: 2,
-        boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
-        border: `1px solid ${config.colors.border}`,
-        zIndex: 9999,
-        overflow: 'hidden',
-        display: 'flex',
-        flexDirection: 'column',
-      }}
-    >
-      {/* Header */}
-      <Box
-        sx={{
-          p: 1.5,
-          bgcolor: config.colors.bgDark,
-          color: 'white',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-        }}
-      >
-        <Typography variant="subtitle2" sx={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 1 }}>
-          <Code size={16} /> Debug Panel
-        </Typography>
-        <IconButton size="small" onClick={onClose} sx={{ color: 'white' }}>
-          <X size={16} />
-        </IconButton>
-      </Box>
-
-      {/* Content */}
-      <Box sx={{ p: 2, overflow: 'auto', flex: 1, fontSize: '0.75rem', fontFamily: 'monospace' }}>
-        {/* Status */}
-        <Box sx={{ mb: 2 }}>
-          <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary' }}>STATUS</Typography>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
-            <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: getStatusColor(status) }} />
-            <Typography sx={{ fontFamily: 'monospace', fontSize: '0.8rem', fontWeight: 600 }}>{status}</Typography>
-          </Box>
-          {progress && (
-            <Box sx={{ mt: 1 }}>
-              <LinearProgress variant="determinate" value={progress.percent} sx={{ height: 4, borderRadius: 2 }} />
-              <Typography variant="caption" color="text.secondary">{progress.message} ({progress.percent}%)</Typography>
-            </Box>
-          )}
-          {error && (
-            <Box sx={{ mt: 1, p: 1, bgcolor: '#ffebee', borderRadius: 1, border: '1px solid #ffcdd2' }}>
-              <Typography sx={{ color: '#c62828', fontSize: '0.75rem', fontWeight: 500 }}>Error: {error}</Typography>
-            </Box>
-          )}
-        </Box>
-
-        {/* Session */}
-        <Box sx={{ mb: 2 }}>
-          <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary' }}>SESSION</Typography>
-          <Box sx={{ mt: 0.5, p: 1, bgcolor: 'grey.100', borderRadius: 1, fontSize: '0.7rem' }}>
-            <div>ID: {currentSession?.id || 'None'}</div>
-            <div>Screen: {currentSession?.screen_id || 'None'}</div>
-          </Box>
-        </Box>
-
-        {/* Prompt */}
-        <Box sx={{ mb: 2 }}>
-          <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary' }}>PROMPT</Typography>
-          <Box sx={{ mt: 0.5, p: 1, bgcolor: 'grey.100', borderRadius: 1, fontSize: '0.7rem', maxHeight: 80, overflow: 'auto' }}>
-            {currentPrompt || currentSession?.prompt || 'No prompt yet'}
-          </Box>
-        </Box>
-
-        {/* API Logs - Inputs/Outputs */}
-        <Box sx={{ mb: 2 }}>
-          <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary' }}>
-            API LOGS ({debugLogs.length})
-          </Typography>
-          <Box sx={{ mt: 0.5, maxHeight: 200, overflow: 'auto' }}>
-            {debugLogs.length === 0 ? (
-              <Typography sx={{ fontSize: '0.7rem', color: 'text.secondary', fontStyle: 'italic' }}>
-                No API calls yet
-              </Typography>
-            ) : (
-              debugLogs.map((log, index) => (
-                <Box
-                  key={index}
-                  sx={{
-                    mb: 1,
-                    border: '1px solid',
-                    borderColor: 'divider',
-                    borderRadius: 1,
-                    overflow: 'hidden',
-                  }}
-                >
-                  <Box
-                    onClick={() => toggleLog(index)}
-                    sx={{
-                      p: 0.75,
-                      bgcolor: 'grey.50',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 1,
-                      cursor: 'pointer',
-                      '&:hover': { bgcolor: 'grey.100' },
-                    }}
-                  >
-                    <Box
-                      sx={{
-                        px: 0.5,
-                        py: 0.25,
-                        borderRadius: 0.5,
-                        bgcolor: getLogColor(log.type),
-                        color: 'white',
-                        fontSize: '0.6rem',
-                        fontWeight: 600,
-                        textTransform: 'uppercase',
-                      }}
-                    >
-                      {log.type}
-                    </Box>
-                    <Typography sx={{ fontSize: '0.7rem', flex: 1, fontWeight: 500 }}>
-                      {log.endpoint}
-                    </Typography>
-                    <Typography sx={{ fontSize: '0.6rem', color: 'text.secondary' }}>
-                      {log.timestamp.toLocaleTimeString()}
-                    </Typography>
-                    <CaretRight
-                      size={12}
-                      style={{
-                        transform: expandedLogs[index] ? 'rotate(90deg)' : 'none',
-                        transition: 'transform 0.2s',
-                      }}
-                    />
-                  </Box>
-                  {expandedLogs[index] && (
-                    <Box
-                      sx={{
-                        p: 1,
-                        bgcolor: log.type === 'error' ? '#fff3f3' : '#f5f5f5',
-                        maxHeight: 150,
-                        overflow: 'auto',
-                      }}
-                    >
-                      <pre style={{ margin: 0, fontSize: '0.65rem', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
-                        {formatData(log.data)}
-                      </pre>
-                    </Box>
-                  )}
-                </Box>
-              ))
-            )}
-          </Box>
-        </Box>
-
-        {/* Understanding */}
-        {understanding && (
-          <Box sx={{ mb: 2 }}>
-            <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary' }}>
-              UNDERSTANDING ({understanding.provider}/{understanding.model})
-            </Typography>
-            <Box sx={{ mt: 0.5, p: 1, bgcolor: understanding.approved ? 'success.50' : 'grey.100', borderRadius: 1, fontSize: '0.7rem', maxHeight: 80, overflow: 'auto' }}>
-              {understanding.text?.slice(0, 200)}...
-            </Box>
-          </Box>
-        )}
-
-        {/* Plan */}
-        {plan && (
-          <Box sx={{ mb: 2 }}>
-            <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary' }}>
-              PLAN ({plan.plans.length} variants - {plan.provider}/{plan.model})
-            </Typography>
-            <Box sx={{ mt: 0.5 }}>
-              {plan.plans.map((p, i) => (
-                <Box key={i} sx={{ p: 0.5, bgcolor: 'grey.100', borderRadius: 1, mb: 0.5, fontSize: '0.65rem' }}>
-                  {i + 1}. {p.title}
-                </Box>
-              ))}
-            </Box>
-          </Box>
-        )}
-
-        {/* Variants */}
-        {variants.length > 0 && (
-          <Box sx={{ mb: 2 }}>
-            <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary' }}>
-              VARIANTS ({variants.length})
-            </Typography>
-            <Box sx={{ mt: 0.5 }}>
-              {variants.map((v, i) => (
-                <Box key={i} sx={{ display: 'flex', alignItems: 'center', gap: 1, fontSize: '0.7rem' }}>
-                  <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: v.status === 'complete' ? config.colors.success : 'grey.400' }} />
-                  Variant {v.variant_index}: {v.status} {v.html_url ? '✓' : ''}
-                </Box>
-              ))}
-            </Box>
-          </Box>
-        )}
-
-        {/* Metadata */}
-        {sourceMetadata && (
-          <Box>
-            <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary' }}>METADATA</Typography>
-            <Box sx={{ mt: 0.5, p: 1, bgcolor: 'grey.100', borderRadius: 1, fontSize: '0.65rem', maxHeight: 100, overflow: 'auto' }}>
-              <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>
-                {JSON.stringify(sourceMetadata, null, 2).slice(0, 500)}...
-              </pre>
-            </Box>
-          </Box>
-        )}
       </Box>
     </Box>
   );
@@ -1730,8 +1437,6 @@ export const VibePrototyping: React.FC = () => {
     addMessage,
     getPlanByIndex,
     getVariantByIndex,
-    prototypeMode,
-    setPrototypeMode,
   } = useVibeStore();
 
   // Local state
@@ -2740,12 +2445,8 @@ export const VibePrototyping: React.FC = () => {
         return;
       }
 
-      // Check prototype mode to determine generation approach
-      const currentPrototypeMode = useVibeStore.getState().prototypeMode;
-
-      if (currentPrototypeMode === 'interactive') {
-        // Interactive Mode: Use multi-stage agent architecture for file-based Web Components
-        console.log('[VibePrototyping] Using Interactive Mode with Multi-Stage Agent');
+      // Always use Interactive Mode: multi-stage agent architecture for file-based Web Components
+      console.log('[VibePrototyping] Using Interactive Mode with Multi-Stage Agent');
 
         // Check if server orchestration is enabled (for server-persistent generation)
         const useServerOrchestration = shouldUseServerOrchestration();
@@ -2845,51 +2546,9 @@ export const VibePrototyping: React.FC = () => {
           );
         }
 
-        // For interactive mode, we still fetch from database for UI consistency
-        // The VirtualFS instances are stored in prototypeStore
-        generatedVariants = await getVariants(currentSession.id);
-      } else {
-        // Classic Mode: Use V2 edit-based generation
-        console.log('[VibePrototyping] Using Classic Mode (V2 edit-based generation)');
-        addChatMessage('assistant', 'Generating variants using targeted edits to preserve your original design system. This ensures UI consistency across all prototypes.');
-
-        await generateVariantsFromEdits(
-          currentSession.id,
-          plan.plans,
-          screen.editedHtml,
-          (p) => {
-            setProgress({
-              stage: 'generating',
-              message: p.message,
-              percent: p.percent,
-              variantIndex: p.variantIndex,
-            });
-
-            if (p.variantIndex) {
-              setVariantStartTimes((prev) => {
-                if (!prev[p.variantIndex!]) {
-                  return { ...prev, [p.variantIndex!]: Date.now() };
-                }
-                return prev;
-              });
-            }
-          },
-          (variantIndex, html) => {
-            // Variant completed - update preview
-            setStreamingHtml((prev) => ({
-              ...prev,
-              [variantIndex]: html,
-            }));
-            setCompletedVariantIndices((prev) => new Set([...prev, variantIndex]));
-          },
-          screenshot,
-          selectedProvider || undefined,
-          selectedModel || undefined
-        );
-
-        // Fetch final variants from database
-        generatedVariants = await getVariants(currentSession.id);
-      }
+      // Fetch from database for UI consistency
+      // The VirtualFS instances are stored in prototypeStore
+      generatedVariants = await getVariants(currentSession.id);
 
       setVariants(generatedVariants);
       setStatus('complete');
@@ -3809,28 +3468,6 @@ export const VibePrototyping: React.FC = () => {
                   <Typography variant="caption" color="text.secondary">
                     {selectedVariants.length}/4 selected
                   </Typography>
-                  {/* Mode toggle: Classic vs Interactive */}
-                  <ToggleButtonGroup
-                    value={prototypeMode}
-                    exclusive
-                    onChange={(_, value) => value && setPrototypeMode(value)}
-                    size="small"
-                  >
-                    <ToggleButton value="classic">
-                      <Tooltip title="Classic Mode - Standard HTML prototypes">
-                        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                          <SquaresFour size={16} />
-                        </span>
-                      </Tooltip>
-                    </ToggleButton>
-                    <ToggleButton value="interactive">
-                      <Tooltip title="Interactive Mode - File-based prototypes with state & debugging">
-                        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                          <Play size={16} />
-                        </span>
-                      </Tooltip>
-                    </ToggleButton>
-                  </ToggleButtonGroup>
                   <Button
                     variant="outlined"
                     onClick={handleSkipToBuilding}
@@ -3862,29 +3499,6 @@ export const VibePrototyping: React.FC = () => {
                       sx={{ mr: 1 }}
                     />
                   )}
-                  {/* Mode toggle: Classic vs Interactive */}
-                  <ToggleButtonGroup
-                    value={prototypeMode}
-                    exclusive
-                    onChange={(_, value) => value && setPrototypeMode(value)}
-                    size="small"
-                    sx={{ mr: 1 }}
-                  >
-                    <ToggleButton value="classic">
-                      <Tooltip title="Classic Mode - Standard HTML prototypes">
-                        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                          <SquaresFour size={16} />
-                        </span>
-                      </Tooltip>
-                    </ToggleButton>
-                    <ToggleButton value="interactive">
-                      <Tooltip title="Interactive Mode - File-based prototypes with state & debugging">
-                        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                          <Play size={16} />
-                        </span>
-                      </Tooltip>
-                    </ToggleButton>
-                  </ToggleButtonGroup>
                   <Button
                     variant="outlined"
                     onClick={() => handleRepromptWireframes()}
@@ -3900,7 +3514,7 @@ export const VibePrototyping: React.FC = () => {
                     startIcon={error ? <ArrowClockwise size={14} /> : undefined}
                     sx={{ background: config.gradients?.primary || config.colors.primary }}
                   >
-                    {error ? 'Retry Build' : `Build ${prototypeMode === 'interactive' ? 'Interactive' : 'High-Fidelity'}`}
+                    {error ? 'Retry Build' : 'Build Interactive'}
                   </Button>
                 </>
               )}
@@ -4542,32 +4156,8 @@ export const VibePrototyping: React.FC = () => {
               </Menu>
             </Box>
 
-            {/* Right: Generation method + Preview size + Share button */}
+            {/* Right: Preview size + Share button */}
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              {/* Generation Method Indicator - V2 only for UI consistency */}
-              <Tooltip title="Edit-based generation: Applies targeted changes to preserve your original design system">
-                <Box
-                  sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 0.5,
-                    px: 1.5,
-                    py: 0.5,
-                    bgcolor: 'action.hover',
-                    borderRadius: 1,
-                    fontSize: '0.75rem',
-                    color: 'text.secondary',
-                  }}
-                >
-                  <Lightning size={14} />
-                  <Typography variant="caption" sx={{ fontWeight: 500 }}>
-                    UI-Preserving Edits
-                  </Typography>
-                </Box>
-              </Tooltip>
-
-              <Divider orientation="vertical" flexItem />
-
               {/* Preview Size Selector */}
               <Box
                 sx={{
@@ -4848,7 +4438,7 @@ export const VibePrototyping: React.FC = () => {
                     <Box sx={{ textAlign: 'center' }}>
                       <CircularProgress size={48} sx={{ mb: 2 }} />
                       <Typography variant="body1" fontWeight={600} sx={{ mb: 0.5 }}>
-                        Generating {prototypeMode === 'interactive' ? 'Interactive' : 'High-Fidelity'} Prototypes
+                        Generating Interactive Prototypes
                       </Typography>
                       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                         {progress?.message || 'Building variants...'}
@@ -4885,28 +4475,6 @@ export const VibePrototyping: React.FC = () => {
                   All Variants Ready
                 </Typography>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  {/* Mode toggle: Classic vs Interactive */}
-                  <ToggleButtonGroup
-                    value={prototypeMode}
-                    exclusive
-                    onChange={(_, value) => value && setPrototypeMode(value)}
-                    size="small"
-                  >
-                    <ToggleButton value="classic">
-                      <Tooltip title="Classic View (Grid)">
-                        <span style={{ display: 'flex', alignItems: 'center' }}>
-                          <SquaresFour size={16} />
-                        </span>
-                      </Tooltip>
-                    </ToggleButton>
-                    <ToggleButton value="interactive">
-                      <Tooltip title="Interactive View (with debugging)">
-                        <span style={{ display: 'flex', alignItems: 'center' }}>
-                          <Play size={16} />
-                        </span>
-                      </Tooltip>
-                    </ToggleButton>
-                  </ToggleButtonGroup>
                   <Button
                     variant="outlined"
                     onClick={handleRebuild}
@@ -4919,40 +4487,15 @@ export const VibePrototyping: React.FC = () => {
                 </Box>
               </Box>
 
-              {/* Interactive mode - show InteractiveVariantView */}
-              {prototypeMode === 'interactive' ? (
-                <Card sx={{ flex: 1, mx: 2, mb: 2, overflow: 'hidden' }}>
-                  <InteractiveVariantView
-                    plans={plan?.plans || []}
-                    variants={variants}
-                    selectedVariantIndex={focusedVariantIndex}
-                    onSelectVariant={handleVariantClick}
-                  />
-                </Card>
-              ) : (
-                /* Classic mode - existing 2x2 grid */
-                <Grid container spacing={2} sx={{ flex: 1, px: 2, pb: 2, minHeight: 0, overflow: 'auto' }}>
-                  {['Variant A', 'Variant B', 'Variant C', 'Variant D'].map((label, idx) => {
-                    const variant = getVariantByIndex(idx + 1);
-                    const wireframe = wireframes.find(w => w.variantIndex === idx + 1);
-                    return (
-                      <Grid item xs={6} key={label} sx={{ height: '50%' }}>
-                        <CanvasVariantCard
-                          label={label}
-                          htmlUrl={variant?.html_url}
-                          wireframeUrl={wireframe?.wireframeUrl}
-                          wireframeHtml={wireframe?.wireframeHtml}
-                          streamingHtml={streamingHtml[idx + 1]}
-                          onClick={() => handleVariantClick(idx + 1)}
-                          viewMode={viewMode}
-                          enableInteractivity={interactivityEnabled}
-                          useLLMEnhancement={useLLMEnhancement}
-                        />
-                      </Grid>
-                    );
-                  })}
-                </Grid>
-              )}
+              {/* Show InteractiveVariantView */}
+              <Card sx={{ flex: 1, mx: 2, mb: 2, overflow: 'hidden' }}>
+                <InteractiveVariantView
+                  plans={plan?.plans || []}
+                  variants={variants}
+                  selectedVariantIndex={focusedVariantIndex}
+                  onSelectVariant={handleVariantClick}
+                />
+              </Card>
             </Box>
           )}
 
@@ -5806,46 +5349,6 @@ export const VibePrototyping: React.FC = () => {
         </DialogActions>
       </Dialog>
 
-      {/* Debug Panel - Toggle with Ctrl+Shift+D */}
-      <DebugPanel
-        isOpen={debugMode}
-        onClose={() => setDebugMode(false)}
-        status={status}
-        progress={progress}
-        error={error}
-        currentSession={currentSession}
-        understanding={understanding}
-        plan={plan}
-        variants={variants}
-        sourceMetadata={sourceMetadata}
-        currentPrompt={currentPrompt}
-        debugLogs={debugLogs}
-      />
-
-      {/* Debug toggle hint */}
-      {!debugMode && (
-        <Tooltip title="Debug Mode (Ctrl+Shift+D)" placement="left">
-          <IconButton
-            onClick={() => setDebugMode(true)}
-            sx={{
-              position: 'fixed',
-              bottom: 16,
-              right: 16,
-              bgcolor: 'background.paper',
-              boxShadow: 1,
-              opacity: 0.6,
-              transition: 'opacity 0.2s',
-              '&:hover': { bgcolor: 'grey.100', opacity: 1 },
-            }}
-          >
-            <Code size={20} />
-          </IconButton>
-        </Tooltip>
-      )}
-
-      {/* LLM Debug Panel */}
-      <LLMDebugPanel />
-      <LLMDebugButton />
     </Box>
   );
 };
