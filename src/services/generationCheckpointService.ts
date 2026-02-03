@@ -25,7 +25,7 @@ import type { AgentProgress, AgentPhase } from '../types/agentTypes';
  * Set to true when the generation_sessions table is deployed and working.
  * When false, all checkpoint functions return early without making DB queries.
  */
-const SERVER_ORCHESTRATION_ENABLED = false;
+const SERVER_ORCHESTRATION_ENABLED = true;
 
 // ============================================================================
 // Types
