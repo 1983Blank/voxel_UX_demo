@@ -983,8 +983,25 @@ export function preparePrototypeHtml(
     console.error('[preparePrototypeHtml] First 500 chars:', html.slice(0, 500));
   }
 
-  // First sanitize any LLM-generated scripts in the HTML
-  let processed = sanitizeScriptsInHtml(html);
+  // CRITICAL: Escape ALL </script patterns in the input HTML first
+  // This is the only reliable way to prevent script tag breakage
+  // We use a unique placeholder that won't appear in normal content
+  const SCRIPT_CLOSE_PLACEHOLDER = '___VOXEL_SCRIPT_CLOSE___';
+
+  // Replace all </script> closing tags with placeholder
+  let processed = html.replace(/<\/script>/gi, SCRIPT_CLOSE_PLACEHOLDER);
+
+  // Now escape any </script that might be in JavaScript strings
+  // This won't affect the placeholders we just added
+  processed = processed.replace(/<\/script/gi, '<\\/script');
+
+  // Restore the actual closing tags
+  processed = processed.replace(new RegExp(SCRIPT_CLOSE_PLACEHOLDER, 'g'), '</script>');
+
+  console.log('[preparePrototypeHtml] After script escaping, length:', processed.length);
+
+  // Sanitize LLM code artifacts (smart quotes, etc.)
+  processed = sanitizeScriptsInHtml(processed);
   console.log('[preparePrototypeHtml] After sanitize, length:', processed.length);
 
   // Then inject the runtime bundle
@@ -994,21 +1011,6 @@ export function preparePrototypeHtml(
 
   // Then inject component scripts
   processed = injectComponentScripts(processed, components);
-
-  // FINAL SAFETY CHECK: Ensure no unescaped </script> in script content
-  // This catches any edge cases missed by earlier processing
-  processed = processed.replace(/<script([^>]*)>([\s\S]*?)<\/script>/gi, (match, attrs, content) => {
-    if (attrs.includes('src=')) {
-      return match;
-    }
-    // Check for unescaped </script> in content (not already escaped as <\/script>)
-    if (content.includes('</script') && !content.includes('<\\/script')) {
-      console.warn('[preparePrototypeHtml] Found unescaped </script> in content, escaping...');
-      const escapedContent = escapeScriptTags(content);
-      return `<script${attrs}>${escapedContent}</script>`;
-    }
-    return match;
-  });
 
   console.log('[preparePrototypeHtml] Final output length:', processed.length);
   console.log('[preparePrototypeHtml] Output starts with:', processed.slice(0, 100));
