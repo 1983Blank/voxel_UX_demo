@@ -91,6 +91,7 @@ import { useScreensStore } from '@/store/screensStore';
 import { useVibeStore, type ChatMessage } from '@/store/vibeStore';
 import { useContextStore } from '@/store/contextStore';
 import { useThemeStore } from '@/store/themeStore';
+import { useDesignTokensStore } from '@/store/designTokensStore';
 import { getContextFiles, type ContextFile } from '@/services/contextFilesService';
 
 import { supabase } from '@/services/supabase';
@@ -2508,6 +2509,34 @@ export const VibePrototyping: React.FC = () => {
           const abortController = new AbortController();
           generationAbortControllerRef.current = abortController;
 
+          // Get design tokens from store (approved ones only) and map to generation format
+          const allDesignTokens = useDesignTokensStore.getState().tokens;
+          const approvedDesignTokens = allDesignTokens.filter(t => t.status === 'approved');
+          // Map persistence tokens to the simpler generation format
+          const categoryToType: Record<string, 'color' | 'typography' | 'spacing' | 'radius' | 'shadow'> = {
+            'colors': 'color',
+            'typography': 'typography',
+            'spacing': 'spacing',
+            'radius': 'radius',
+            'shadows': 'shadow',
+            'effects': 'shadow',
+          };
+          const mappedDesignTokens = approvedDesignTokens.map(t => ({
+            name: t.name,
+            value: t.value,
+            type: categoryToType[t.category] || 'color',
+            cssVariable: t.cssVariable || `--${t.name.toLowerCase().replace(/\s+/g, '-')}`,
+          }));
+          console.log('[VibePrototyping] Design tokens:', {
+            total: allDesignTokens.length,
+            approved: approvedDesignTokens.length,
+            mapped: mappedDesignTokens.length,
+          });
+
+          // Get UX guidelines from context store
+          const uxGuidelinesPrompt = useContextStore.getState().getUXGuidelinesPrompt();
+          console.log('[VibePrototyping] UX guidelines available:', uxGuidelinesPrompt.length > 0);
+
           try {
             await generateInteractivePrototypesWithAgent(
               currentSession.id,
@@ -2559,8 +2588,9 @@ export const VibePrototyping: React.FC = () => {
                 console.log('[VibePrototyping] Variant complete:', result.variantIndex, 'files:', result.files.length, 'indexHtml length:', indexHtml?.content?.length || 0);
               },
               screenshot,
-              undefined, // designTokens
-              { abortSignal: abortController.signal } // config with abort signal
+              mappedDesignTokens.length > 0 ? mappedDesignTokens : undefined,
+              { abortSignal: abortController.signal }, // config with abort signal
+              uxGuidelinesPrompt || undefined // product context (UX guidelines)
             );
           } finally {
             // Clear the abort controller when done

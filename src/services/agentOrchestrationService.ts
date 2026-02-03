@@ -177,6 +177,7 @@ async function callGeneratePrototypeFile(
       screenshotBase64: screenshotToSend,
       provider: context.provider,
       model: context.model,
+      productContext: context.productContext,
     }),
     signal: options?.abortSignal,
   });

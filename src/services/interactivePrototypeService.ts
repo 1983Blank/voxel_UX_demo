@@ -577,7 +577,8 @@ export async function generateInteractivePrototypesWithAgent(
   onVariantComplete?: VariantCompleteCallback,
   screenshotBase64?: string,
   designTokens?: DesignToken[],
-  config?: Partial<OrchestrationConfig>
+  config?: Partial<OrchestrationConfig>,
+  productContext?: string
 ): Promise<InteractiveVariantResult[]> {
   if (!isSupabaseConfigured()) {
     throw new Error('Supabase not configured');
@@ -608,6 +609,7 @@ export async function generateInteractivePrototypesWithAgent(
         sourceHtml: originalHtml,
         screenshotBase64,
         designTokens: designTokens || [],
+        productContext,
       },
       (agentProgressList: AgentProgress[]) => {
         // Report agent progress

@@ -69,6 +69,7 @@ interface GenerateFileRequest {
   screenshotBase64?: string
   provider?: 'anthropic' | 'openai' | 'google'
   model?: string
+  productContext?: string // UX guidelines, brand context, etc.
 }
 
 interface GenerateFileResponse {
@@ -683,7 +684,7 @@ async function generateIndexHtml(
   request: GenerateFileRequest,
   apiKey: string
 ): Promise<GenerateFileResponse> {
-  const { implementationScript, variantApproach, previousFiles, sourceHtml, screenshotBase64, provider, model } = request
+  const { implementationScript, variantApproach, previousFiles, sourceHtml, screenshotBase64, provider, model, designTokens, productContext } = request
 
   const componentImports = implementationScript.componentsNeeded
     .map(c => `  <script type="module" src="components/${c}.js"></script>`)
@@ -702,11 +703,22 @@ async function generateIndexHtml(
   const entryPoints = implementationScript.entryPoints || []
   const flows = implementationScript.flows || []
 
+  // Format design tokens for prompt
+  const designTokensPrompt = designTokens && designTokens.length > 0
+    ? `\nDESIGN TOKENS (use these exact values):\n${designTokens.map(t => `- ${t.cssVariable}: ${t.value} (${t.type})`).join('\n')}`
+    : ''
+
+  // Format product context/UX guidelines for prompt
+  const productContextPrompt = productContext
+    ? `\nUX GUIDELINES & BRAND CONTEXT:\n${productContext}`
+    : ''
+
   const userPrompt = `Enhance this existing UI with "${variantApproach}" interactive behavior.
 
 VARIANT APPROACH: ${variantApproach}
 - ${guidelines.description}
 - Focus: ${guidelines.focusAreas?.join(', ') || 'user experience'}
+${designTokensPrompt}${productContextPrompt}
 
 INTERACTIVE ENTRY POINTS TO ADD:
 ${entryPoints.map(ep => `- ${ep.selector}: ${ep.action} → triggers ${ep.triggersFlow || ep.triggersState || 'state change'}`).join('\n') || '- Add interactive elements as needed'}
