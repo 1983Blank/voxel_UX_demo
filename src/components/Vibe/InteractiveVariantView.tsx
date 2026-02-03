@@ -9,7 +9,7 @@
  * - Live preview
  */
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -35,7 +35,7 @@ import { StateInspector } from './StateInspector';
 import { FlowDebugger } from './FlowDebugger';
 import { PrototypePreview } from './PrototypePreview';
 import { usePrototypeStore } from '../../store/prototypeStore';
-import { getVibeVariantColor, getVibeVariantLabel } from '../../store/vibeStore';
+import { getVibeVariantLabel } from '../../store/vibeStore';
 import type { VariantPlan } from '../../services/variantPlanService';
 import type { VibeVariant } from '../../services/variantCodeService';
 
@@ -51,66 +51,6 @@ interface InteractiveVariantViewProps {
 type PanelView = 'preview' | 'code' | 'files';
 type DebugPanel = 'state' | 'flows' | 'none';
 
-// ============ Variant Tab Component ============
-
-interface VariantTabProps {
-  plan: VariantPlan;
-  variant?: VibeVariant;
-  isSelected: boolean;
-  isActive: boolean;
-  onClick: () => void;
-}
-
-function VariantTab({ plan, variant, isSelected, isActive, onClick }: VariantTabProps) {
-  const color = getVibeVariantColor(plan.variant_index);
-  const label = getVibeVariantLabel(plan.variant_index);
-  const isComplete = variant?.status === 'complete';
-
-  return (
-    <Box
-      onClick={onClick}
-      sx={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 1,
-        px: 2,
-        py: 1,
-        cursor: 'pointer',
-        borderBottom: 2,
-        borderColor: isActive ? color : 'transparent',
-        bgcolor: isActive ? alpha(color, 0.08) : 'transparent',
-        '&:hover': {
-          bgcolor: alpha(color, 0.04),
-        },
-        opacity: isComplete ? 1 : 0.5,
-      }}
-    >
-      <Chip
-        label={plan.variant_index}
-        size="small"
-        sx={{
-          bgcolor: color,
-          color: 'white',
-          fontWeight: 600,
-          height: 20,
-          fontSize: '0.75rem',
-        }}
-      />
-      <Typography variant="body2" fontWeight={isActive ? 600 : 400}>
-        {label}
-      </Typography>
-      {isSelected && (
-        <Chip
-          label="Winner"
-          size="small"
-          color="warning"
-          sx={{ height: 18, fontSize: '0.625rem' }}
-        />
-      )}
-    </Box>
-  );
-}
-
 // ============ Main Component ============
 
 export function InteractiveVariantView({
@@ -120,11 +60,18 @@ export function InteractiveVariantView({
   onSelectVariant,
 }: InteractiveVariantViewProps) {
   // Local state
-  const [activeVariantIndex, setActiveVariantIndex] = useState<number>(1);
+  const [activeVariantIndex, setActiveVariantIndex] = useState<number>(selectedVariantIndex || 1);
   const [mainView, setMainView] = useState<PanelView>('preview');
   const [debugPanel, setDebugPanel] = useState<DebugPanel>('state');
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
   const [showDebugPanels, setShowDebugPanels] = useState(true);
+
+  // Sync with parent's selectedVariantIndex (from dropdown)
+  useEffect(() => {
+    if (selectedVariantIndex && selectedVariantIndex !== activeVariantIndex) {
+      setActiveVariantIndex(selectedVariantIndex);
+    }
+  }, [selectedVariantIndex]);
 
   // Prototype store state
   const {
@@ -209,36 +156,32 @@ export function InteractiveVariantView({
     setMainView('code');
   }, []);
 
-  // Sort plans by variant index
-  const sortedPlans = useMemo(
-    () => [...plans].sort((a, b) => a.variant_index - b.variant_index),
-    [plans]
-  );
-
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      {/* Variant Tabs */}
+      {/* Variant Info Header - shows current variant info without redundant tabs */}
       <Box
         sx={{
           display: 'flex',
+          alignItems: 'center',
           borderBottom: 1,
           borderColor: 'divider',
           bgcolor: 'background.paper',
+          px: 2,
+          py: 1,
         }}
       >
-        {sortedPlans.map((plan) => (
-          <VariantTab
-            key={plan.id}
-            plan={plan}
-            variant={variantMap.get(plan.variant_index)}
-            isSelected={selectedVariantIndex === plan.variant_index}
-            isActive={activeVariantIndex === plan.variant_index}
-            onClick={() => setActiveVariantIndex(plan.variant_index)}
-          />
-        ))}
-        <Box sx={{ flex: 1 }} />
+        {activePlan && (
+          <Box sx={{ flex: 1 }}>
+            <Typography variant="subtitle2" fontWeight={600}>
+              {activePlan.title}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              {activePlan.description}
+            </Typography>
+          </Box>
+        )}
         {/* View toggles */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 2 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <ToggleButtonGroup
             value={mainView}
             exclusive

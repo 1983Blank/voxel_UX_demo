@@ -1404,7 +1404,7 @@ function AttachmentChip({
 export const VibePrototyping: React.FC = () => {
   const { screenId, sessionId } = useParams<{ screenId: string; sessionId?: string }>();
   const navigate = useNavigate();
-  const { showSuccess, showError } = useSnackbar();
+  const { showSuccess, showError, showInfo } = useSnackbar();
   const { config } = useThemeStore();
 
   // External stores
@@ -2563,9 +2563,11 @@ export const VibePrototyping: React.FC = () => {
       if (err instanceof GenerationAbortedError || (err instanceof Error && err.name === 'AbortError')) {
         console.log('[VibePrototyping] Generation was stopped by user');
         setStatus('wireframe_ready');
-        setProgress(null);
+        // Don't clear progress - keep it visible so user can see what was completed
+        // setProgress(null);
+        // Don't clear agentProgress either - keep showing the steps
         addChatMessage('assistant', 'Generation stopped. You can restart or modify your request.');
-        showSuccess('Generation stopped successfully');
+        showInfo('Generation stopped');
         return;
       }
 
