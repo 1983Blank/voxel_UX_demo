@@ -887,14 +887,76 @@ export function preparePrototypeHtml(
   html: string,
   components: ComponentScript[] = []
 ): string {
+  console.log('[preparePrototypeHtml] Input HTML length:', html?.length || 0);
+  console.log('[preparePrototypeHtml] Input starts with:', html?.slice(0, 100));
+  console.log('[preparePrototypeHtml] Components to inject:', components.length);
+
+  if (!html || html.length === 0) {
+    console.error('[preparePrototypeHtml] ERROR: Empty HTML input!');
+    return '<!DOCTYPE html><html><head></head><body><h1>Error: Empty HTML</h1></body></html>';
+  }
+
+  // Validate that input looks like HTML, not JavaScript
+  const trimmedHtml = html.trim();
+  const looksLikeJavaScript = (
+    trimmedHtml.startsWith('(function') ||
+    trimmedHtml.startsWith('function') ||
+    trimmedHtml.startsWith('const ') ||
+    trimmedHtml.startsWith('let ') ||
+    trimmedHtml.startsWith('var ') ||
+    trimmedHtml.startsWith('class ') ||
+    trimmedHtml.startsWith('import ') ||
+    trimmedHtml.startsWith('export ') ||
+    trimmedHtml.startsWith('"use strict"') ||
+    trimmedHtml.startsWith("'use strict'")
+  );
+
+  if (looksLikeJavaScript) {
+    console.error('[preparePrototypeHtml] CRITICAL ERROR: Input is JavaScript, not HTML!');
+    console.error('[preparePrototypeHtml] First 500 chars:', html.slice(0, 500));
+    // Return an error page instead of trying to process JavaScript as HTML
+    return `<!DOCTYPE html>
+<html>
+<head>
+  <title>Generation Error</title>
+  <style>
+    body { font-family: system-ui, sans-serif; padding: 40px; background: #fee; }
+    h1 { color: #c00; }
+    pre { background: #fff; padding: 20px; border-radius: 8px; overflow: auto; max-height: 300px; }
+  </style>
+</head>
+<body>
+  <h1>⚠️ Generation Error</h1>
+  <p>The prototype HTML could not be generated correctly. The system received JavaScript code instead of HTML.</p>
+  <p>This may be due to a temporary issue with the AI generation. Please try regenerating the prototype.</p>
+  <details>
+    <summary>Technical Details</summary>
+    <pre>${html.slice(0, 1000).replace(/</g, '&lt;').replace(/>/g, '&gt;')}...</pre>
+  </details>
+</body>
+</html>`;
+  }
+
+  // Check if input has basic HTML structure
+  const looksLikeHtml = html.includes('<') && (html.includes('</') || html.includes('/>'));
+  if (!looksLikeHtml) {
+    console.error('[preparePrototypeHtml] ERROR: Input does not look like HTML!');
+    console.error('[preparePrototypeHtml] First 500 chars:', html.slice(0, 500));
+  }
+
   // First sanitize any LLM-generated scripts in the HTML
   let processed = sanitizeScriptsInHtml(html);
+  console.log('[preparePrototypeHtml] After sanitize, length:', processed.length);
 
   // Then inject the runtime bundle
   processed = injectVxRuntimeBundle(processed);
+  console.log('[preparePrototypeHtml] After runtime injection, length:', processed.length);
+  console.log('[preparePrototypeHtml] Has VxRuntime Bundle:', processed.includes('VxRuntime Bundle'));
 
   // Then inject component scripts
   processed = injectComponentScripts(processed, components);
+  console.log('[preparePrototypeHtml] Final output length:', processed.length);
+  console.log('[preparePrototypeHtml] Output starts with:', processed.slice(0, 100));
 
   return processed;
 }

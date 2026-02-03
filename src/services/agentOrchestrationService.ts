@@ -794,16 +794,38 @@ async function generateVariant(
     let htmlWithRuntime: string;
 
     // Determine if we should use modifications-based assembly
-    // Requires both the flag AND sourceHtml to be available
-    const shouldUseModifications = useModifications && !!context.sourceHtml;
+    // Requires both the flag AND sourceHtml to be available AND sourceHtml to be valid HTML
+    let shouldUseModifications = useModifications && !!context.sourceHtml;
 
     if (useModifications && !context.sourceHtml) {
       console.warn(`[AgentOrchestration] ⚠️ Variant ${variantIndex}: No sourceHtml available, falling back to index.html generation`);
     }
 
+    // Validate that sourceHtml is actually HTML before using modifications-based assembly
+    if (shouldUseModifications) {
+      const trimmedSource = context.sourceHtml!.trim();
+      const sourceIsJavaScript = (
+        trimmedSource.startsWith('(function') ||
+        trimmedSource.startsWith('function') ||
+        trimmedSource.startsWith('const ') ||
+        trimmedSource.startsWith('let ') ||
+        trimmedSource.startsWith('var ') ||
+        trimmedSource.startsWith('class ') ||
+        trimmedSource.startsWith('import ') ||
+        trimmedSource.startsWith('export ')
+      );
+
+      if (sourceIsJavaScript) {
+        console.error(`[AgentOrchestration] ❌ Variant ${variantIndex}: sourceHtml is JavaScript, not HTML! Falling back to index.html generation.`);
+        console.error(`[AgentOrchestration] 📋 Variant ${variantIndex}: sourceHtml starts with: "${context.sourceHtml!.slice(0, 200)}"`);
+        shouldUseModifications = false;
+      }
+    }
+
     if (shouldUseModifications) {
       // Modifications-based assembly: generate small JSON spec and apply to source HTML
       console.log(`[AgentOrchestration] 📋 Variant ${variantIndex}: Using modifications-based assembly with sourceHtml (${context.sourceHtml!.length} chars)`);
+      console.log(`[AgentOrchestration] 📋 Variant ${variantIndex}: sourceHtml starts with: "${context.sourceHtml!.slice(0, 100)}"`);
 
       const modificationsPromise = callGeneratePrototypeFile(
         'modifications.json',

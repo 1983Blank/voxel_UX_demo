@@ -26,9 +26,60 @@ export function applyModificationsToHtml(
   modifications: ModificationsJson,
   tokensCss?: string
 ): string {
+  console.log('[applyModificationsToHtml] Source HTML length:', sourceHtml?.length || 0);
+  console.log('[applyModificationsToHtml] Source starts with:', sourceHtml?.slice(0, 100));
+  console.log('[applyModificationsToHtml] Modifications count:', modifications?.modifications?.length || 0);
+
+  if (!sourceHtml || sourceHtml.length === 0) {
+    console.error('[applyModificationsToHtml] ERROR: Empty source HTML!');
+    throw new Error('Cannot apply modifications to empty source HTML');
+  }
+
+  // Validate that sourceHtml is actually HTML, not JavaScript or other content
+  const trimmedHtml = sourceHtml.trim();
+  const looksLikeHtml = (
+    trimmedHtml.startsWith('<!DOCTYPE') ||
+    trimmedHtml.startsWith('<!doctype') ||
+    trimmedHtml.startsWith('<html') ||
+    trimmedHtml.startsWith('<HTML') ||
+    (trimmedHtml.includes('<head') && trimmedHtml.includes('<body')) ||
+    (trimmedHtml.includes('<HEAD') && trimmedHtml.includes('<BODY'))
+  );
+
+  const looksLikeJavaScript = (
+    trimmedHtml.startsWith('(function') ||
+    trimmedHtml.startsWith('function') ||
+    trimmedHtml.startsWith('const ') ||
+    trimmedHtml.startsWith('let ') ||
+    trimmedHtml.startsWith('var ') ||
+    trimmedHtml.startsWith('class ') ||
+    trimmedHtml.startsWith('import ') ||
+    trimmedHtml.startsWith('export ') ||
+    trimmedHtml.startsWith('"use strict"') ||
+    trimmedHtml.startsWith("'use strict'") ||
+    /^\/\*[\s\S]*?\*\//.test(trimmedHtml) // Starts with JS block comment
+  );
+
+  if (looksLikeJavaScript) {
+    console.error('[applyModificationsToHtml] ERROR: Source looks like JavaScript, not HTML!');
+    console.error('[applyModificationsToHtml] First 300 chars:', sourceHtml.slice(0, 300));
+    throw new Error('Cannot apply modifications: source content is JavaScript, not HTML');
+  }
+
+  if (!looksLikeHtml) {
+    console.warn('[applyModificationsToHtml] WARNING: Source may not be valid HTML');
+    console.warn('[applyModificationsToHtml] First 300 chars:', sourceHtml.slice(0, 300));
+  }
+
   // Parse source HTML
   const parser = new DOMParser();
   const doc = parser.parseFromString(sourceHtml, 'text/html');
+
+  // Check if parsing failed
+  const parserError = doc.querySelector('parsererror');
+  if (parserError) {
+    console.error('[applyModificationsToHtml] HTML parsing error:', parserError.textContent);
+  }
 
   // Apply each modification
   for (const mod of modifications.modifications) {
@@ -56,7 +107,14 @@ export function applyModificationsToHtml(
 
   // Serialize back to HTML string with DOCTYPE
   const doctype = '<!DOCTYPE html>\n';
-  return doctype + doc.documentElement.outerHTML;
+  const result = doctype + doc.documentElement.outerHTML;
+
+  console.log('[applyModificationsToHtml] Output HTML length:', result.length);
+  console.log('[applyModificationsToHtml] Output starts with:', result.slice(0, 100));
+  console.log('[applyModificationsToHtml] Has <body>:', result.includes('<body'));
+  console.log('[applyModificationsToHtml] Has </body>:', result.includes('</body>'));
+
+  return result;
 }
 
 /**
