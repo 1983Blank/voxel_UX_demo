@@ -121,72 +121,30 @@ function AllProjectsView() {
       <PageHeader title="Insights" />
 
       {/* Stats Row */}
-      <Grid container spacing={3} sx={{ mb: 4 }}>
+      <Grid container spacing={2} sx={{ mb: 4 }}>
         <Grid item xs={12} sm={4}>
-          <Card
-            variant="outlined"
-            sx={{
-              p: 2,
-              textAlign: 'center',
-              height: '100%',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'center',
-              minHeight: 100,
-            }}
-          >
-            <Typography variant="body2" color="text.secondary" gutterBottom>
-              Number of projects
-            </Typography>
-            <Typography variant="h5" fontWeight={500}>
-              {activeProjects}/{totalProjects}
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              (active/total)
-            </Typography>
-          </Card>
+          <InsightStatCard
+            title="Projects"
+            value={`${activeProjects}/${totalProjects}`}
+            icon={<Eye size={18} />}
+            subtitle="Active / Total"
+          />
         </Grid>
         <Grid item xs={12} sm={4}>
-          <Card
-            variant="outlined"
-            sx={{
-              p: 2,
-              textAlign: 'center',
-              height: '100%',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'center',
-              minHeight: 100,
-            }}
-          >
-            <Typography variant="body2" color="text.secondary" gutterBottom>
-              Avg. variants per project
-            </Typography>
-            <Typography variant="h5" fontWeight={500}>
-              {avgVariantsPerProject}
-            </Typography>
-          </Card>
+          <InsightStatCard
+            title="Avg. Variants"
+            value={avgVariantsPerProject}
+            icon={<ArrowsClockwise size={18} />}
+            subtitle="Per project"
+          />
         </Grid>
         <Grid item xs={12} sm={4}>
-          <Card
-            variant="outlined"
-            sx={{
-              p: 2,
-              textAlign: 'center',
-              height: '100%',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'center',
-              minHeight: 100,
-            }}
-          >
-            <Typography variant="body2" color="text.secondary" gutterBottom>
-              Engaged participants
-            </Typography>
-            <Typography variant="h5" fontWeight={500}>
-              {totalParticipants}
-            </Typography>
-          </Card>
+          <InsightStatCard
+            title="Participants"
+            value={totalParticipants}
+            icon={<UsersFour size={18} />}
+            subtitle="Total engaged"
+          />
         </Grid>
       </Grid>
 
@@ -320,90 +278,38 @@ function ProjectView({ projectId }: { projectId: string }) {
       </Box>
 
       {/* Stats Row */}
-      <Grid container spacing={3} sx={{ mb: 4 }}>
-        <Grid item xs={12} sm={3}>
-          <Card
-            variant="outlined"
-            sx={{
-              p: 2,
-              textAlign: 'center',
-              height: '100%',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'center',
-              minHeight: 100,
-            }}
-          >
-            <Typography variant="body2" color="text.secondary" gutterBottom>
-              Total variants
-            </Typography>
-            <Typography variant="h5" fontWeight={500}>
-              {totalVariants}
-            </Typography>
-          </Card>
+      <Grid container spacing={2} sx={{ mb: 4 }}>
+        <Grid item xs={6} sm={3}>
+          <InsightStatCard
+            title="Variants"
+            value={totalVariants}
+            icon={<ArrowsClockwise size={18} />}
+            subtitle="Total generated"
+          />
         </Grid>
-        <Grid item xs={12} sm={3}>
-          <Card
-            variant="outlined"
-            sx={{
-              p: 2,
-              textAlign: 'center',
-              height: '100%',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'center',
-              minHeight: 100,
-            }}
-          >
-            <Typography variant="body2" color="text.secondary" gutterBottom>
-              Total views
-            </Typography>
-            <Typography variant="h5" fontWeight={500}>
-              {totalViews}
-            </Typography>
-          </Card>
+        <Grid item xs={6} sm={3}>
+          <InsightStatCard
+            title="Views"
+            value={totalViews}
+            icon={<Eye size={18} />}
+            subtitle="Total page views"
+          />
         </Grid>
-        <Grid item xs={12} sm={3}>
-          <Card
-            variant="outlined"
-            sx={{
-              p: 2,
-              textAlign: 'center',
-              height: '100%',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'center',
-              minHeight: 100,
-            }}
-          >
-            <Typography variant="body2" color="text.secondary" gutterBottom>
-              Unique participants
-            </Typography>
-            <Typography variant="h5" fontWeight={500}>
-              {totalParticipants}
-            </Typography>
-          </Card>
+        <Grid item xs={6} sm={3}>
+          <InsightStatCard
+            title="Participants"
+            value={totalParticipants}
+            icon={<UsersFour size={18} />}
+            subtitle="Unique users"
+          />
         </Grid>
-        <Grid item xs={12} sm={3}>
-          <Card
-            variant="outlined"
-            sx={{
-              p: 2,
-              textAlign: 'center',
-              height: '100%',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'center',
-              minHeight: 100,
-            }}
-          >
-            <Typography variant="body2" color="text.secondary" gutterBottom>
-              Total time spent
-            </Typography>
-            <Typography variant="h5" fontWeight={500}>
-              {totalTimeSpent}
-            </Typography>
-          </Card>
+        <Grid item xs={6} sm={3}>
+          <InsightStatCard
+            title="Time Spent"
+            value={totalTimeSpent}
+            icon={<Clock size={18} />}
+            subtitle="Total engagement"
+          />
         </Grid>
       </Grid>
 
@@ -651,36 +557,37 @@ function VariantView({ projectId, variantId }: { projectId: string; variantId: s
   }, [aiSummary, navigate, projectId, variantIndex]);
 
   // Build journey stages for Sankey chart
+  // Uses real event types: pageview, scroll, click
   const journeyStages: JourneyStage[] = detail
     ? [
         {
-          name: 'Landed',
+          name: 'Page Visit',
           users: detail.participantsFunnel[0]?.count || detail.sessions || 1,
           events: [
-            { type: 'pageview', count: detail.sessions || 1 },
+            { type: 'pageview', count: detail.sessions || 1, label: 'Page loads' },
           ],
         },
         {
-          name: 'Engaged',
-          users: detail.participantsFunnel[1]?.count || Math.round((detail.sessions || 1) * 0.65),
+          name: 'Scrolled',
+          users: detail.participantsFunnel[1]?.count || Math.round((detail.sessions || 1) * 0.75),
           events: [
-            { type: 'scroll', count: Math.round((detail.sessions || 1) * 0.8) },
-            { type: 'click', count: Math.round((detail.sessions || 1) * 0.4) },
+            { type: 'scroll', count: Math.round((detail.sessions || 1) * 1.5), label: 'Scroll events' },
+            { type: 'pageview', count: Math.round((detail.sessions || 1) * 0.3), label: 'Section views' },
           ],
         },
         {
-          name: 'Interacted',
-          users: detail.participantsFunnel[2]?.count || detail.participants,
+          name: 'Clicked',
+          users: detail.participantsFunnel[2]?.count || Math.round(detail.participants * 0.8),
           events: [
-            { type: 'click', count: detail.participants * 2 },
-            { type: 'scroll', count: detail.participants },
+            { type: 'click', count: Math.round(detail.participants * 2.5), label: 'Click events' },
+            { type: 'scroll', count: detail.participants, label: 'Deep scrolls' },
           ],
         },
         {
           name: 'Feedback',
           users: detail.comments.length > 0 ? Math.min(detail.participants, detail.comments.length) : 0,
           events: [
-            { type: 'click', count: detail.comments.length },
+            { type: 'click', count: detail.comments.length, label: 'Comment actions' },
           ],
         },
       ]
@@ -830,29 +737,19 @@ function VariantView({ projectId, variantId }: { projectId: string; variantId: s
         </Grid>
       </Grid>
 
-      {/* Bottom Section: Feedback Summary (left) + Comments (right) */}
+      {/* Bottom Section: Sankey (left) + Summary & Comments (right) */}
       <Grid container spacing={3} sx={{ flex: 1, minHeight: 0 }}>
-        {/* Left Column: Feedback Summary with Sankey */}
+        {/* Left Column: User Journey Sankey */}
         <Grid item xs={12} md={7} sx={{ display: 'flex', flexDirection: 'column' }}>
           <Card sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <CardContent sx={{ flex: 1, display: 'flex', flexDirection: 'column', p: 3 }}>
               {/* Header */}
               <Typography variant="h6" fontWeight={600} sx={{ mb: 2 }}>
-                Feedback summary
+                User Journey
               </Typography>
 
-              {/* AI Summary */}
-              <Box sx={{ mb: 3 }}>
-                <FeedbackSummary
-                  data={aiSummary}
-                  isLoading={aiSummaryLoading}
-                  onRegenerate={handleGenerateAISummary}
-                  commentCount={detail.comments.length}
-                />
-              </Box>
-
               {/* Sankey Chart */}
-              <Box sx={{ flex: 1, minHeight: 200 }}>
+              <Box sx={{ flex: 1, minHeight: 280 }}>
                 <UserJourneySankey stages={journeyStages} />
               </Box>
 
@@ -878,11 +775,27 @@ function VariantView({ projectId, variantId }: { projectId: string; variantId: s
           </Card>
         </Grid>
 
-        {/* Right Column: Comment Cards */}
-        <Grid item xs={12} md={5} sx={{ display: 'flex', flexDirection: 'column' }}>
+        {/* Right Column: AI Summary + Comment Cards */}
+        <Grid item xs={12} md={5} sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {/* AI Summary Section */}
+          <Card sx={{ overflow: 'hidden' }}>
+            <CardContent sx={{ p: 2.5 }}>
+              <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 1.5 }}>
+                Feedback Summary
+              </Typography>
+              <FeedbackSummary
+                data={aiSummary}
+                isLoading={aiSummaryLoading}
+                onRegenerate={handleGenerateAISummary}
+                commentCount={detail.comments.length}
+              />
+            </CardContent>
+          </Card>
+
+          {/* Comments Section */}
           <Box sx={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
             {detail.comments.length === 0 ? (
-              <Card sx={{ p: 4, textAlign: 'center', flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+              <Card sx={{ p: 4, textAlign: 'center', flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: '#ffffff' }}>
                 <ChatCircle size={48} color={config.colors.textSecondary} />
                 <Typography color="text.secondary" sx={{ mt: 2 }}>
                   No feedback yet

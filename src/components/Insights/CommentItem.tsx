@@ -46,16 +46,17 @@ export function CommentItem({ comment, onGenerateVariant, showGenerateButton = t
     <Card
       sx={{
         p: 0,
-        borderRadius: 2,
+        borderRadius: 3,
         border: 1,
-        borderColor: comment.resolved ? 'divider' : `${config.colors.primary}30`,
-        backgroundColor: config.colors.bgPrimary,
-        opacity: comment.resolved ? 0.8 : 1,
+        borderColor: comment.resolved ? 'divider' : 'rgba(0,0,0,0.08)',
+        backgroundColor: '#ffffff',
+        opacity: comment.resolved ? 0.85 : 1,
         transition: 'all 0.2s ease',
         overflow: 'hidden',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
         '&:hover': {
-          borderColor: config.colors.primary,
-          boxShadow: `0 2px 8px ${config.colors.primary}15`,
+          borderColor: 'rgba(0,0,0,0.12)',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
         },
       }}
     >
@@ -67,9 +68,6 @@ export function CommentItem({ comment, onGenerateVariant, showGenerateButton = t
           alignItems: 'center',
           p: 2,
           pb: 1.5,
-          borderBottom: 1,
-          borderColor: 'divider',
-          backgroundColor: config.colors.bgSecondary,
         }}
       >
         {/* User info */}
@@ -157,17 +155,14 @@ export function CommentItem({ comment, onGenerateVariant, showGenerateButton = t
         )}
       </Box>
 
-      {/* Generate variant button - card footer */}
+      {/* Generate variant button - inline with content */}
       {showGenerateButton && onGenerateVariant && (
         <Box
           sx={{
             display: 'flex',
             justifyContent: 'flex-end',
             px: 2,
-            py: 1.5,
-            borderTop: 1,
-            borderColor: 'divider',
-            backgroundColor: config.colors.bgSecondary,
+            pb: 2,
           }}
         >
           <Button
@@ -177,8 +172,10 @@ export function CommentItem({ comment, onGenerateVariant, showGenerateButton = t
             onClick={() => onGenerateVariant(comment.content)}
             sx={{
               fontSize: '0.75rem',
-              borderColor: config.colors.border,
+              borderRadius: 2,
+              borderColor: 'rgba(0,0,0,0.12)',
               color: config.colors.textSecondary,
+              textTransform: 'none',
               '&:hover': {
                 borderColor: config.colors.primary,
                 color: config.colors.primary,
@@ -186,7 +183,7 @@ export function CommentItem({ comment, onGenerateVariant, showGenerateButton = t
               },
             }}
           >
-            Generate variant
+            Generate Variant
           </Button>
         </Box>
       )}
