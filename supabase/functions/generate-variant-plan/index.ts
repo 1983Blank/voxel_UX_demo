@@ -263,6 +263,78 @@ function aggressiveRepairJson(json: string): string {
   return repaired
 }
 
+// Final fallback: try to manually reconstruct valid JSON by extracting variant objects
+function reconstructVariantsJson(json: string): string {
+  console.log('[generate-variant-plan] Attempting to reconstruct variants from malformed JSON...')
+
+  // Try to extract individual variant objects using regex
+  const variantPattern = /\{\s*"variantIndex"\s*:\s*(\d+)\s*,\s*"title"\s*:\s*"([^"]*?)"\s*,\s*"description"\s*:\s*"([^"]*?)"\s*,\s*"keyChanges"\s*:\s*\[([^\]]*?)\]\s*,\s*"styleNotes"\s*:\s*"([^"]*?)"\s*\}/gs
+
+  const variants: string[] = []
+  let match
+
+  while ((match = variantPattern.exec(json)) !== null) {
+    const [fullMatch] = match
+    variants.push(fullMatch)
+  }
+
+  if (variants.length >= 1) {
+    console.log(`[generate-variant-plan] Extracted ${variants.length} variant(s) via regex`)
+
+    // If we got less than 4, try a simpler extraction
+    if (variants.length < 4) {
+      // Try to find objects by looking for variantIndex patterns
+      const simplePattern = /\{[^{}]*"variantIndex"\s*:\s*\d[^{}]*\}/g
+      const simpleMatches = json.match(simplePattern)
+      if (simpleMatches && simpleMatches.length > variants.length) {
+        console.log(`[generate-variant-plan] Found ${simpleMatches.length} variants with simple pattern`)
+        return `{"variants": [${simpleMatches.join(', ')}]}`
+      }
+    }
+
+    return `{"variants": [${variants.join(', ')}]}`
+  }
+
+  // If regex extraction failed, try a different approach: find balanced braces
+  const extractedVariants: string[] = []
+  let depth = 0
+  let start = -1
+  let inVariant = false
+
+  for (let i = 0; i < json.length; i++) {
+    const char = json[i]
+
+    if (char === '{') {
+      if (depth === 1 || (depth === 0 && json.slice(i, i + 50).includes('variantIndex'))) {
+        // Starting a potential variant object
+        if (!inVariant && json.slice(i, i + 100).includes('variantIndex')) {
+          start = i
+          inVariant = true
+        }
+      }
+      depth++
+    } else if (char === '}') {
+      depth--
+      if (inVariant && depth <= 1 && start !== -1) {
+        // Found end of a variant object
+        const extracted = json.slice(start, i + 1)
+        if (extracted.includes('variantIndex') && extracted.includes('title')) {
+          extractedVariants.push(extracted)
+        }
+        inVariant = false
+        start = -1
+      }
+    }
+  }
+
+  if (extractedVariants.length >= 1) {
+    console.log(`[generate-variant-plan] Extracted ${extractedVariants.length} variant(s) via brace matching`)
+    return `{"variants": [${extractedVariants.join(', ')}]}`
+  }
+
+  throw new Error('Could not extract any valid variants from response')
+}
+
 // Parse and validate JSON response
 function parseVariantPlans(response: string): VariantPlan[] {
   // Clean response
@@ -304,14 +376,24 @@ function parseVariantPlans(response: string): VariantPlan[] {
         parsed = JSON.parse(aggressiveRepaired)
         console.log('[generate-variant-plan] Aggressive JSON repair successful')
       } catch (thirdError) {
-        // Log the problematic section for debugging
-        const errorMatch = (firstError as Error).message.match(/position (\d+)/)
-        if (errorMatch) {
-          const pos = parseInt(errorMatch[1])
-          const context = cleaned.slice(Math.max(0, pos - 100), pos + 100)
-          console.error('[generate-variant-plan] JSON error near position', pos, ':', context)
+        console.log('[generate-variant-plan] Aggressive repair failed, trying reconstruction...')
+
+        // Final fallback: try to reconstruct from fragments
+        try {
+          const reconstructed = reconstructVariantsJson(cleaned)
+          parsed = JSON.parse(reconstructed)
+          console.log('[generate-variant-plan] JSON reconstruction successful')
+        } catch (fourthError) {
+          // Log the problematic section for debugging
+          const errorMatch = (firstError as Error).message.match(/position (\d+)/)
+          if (errorMatch) {
+            const pos = parseInt(errorMatch[1])
+            const context = cleaned.slice(Math.max(0, pos - 100), pos + 100)
+            console.error('[generate-variant-plan] JSON error near position', pos, ':', context)
+          }
+          console.error('[generate-variant-plan] All repair attempts failed')
+          throw firstError // Throw original error
         }
-        throw firstError // Throw original error
       }
     }
   }
@@ -319,18 +401,41 @@ function parseVariantPlans(response: string): VariantPlan[] {
   // Extract variants array
   const variants = (parsed as { variants?: unknown[] }).variants || parsed
 
-  if (!Array.isArray(variants) || variants.length !== 4) {
-    throw new Error(`Expected 4 variants, got ${Array.isArray(variants) ? variants.length : 'non-array'}`)
+  // Be more lenient - accept 1-4 variants (fill in missing ones if needed)
+  if (!Array.isArray(variants) || variants.length === 0) {
+    throw new Error(`Expected array of variants, got ${typeof variants}`)
   }
 
-  // Validate and normalize each variant
-  return variants.map((v: Record<string, unknown>, i: number) => ({
-    variantIndex: (v.variantIndex as number) || i + 1,
-    title: (v.title as string) || `Variant ${i + 1}`,
-    description: (v.description as string) || '',
-    keyChanges: Array.isArray(v.keyChanges) ? v.keyChanges as string[] : [],
-    styleNotes: (v.styleNotes as string) || '',
-  }))
+  if (variants.length < 4) {
+    console.warn(`[generate-variant-plan] Only got ${variants.length} variants, expected 4. Padding with defaults.`)
+  }
+
+  // Validate and normalize each variant, padding if needed
+  const normalizedVariants: VariantPlan[] = []
+  for (let i = 0; i < 4; i++) {
+    const v = variants[i] as Record<string, unknown> | undefined
+    if (v) {
+      normalizedVariants.push({
+        variantIndex: (v.variantIndex as number) || i + 1,
+        title: (v.title as string) || `Variant ${i + 1}`,
+        description: (v.description as string) || '',
+        keyChanges: Array.isArray(v.keyChanges) ? v.keyChanges as string[] : [],
+        styleNotes: (v.styleNotes as string) || '',
+      })
+    } else {
+      // Pad with default variant
+      const approaches = ['Conservative', 'Modern', 'Bold', 'Alternative']
+      normalizedVariants.push({
+        variantIndex: i + 1,
+        title: `${approaches[i]} Approach`,
+        description: `A ${approaches[i].toLowerCase()} approach to the requested modifications.`,
+        keyChanges: ['Apply requested changes with a ' + approaches[i].toLowerCase() + ' style'],
+        styleNotes: 'Maintain existing design language',
+      })
+    }
+  }
+
+  return normalizedVariants
 }
 
 // Generate with Anthropic (with optional vision support)
