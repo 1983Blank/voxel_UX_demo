@@ -538,14 +538,17 @@ async function generateFlowsJson(
 ): Promise<GenerateFileResponse> {
   const { implementationScript, variantApproach, provider, model } = request
 
+  // Add null safety for optional fields
+  const guidelines = implementationScript.variantGuidelines || { description: variantApproach, focusAreas: [], avoidAreas: [], tonality: 'professional' }
+
   const userPrompt = `Generate flows JSON for a "${variantApproach}" prototype variant.
 
 IMPLEMENTATION SCRIPT:
 ${JSON.stringify(implementationScript, null, 2)}
 
 Create flows that implement the entry points and match the variant guidelines.
-Focus on: ${implementationScript.variantGuidelines.focusAreas.join(', ')}
-Avoid: ${implementationScript.variantGuidelines.avoidAreas.join(', ')}
+Focus on: ${guidelines.focusAreas?.join(', ') || 'user experience'}
+Avoid: ${guidelines.avoidAreas?.join(', ') || 'complexity'}
 
 Return ONLY the JSON object with "flows" array.`
 
@@ -603,13 +606,16 @@ async function generateComponent(
     throw new Error('componentName is required for component generation')
   }
 
+  // Add null safety for optional fields
+  const guidelines = implementationScript.variantGuidelines || { description: variantApproach, focusAreas: [], avoidAreas: [], tonality: 'professional' }
+
   const userPrompt = `Generate a "${componentName}" Web Component for a "${variantApproach}" prototype.
 
 VARIANT GUIDELINES:
-${implementationScript.variantGuidelines.description}
-Focus on: ${implementationScript.variantGuidelines.focusAreas.join(', ')}
-Avoid: ${implementationScript.variantGuidelines.avoidAreas.join(', ')}
-Tone: ${implementationScript.variantGuidelines.tonality}
+${guidelines.description || variantApproach}
+Focus on: ${guidelines.focusAreas?.join(', ') || 'user experience'}
+Avoid: ${guidelines.avoidAreas?.join(', ') || 'complexity'}
+Tone: ${guidelines.tonality || 'professional'}
 
 STATE SCHEMA:
 ${JSON.stringify(implementationScript.stateSchema, null, 2)}
@@ -691,17 +697,22 @@ async function generateIndexHtml(
   // For index.html, we want to include MORE of the source HTML to preserve the design
   const sourceHtmlForPrompt = sourceHtml ? sourceHtml.slice(0, 50000) : ''
 
+  // Add null safety for optional fields
+  const guidelines = implementationScript.variantGuidelines || { description: variantApproach, focusAreas: [], avoidAreas: [], tonality: 'professional' }
+  const entryPoints = implementationScript.entryPoints || []
+  const flows = implementationScript.flows || []
+
   const userPrompt = `Enhance this existing UI with "${variantApproach}" interactive behavior.
 
 VARIANT APPROACH: ${variantApproach}
-- ${implementationScript.variantGuidelines.description}
-- Focus: ${implementationScript.variantGuidelines.focusAreas.join(', ')}
+- ${guidelines.description}
+- Focus: ${guidelines.focusAreas?.join(', ') || 'user experience'}
 
 INTERACTIVE ENTRY POINTS TO ADD:
-${implementationScript.entryPoints.map(ep => `- ${ep.selector}: ${ep.action} → triggers ${ep.triggersFlow || ep.triggersState || 'state change'}`).join('\n')}
+${entryPoints.map(ep => `- ${ep.selector}: ${ep.action} → triggers ${ep.triggersFlow || ep.triggersState || 'state change'}`).join('\n') || '- Add interactive elements as needed'}
 
 FLOWS TO IMPLEMENT:
-${implementationScript.flows.map(f => `- ${f.name}: ${f.description || 'implements the interaction'}`).join('\n')}
+${flows.map(f => `- ${f.name}: ${f.description || 'implements the interaction'}`).join('\n') || '- Implement flows as needed'}
 
 INITIAL STATE:
 ${JSON.stringify(implementationScript.initialState, null, 2)}
