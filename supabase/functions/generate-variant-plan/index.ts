@@ -104,6 +104,42 @@ function buildPlanPrompt(request: GeneratePlanRequest): string {
   return prompt
 }
 
+// Attempt to repair common JSON issues
+function repairJson(json: string): string {
+  let repaired = json
+
+  // Remove trailing commas before } or ]
+  repaired = repaired.replace(/,(\s*[}\]])/g, '$1')
+
+  // Fix unescaped newlines in strings (common LLM issue)
+  // This is tricky - we need to be inside a string
+  repaired = repaired.replace(/:\s*"([^"]*)\n([^"]*)"/g, (match, before, after) => {
+    return `: "${before}\\n${after}"`
+  })
+
+  // Fix unescaped quotes inside strings (very common)
+  // Look for patterns like "text "quoted" text"
+  repaired = repaired.replace(/"([^"]*)"([^",:}\]]+)"([^"]*)"/g, '"$1\\"$2\\"$3"')
+
+  // Remove any control characters except \n, \r, \t
+  repaired = repaired.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '')
+
+  return repaired
+}
+
+// Try to extract JSON object from text that might have extra content
+function extractJsonObject(text: string): string {
+  // Find the first { and last }
+  const firstBrace = text.indexOf('{')
+  const lastBrace = text.lastIndexOf('}')
+
+  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+    return text.slice(firstBrace, lastBrace + 1)
+  }
+
+  return text
+}
+
 // Parse and validate JSON response
 function parseVariantPlans(response: string): VariantPlan[] {
   // Clean response
@@ -120,23 +156,47 @@ function parseVariantPlans(response: string): VariantPlan[] {
   }
   cleaned = cleaned.trim()
 
-  // Parse JSON
-  const parsed = JSON.parse(cleaned)
+  // Try to extract JSON if there's extra text
+  cleaned = extractJsonObject(cleaned)
+
+  // Attempt to parse, with repair fallback
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(cleaned)
+  } catch (firstError) {
+    console.log('[generate-variant-plan] First JSON parse failed, attempting repair...')
+
+    // Try to repair and parse again
+    const repaired = repairJson(cleaned)
+    try {
+      parsed = JSON.parse(repaired)
+      console.log('[generate-variant-plan] JSON repair successful')
+    } catch (secondError) {
+      // Log the problematic section for debugging
+      const errorMatch = (firstError as Error).message.match(/position (\d+)/)
+      if (errorMatch) {
+        const pos = parseInt(errorMatch[1])
+        const context = cleaned.slice(Math.max(0, pos - 50), pos + 50)
+        console.error('[generate-variant-plan] JSON error near:', context)
+      }
+      throw firstError // Throw original error
+    }
+  }
 
   // Extract variants array
-  const variants = parsed.variants || parsed
+  const variants = (parsed as { variants?: unknown[] }).variants || parsed
 
   if (!Array.isArray(variants) || variants.length !== 4) {
     throw new Error(`Expected 4 variants, got ${Array.isArray(variants) ? variants.length : 'non-array'}`)
   }
 
   // Validate and normalize each variant
-  return variants.map((v, i) => ({
-    variantIndex: v.variantIndex || i + 1,
-    title: v.title || `Variant ${i + 1}`,
-    description: v.description || '',
-    keyChanges: Array.isArray(v.keyChanges) ? v.keyChanges : [],
-    styleNotes: v.styleNotes || '',
+  return variants.map((v: Record<string, unknown>, i: number) => ({
+    variantIndex: (v.variantIndex as number) || i + 1,
+    title: (v.title as string) || `Variant ${i + 1}`,
+    description: (v.description as string) || '',
+    keyChanges: Array.isArray(v.keyChanges) ? v.keyChanges as string[] : [],
+    styleNotes: (v.styleNotes as string) || '',
   }))
 }
 
