@@ -3347,6 +3347,9 @@ export const VibePrototyping: React.FC = () => {
                   const variantAgentProgress = agentProgress.find(ap => ap.variantIndex === variantIndex);
                   const agentSteps = variantAgentProgress?.steps;
 
+                  // Check completion: database status OR completedVariantIndices (for interactive mode during generation)
+                  const isVariantComplete = variant?.status === 'complete' || completedVariantIndices.has(variantIndex);
+
                   return (
                     <VariantCard
                       key={p.id || idx}
@@ -3360,12 +3363,12 @@ export const VibePrototyping: React.FC = () => {
                       onToggleCheck={() => toggleVariantSelection(variantIndex)}
                       isBuilding={isThisBuilding}
                       isQueued={isQueued}
-                      isComplete={variant?.status === 'complete'}
+                      isComplete={isVariantComplete}
                       progress={variantProgress}
                       progressMessage={variantAgentProgress?.currentStep || variantProgressMessages[variantIndex]}
                       elapsedTime={elapsedTimes[variantIndex]}
-                      onClick={variant?.status === 'complete' ? () => handleVariantClick(variantIndex) : undefined}
-                      agentSteps={(isThisBuilding || variant?.status === 'complete') ? agentSteps : undefined}
+                      onClick={isVariantComplete ? () => handleVariantClick(variantIndex) : undefined}
+                      agentSteps={(isThisBuilding || isVariantComplete) ? agentSteps : undefined}
                     />
                   );
                 })}
@@ -4337,25 +4340,29 @@ export const VibePrototyping: React.FC = () => {
             <Box sx={{ flex: 1, p: 2, overflow: 'auto', minHeight: 0 }}>
               <Grid container spacing={2} sx={{ height: '100%', minHeight: 0 }}>
                 {['Variant A', 'Variant B', 'Variant C', 'Variant D'].map((label, idx) => {
-                  const variant = variants.find((v) => v.variant_index === idx + 1);
-                  const variantProgress = getVariantProgress(idx + 1);
-                  const variantStreamingHtml = streamingHtml[idx + 1];
-                  const wireframe = wireframes.find(w => w.variantIndex === idx + 1);
+                  const variantIndex = idx + 1;
+                  const variant = variants.find((v) => v.variant_index === variantIndex);
+                  const variantProgress = getVariantProgress(variantIndex);
+                  const variantStreamingHtml = streamingHtml[variantIndex];
+                  const wireframe = wireframes.find(w => w.variantIndex === variantIndex);
+
+                  // Check completion: database status OR completedVariantIndices (for interactive mode during generation)
+                  const isVariantComplete = variant?.status === 'complete' || completedVariantIndices.has(variantIndex);
 
                   // Allow clicking when: variant complete OR wireframe ready with wireframe available
-                  const canClick = variant?.status === 'complete' || (isWireframeReady && wireframe?.wireframeUrl);
+                  const canClick = isVariantComplete || (isWireframeReady && wireframe?.wireframeUrl);
 
                   return (
                     <Grid item xs={6} key={label} sx={{ height: '50%' }}>
                       <CanvasVariantCard
                         label={label}
-                        isLoading={isGenerating && (!variant || variant.status !== 'complete')}
+                        isLoading={isGenerating && !isVariantComplete}
                         htmlUrl={variant?.html_url}
                         wireframeUrl={wireframe?.wireframeUrl}
                         wireframeHtml={wireframe?.wireframeHtml}
                         streamingHtml={variantStreamingHtml}
                         progress={variantProgress}
-                        onClick={canClick ? () => handleVariantClick(idx + 1) : undefined}
+                        onClick={canClick ? () => handleVariantClick(variantIndex) : undefined}
                         viewMode={viewMode}
                         enableInteractivity={interactivityEnabled}
                         useLLMEnhancement={useLLMEnhancement}
