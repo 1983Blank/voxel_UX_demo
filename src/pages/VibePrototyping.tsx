@@ -1459,8 +1459,8 @@ export const VibePrototyping: React.FC = () => {
   const [pagesAnchorEl, setPagesAnchorEl] = useState<null | HTMLElement>(null);
   const [breadcrumbAnchorEl, setBreadcrumbAnchorEl] = useState<null | HTMLElement>(null);
   const [previewSize, setPreviewSize] = useState<PreviewSize>('desktop');
-  const [interactivityEnabled, setInteractivityEnabled] = useState(false); // Enable prototype interactivity
-  const [useLLMEnhancement, setUseLLMEnhancement] = useState(true); // Use LLM for smart interactivity (vs quick/default)
+  const [interactivityEnabled] = useState(false); // Enable prototype interactivity
+  const [useLLMEnhancement] = useState(true); // Use LLM for smart interactivity (vs quick/default)
   const [shouldBuildAfterSkip, setShouldBuildAfterSkip] = useState(false); // Trigger build after skipping wireframes
 
   // Screen name editing
