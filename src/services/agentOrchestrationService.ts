@@ -103,36 +103,93 @@ async function getFreshAccessToken(): Promise<string> {
 
 /**
  * Wrapper to retry a fetch with refreshed token on 401
+ * Also adds timeout handling to prevent hanging requests
  */
 async function fetchWithTokenRetry(
   url: string,
   options: RequestInit,
-  retries = 1
+  retries = 1,
+  timeoutMs = 120000 // 2 minute timeout (edge functions have 60-150s limit)
 ): Promise<Response> {
   const token = await getFreshAccessToken();
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      ...options.headers,
-      'Authorization': `Bearer ${token}`,
-    },
-  });
 
-  // If 401 and we have retries left, force refresh and retry
-  if (response.status === 401 && retries > 0) {
-    console.log('[AgentOrchestration] Got 401, forcing token refresh and retry...');
-    lastTokenRefresh = 0; // Force refresh
-    const newToken = await getFreshAccessToken();
-    return fetch(url, {
+  // Create timeout controller
+  const timeoutController = new AbortController();
+  const timeoutId = setTimeout(() => timeoutController.abort(), timeoutMs);
+
+  // Combine with existing abort signal if present
+  const combinedSignal = options.signal
+    ? anySignal([options.signal, timeoutController.signal])
+    : timeoutController.signal;
+
+  try {
+    const response = await fetch(url, {
       ...options,
+      signal: combinedSignal,
       headers: {
         ...options.headers,
-        'Authorization': `Bearer ${newToken}`,
+        'Authorization': `Bearer ${token}`,
       },
     });
-  }
 
-  return response;
+    clearTimeout(timeoutId);
+
+    // If 401 and we have retries left, force refresh and retry
+    if (response.status === 401 && retries > 0) {
+      console.log('[AgentOrchestration] Got 401, forcing token refresh and retry...');
+      lastTokenRefresh = 0; // Force refresh
+      const newToken = await getFreshAccessToken();
+
+      const retryTimeoutController = new AbortController();
+      const retryTimeoutId = setTimeout(() => retryTimeoutController.abort(), timeoutMs);
+      const retryCombinedSignal = options.signal
+        ? anySignal([options.signal, retryTimeoutController.signal])
+        : retryTimeoutController.signal;
+
+      try {
+        const retryResponse = await fetch(url, {
+          ...options,
+          signal: retryCombinedSignal,
+          headers: {
+            ...options.headers,
+            'Authorization': `Bearer ${newToken}`,
+          },
+        });
+        clearTimeout(retryTimeoutId);
+        return retryResponse;
+      } catch (retryError) {
+        clearTimeout(retryTimeoutId);
+        throw retryError;
+      }
+    }
+
+    return response;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error instanceof Error && error.name === 'AbortError') {
+      // Check if it was our timeout or user cancellation
+      if (options.signal?.aborted) {
+        throw new GenerationAbortedError();
+      }
+      throw new Error(`Request timed out after ${timeoutMs / 1000}s`);
+    }
+    throw error;
+  }
+}
+
+/**
+ * Combine multiple AbortSignals into one
+ */
+function anySignal(signals: AbortSignal[]): AbortSignal {
+  const controller = new AbortController();
+  for (const signal of signals) {
+    if (signal.aborted) {
+      controller.abort();
+      return controller.signal;
+    }
+    signal.addEventListener('abort', () => controller.abort(), { once: true });
+  }
+  return controller.signal;
 }
 
 // ============================================================================
@@ -865,7 +922,11 @@ export async function orchestrateGeneration(
     batches.push(plans.slice(i, i + config.parallelVariants));
   }
 
-  for (const batch of batches) {
+  for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+    const batch = batches[batchIndex];
+    const batchVariants = batch.map(p => p.variant_index).join(', ');
+    console.log(`[AgentOrchestration] 🚀 Starting batch ${batchIndex + 1}/${batches.length} (variants: ${batchVariants})`);
+
     // Update current variant index for each batch
     if (checkpointSession?.id) {
       await updateCurrentVariant(checkpointSession.id, batch[0].variant_index);
@@ -935,6 +996,7 @@ export async function orchestrateGeneration(
     });
 
     await Promise.all(batchPromises);
+    console.log(`[AgentOrchestration] ✅ Batch ${batchIndex + 1}/${batches.length} complete (variants: ${batchVariants})`);
   }
 
   results.totalDuration = Date.now() - startTime;
