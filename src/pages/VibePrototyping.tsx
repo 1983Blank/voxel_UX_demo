@@ -3558,7 +3558,7 @@ export const VibePrototyping: React.FC = () => {
                       progressMessage={variantAgentProgress?.currentStep || variantProgressMessages[variantIndex]}
                       elapsedTime={elapsedTimes[variantIndex]}
                       onClick={variant?.status === 'complete' ? () => handleVariantClick(variantIndex) : undefined}
-                      agentSteps={isThisBuilding ? agentSteps : undefined}
+                      agentSteps={(isThisBuilding || variant?.status === 'complete') ? agentSteps : undefined}
                     />
                   );
                 })}
