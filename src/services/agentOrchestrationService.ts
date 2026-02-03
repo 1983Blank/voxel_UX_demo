@@ -11,40 +11,23 @@
 import { supabase, isSupabaseConfigured } from './supabase';
 import { VirtualFS } from '../runtime/virtual-fs';
 import type { VariantPlan } from './variantPlanService';
-import type { GeneratedFile, VariantApproach, DesignToken } from '../types/implementationScript';
+import type { GeneratedFile, VariantApproach } from '../types/implementationScript';
 import type {
   AgentProgress,
   AgentStepProgress,
-  AgentPhase,
   GenerateScriptResponse,
-  GenerateFileResponse,
   GenerationContext,
   OrchestrationConfig,
   OrchestrationResult,
-  AgentProgressCallback,
   AgentEvents,
   StepDefinition,
-  DEFAULT_ORCHESTRATION_CONFIG,
 } from '../types/agentTypes';
 import { getAllSteps, GENERATION_STEPS } from '../types/agentTypes';
-import { saveCheckpoint, loadCheckpoints, getCheckpoint } from './checkpointService';
+import { saveCheckpoint, loadCheckpoints } from './checkpointService';
 
 // ============================================================================
 // Types
 // ============================================================================
-
-interface VariantGenerationState {
-  variantIndex: number;
-  approach: VariantApproach;
-  plan: VariantPlan;
-  implementationScript?: GenerateScriptResponse;
-  files: GeneratedFile[];
-  steps: StepDefinition[];
-  stepProgress: Map<string, AgentStepProgress>;
-  startedAt: number;
-  completedAt?: number;
-  error?: string;
-}
 
 // Map variant index to approach
 const INDEX_TO_APPROACH: Record<number, VariantApproach> = {
@@ -656,7 +639,6 @@ export async function resumeGeneration(
   const incompleteVariants: VariantPlan[] = [];
 
   for (const plan of plans) {
-    const indexKey = `${plan.variant_index}_index_html`;
     const checkpoint = checkpoints.find(c => c.stepKey === 'index_html' && c.variantIndex === plan.variant_index);
 
     if (checkpoint?.status === 'completed') {

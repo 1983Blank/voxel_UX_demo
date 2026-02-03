@@ -17,7 +17,7 @@ import type {
   Flow,
   EntryPoint,
 } from '../types/implementationScript';
-import type { AgentProgress, AgentStepProgress } from '../types/agentTypes';
+import type { AgentProgress } from '../types/agentTypes';
 
 // ============ Types ============
 

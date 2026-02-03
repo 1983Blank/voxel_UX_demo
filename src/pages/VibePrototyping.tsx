@@ -135,7 +135,6 @@ import {
   generateVariantsFromEdits,
 } from '@/services/variantEditsService';
 import {
-  generateInteractivePrototypes,
   generateInteractivePrototypesWithAgent,
 } from '@/services/interactivePrototypeService';
 import type { AgentProgress } from '@/types/agentTypes';
@@ -1759,7 +1758,6 @@ export const VibePrototyping: React.FC = () => {
 
   // Agent progress for multi-stage generation
   const [agentProgress, setAgentProgress] = useState<AgentProgress[]>([]);
-  const prototypeStoreAgentProgress = usePrototypeStore((state) => state.agentProgress);
   const [variantProgressMessages, setVariantProgressMessages] = useState<Record<number, string>>({});
   const [elapsedTimes, setElapsedTimes] = useState<Record<number, string>>({});
 
@@ -2622,8 +2620,16 @@ export const VibePrototyping: React.FC = () => {
           screen.editedHtml,
           // Basic progress callback (backwards compatibility)
           (p) => {
+            // Map the stage to vibeStore compatible stage
+            const stageMap: Record<string, 'analyzing' | 'generating' | 'complete'> = {
+              'preparing': 'analyzing',
+              'analyzing': 'analyzing',
+              'generating': 'generating',
+              'complete': 'complete',
+              'failed': 'generating',
+            };
             setProgress({
-              stage: p.stage,
+              stage: stageMap[p.stage] || 'generating',
               message: p.message,
               percent: p.percent,
               variantIndex: p.variantIndex,
