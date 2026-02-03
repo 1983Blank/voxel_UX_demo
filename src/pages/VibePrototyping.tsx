@@ -4331,8 +4331,9 @@ export const VibePrototyping: React.FC = () => {
             </Box>
           )}
 
-          {/* Loading/Planning/Wireframing state - 2x2 grid with loading indicators or wireframes */}
-          {(isPlanning || isPlanReady || isWireframing || isWireframeReady) && !focusedVariantIndex && (
+          {/* Loading/Planning/Wireframing/Generating state - 2x2 grid with loading indicators or wireframes */}
+          {/* During generation, users can click completed variants to preview them */}
+          {(isPlanning || isPlanReady || isWireframing || isWireframeReady || isGenerating) && !focusedVariantIndex && (
             <Box sx={{ flex: 1, p: 2, overflow: 'auto', minHeight: 0 }}>
               <Grid container spacing={2} sx={{ height: '100%', minHeight: 0 }}>
                 {['Variant A', 'Variant B', 'Variant C', 'Variant D'].map((label, idx) => {
@@ -4363,73 +4364,6 @@ export const VibePrototyping: React.FC = () => {
                   );
                 })}
               </Grid>
-            </Box>
-          )}
-
-          {/* Generating state - show original screen with progress overlay (variant cards in chat panel show progress) */}
-          {isGenerating && !focusedVariantIndex && screen?.editedHtml && (
-            <Box sx={{ flex: 1, p: 2, overflow: 'hidden', position: 'relative' }}>
-              <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-                {/* Header with progress info */}
-                <Box sx={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  px: 2,
-                  py: 1.5,
-                  borderBottom: '1px solid',
-                  borderColor: 'divider',
-                  bgcolor: 'grey.50'
-                }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <CircularProgress size={16} />
-                    <Typography variant="subtitle2" fontWeight={600}>
-                      Building Prototypes
-                    </Typography>
-                  </Box>
-                  <Typography variant="caption" color="text.secondary">
-                    {completedVariantIndices.size}/{selectedVariants.length} variants complete
-                  </Typography>
-                </Box>
-                {/* Original screen preview */}
-                <Box sx={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
-                  <iframe
-                    srcDoc={relaxCsp(screen.editedHtml)}
-                    title="Original Screen"
-                    style={{
-                      width: '100%',
-                      height: '100%',
-                      border: 'none',
-                      opacity: 0.5,
-                    }}
-                  />
-                  {/* Progress overlay */}
-                  <Box
-                    sx={{
-                      position: 'absolute',
-                      inset: 0,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      bgcolor: 'rgba(255,255,255,0.7)',
-                      backdropFilter: 'blur(2px)',
-                    }}
-                  >
-                    <Box sx={{ textAlign: 'center' }}>
-                      <CircularProgress size={48} sx={{ mb: 2 }} />
-                      <Typography variant="body1" fontWeight={600} sx={{ mb: 0.5 }}>
-                        Generating Interactive Prototypes
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                        {progress?.message || 'Building variants...'}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        Click a completed variant card on the left to preview it
-                      </Typography>
-                    </Box>
-                  </Box>
-                </Box>
-              </Card>
             </Box>
           )}
 
