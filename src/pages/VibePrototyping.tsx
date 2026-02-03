@@ -5276,6 +5276,7 @@ export const VibePrototyping: React.FC = () => {
             onClick={async () => {
               if (recoveredCheckpoint && plan?.plans) {
                 setShowRecoveryDialog(false);
+
                 // Rebuild progress from checkpoint
                 const agentProgressFromCheckpoint = buildAgentProgressFromCheckpoint(
                   recoveredCheckpoint.variants,
@@ -5305,7 +5306,21 @@ export const VibePrototyping: React.FC = () => {
                   .map(v => v.variant_index);
                 setCompletedVariantIndices(new Set(completedIndices));
 
-                showSuccess('Progress recovered! You can continue or restart generation.');
+                // Check if there are incomplete variants that need to be regenerated
+                const incompleteVariants = recoveredCheckpoint.variants.filter(v => v.phase !== 'complete');
+                if (incompleteVariants.length > 0) {
+                  showSuccess(`Recovered ${completedIndices.length} complete variants. Resuming generation for ${incompleteVariants.length} remaining...`);
+
+                  // Set status to wireframe_ready and trigger rebuild via the effect
+                  setStatus('wireframe_ready');
+                  // Small delay to ensure status is set before triggering
+                  setTimeout(() => {
+                    setShouldBuildAfterSkip(true);
+                  }, 100);
+                } else {
+                  showSuccess('All variants recovered successfully!');
+                  setStatus('complete');
+                }
               }
               setRecoveredCheckpoint(null);
             }}
