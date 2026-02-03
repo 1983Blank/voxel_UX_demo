@@ -1774,8 +1774,16 @@ export const VibePrototyping: React.FC = () => {
               console.warn(`[VibePrototyping] Invalid screenshot from ${source}: too small or empty`);
               return false;
             }
+            // Strip data URL prefix if present (e.g., "data:image/png;base64,")
+            let cleanBase64 = base64;
+            if (base64.startsWith('data:')) {
+              const commaIndex = base64.indexOf(',');
+              if (commaIndex !== -1) {
+                cleanBase64 = base64.slice(commaIndex + 1);
+              }
+            }
             // Basic validation: check for valid base64 characters
-            const sample = base64.slice(0, 100) + base64.slice(-100);
+            const sample = cleanBase64.slice(0, 100) + cleanBase64.slice(-100);
             if (!/^[A-Za-z0-9+/=]+$/.test(sample.replace(/\s/g, ''))) {
               console.warn(`[VibePrototyping] Invalid screenshot from ${source}: invalid base64 characters`);
               return false;

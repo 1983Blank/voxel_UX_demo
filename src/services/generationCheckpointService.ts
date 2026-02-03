@@ -85,11 +85,18 @@ export async function createCheckpointSession(
   }
 
   // First, mark any existing running sessions for this vibe session as failed
-  await supabase
+  const { error: updateError } = await supabase
     .from('generation_sessions')
     .update({ status: 'failed', error_message: 'Superseded by new generation' })
     .eq('vibe_session_id', vibeSessionId)
     .in('status', ['pending', 'running', 'paused']);
+
+  // If table doesn't exist, silently skip checkpoint creation (server orchestration not enabled)
+  if (updateError?.code === '42P01' || updateError?.message?.includes('does not exist') ||
+      updateError?.message?.includes('406')) {
+    console.log('[Checkpoint] Skipping - generation_sessions table not available');
+    return null;
+  }
 
   // Create new session
   const { data: session, error: sessionError } = await supabase
@@ -110,6 +117,11 @@ export async function createCheckpointSession(
     .single();
 
   if (sessionError || !session) {
+    // Silently handle table not found errors
+    if (sessionError?.code === '42P01' || sessionError?.message?.includes('does not exist') ||
+        sessionError?.message?.includes('406')) {
+      return null;
+    }
     console.error('[Checkpoint] Failed to create session:', sessionError);
     return null;
   }
@@ -151,6 +163,11 @@ export async function getActiveCheckpoint(
     .single();
 
   if (sessionError || !session) {
+    // Silently handle 406/table not found errors (server orchestration not enabled)
+    if (sessionError?.code === 'PGRST116' || sessionError?.message?.includes('406') ||
+        sessionError?.code === '42P01' || sessionError?.message?.includes('does not exist')) {
+      return null;
+    }
     return null;
   }
 
