@@ -251,21 +251,27 @@ export { ComponentName };
 
 IMPORTANT:
 - Use Shadow DOM for encapsulation
-- Use CSS custom properties (var(--color-primary), etc.)
+- Use CSS custom properties from the design tokens (var(--color-primary), var(--spacing-md), etc.)
+- CRITICAL: Style the component to match the original UI design - use the same colors, fonts, spacing, borders, shadows
 - Support state-path, set-state, set-to attributes
 - Call super.connectedCallback() and super methods
 - Export the component class
+- Make the component look polished and production-ready, not like a basic wireframe
 
 Return ONLY the JavaScript code, no markdown code blocks.`
 
 const INDEX_SYSTEM_PROMPT = `You are a UX engineer creating the entry HTML for an interactive prototype.
 
+CRITICAL: You must PRESERVE the original UI's visual design, layout, styling, and user experience. Your prototype should look and feel like an enhanced version of the original, not a completely different design.
+
 Create an index.html that:
 1. Imports the VxRuntime
 2. Imports all generated components
 3. Loads design tokens CSS
-4. Creates the UI structure using Voxel components
+4. Creates the UI structure using Voxel components - MATCHING THE ORIGINAL DESIGN
 5. Initializes the runtime with initial state
+6. Uses the same colors, fonts, spacing, and layout patterns as the source HTML
+7. Preserves the original content structure and visual hierarchy
 
 TEMPLATE:
 \`\`\`html
@@ -549,8 +555,8 @@ Tone: ${implementationScript.variantGuidelines.tonality}
 STATE SCHEMA:
 ${JSON.stringify(implementationScript.stateSchema, null, 2)}
 
-AVAILABLE DESIGN TOKENS:
-${designTokens.slice(0, 10).map(t => `${t.cssVariable}: ${t.value}`).join('\n')}
+AVAILABLE DESIGN TOKENS (use these to match the original design):
+${designTokens.slice(0, 50).map(t => `${t.cssVariable}: ${t.value}`).join('\n')}
 
 ${previousFiles?.length ? `PREVIOUSLY GENERATED FILES:\n${previousFiles.map(f => `- ${f.path}: ${f.summary || f.exports?.join(', ') || 'no info'}`).join('\n')}` : ''}
 
@@ -630,7 +636,7 @@ ${implementationScript.componentsNeeded.join(', ')}
 GENERATED COMPONENTS:
 ${previousFilesContext}
 
-${sourceHtml ? `SOURCE HTML REFERENCE (adapt this structure):\n${sourceHtml.slice(0, 5000)}` : ''}
+${sourceHtml ? `SOURCE HTML REFERENCE - CRITICAL: Preserve the original design, styling, layout, and visual appearance. Adapt this structure while keeping its look and feel:\n${sourceHtml.slice(0, 25000)}` : ''}
 
 Create a complete, interactive HTML prototype.
 Use vx-* components with state-path bindings.

@@ -91,14 +91,14 @@ function buildPlanPrompt(request: GeneratePlanRequest): string {
   }
 
   if (request.productContext) {
-    prompt += `Product Context:\n${request.productContext.slice(0, 2000)}\n\n`
+    prompt += `Product Context (important for understanding the product and UX patterns):\n${request.productContext.slice(0, 8000)}\n\n`
   }
 
   if (request.uxGuidelines) {
-    prompt += `${request.uxGuidelines.slice(0, 3000)}\n\n`
+    prompt += `UX Guidelines (follow these patterns):\n${request.uxGuidelines.slice(0, 5000)}\n\n`
   }
 
-  prompt += `Source HTML (compacted):\n${request.compactedHtml.slice(0, 15000)}\n\n`
+  prompt += `Source HTML (CRITICAL - preserve this design's visual style, colors, fonts, and layout):\n${request.compactedHtml.slice(0, 30000)}\n\n`
   prompt += `Generate 4 variant concepts as a JSON object with a "variants" array. Return ONLY the JSON, no other text.`
 
   return prompt

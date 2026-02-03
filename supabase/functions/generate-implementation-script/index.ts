@@ -177,12 +177,14 @@ const AVAILABLE_COMPONENTS = [
 
 const SYSTEM_PROMPT = `You are an expert UX engineer designing interactive prototype behavior.
 
+CRITICAL: You are enhancing an EXISTING UI design, not creating from scratch. The prototype must preserve the original design's visual appearance, colors, typography, spacing, and overall look and feel.
+
 Your task is to analyze a variant plan and create a structured implementation script that defines:
 1. State schema - all state variables needed for the prototype
 2. Initial state values
 3. Entry points - where user interaction begins
 4. Flows - sequences of state changes for each interaction
-5. Components needed - which Voxel components to use
+5. Components needed - which Voxel components to use (include ALL components necessary for a complete, functional prototype)
 6. Success criteria - what indicates successful completion
 
 AVAILABLE VOXEL COMPONENTS:
@@ -267,15 +269,15 @@ function buildPrompt(request: GenerateScriptRequest): string {
   }
 
   if (request.designTokens.length > 0) {
-    prompt += `DESIGN TOKENS AVAILABLE:\n`
-    request.designTokens.slice(0, 15).forEach(token => {
+    prompt += `DESIGN TOKENS AVAILABLE (use these to match the original design):\n`
+    request.designTokens.slice(0, 50).forEach(token => {
       prompt += `${token.cssVariable}: ${token.value}\n`
     })
     prompt += '\n'
   }
 
   if (request.productContext) {
-    prompt += `PRODUCT CONTEXT:\n${request.productContext.slice(0, 1000)}\n\n`
+    prompt += `PRODUCT CONTEXT (important for understanding how UI/UX should work):\n${request.productContext.slice(0, 5000)}\n\n`
   }
 
   prompt += `Generate an implementation script JSON with this structure:
@@ -325,13 +327,13 @@ function buildPrompt(request: GenerateScriptRequest): string {
 }
 
 IMPORTANT:
-- Include 2-5 entry points based on the key interactions
-- Create flows for each major user action
-- Use ONLY 2-4 components maximum - pick the most essential ones for this specific interaction
+- Include entry points based on the key interactions needed
+- Create flows for each major user action the prototype should support
+- Include ALL components necessary for a complete, functional prototype that matches the original design
 - Match the variant approach in complexity and style
 - State paths should use dot notation (e.g., "ui.loading", "form.email")
 - Keep flows focused and not too long (3-8 steps each)
-- CRITICAL: Do NOT include every possible component. Only include components that are directly needed for the main interaction.
+- Include components for: forms, modals, buttons, lists, cards, navigation, toasts, etc. as needed by the prototype
 
 Return ONLY the JSON object, no markdown code blocks.`
 
