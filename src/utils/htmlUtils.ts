@@ -17,59 +17,35 @@ const SUPABASE_STORAGE_DOMAIN = 'https://*.supabase.co';
 export function relaxCsp(html: string): string {
   if (!html) return html;
 
+  // Permissive CSP that allows inline styles, scripts, and external resources
+  const permissiveCsp = `<meta http-equiv="Content-Security-Policy" content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; img-src * data: blob: ${SUPABASE_STORAGE_DOMAIN}; style-src * 'unsafe-inline'; script-src * 'unsafe-inline' 'unsafe-eval'; connect-src *; font-src * data:;">`;
+
   // Pattern to match CSP meta tags
   const cspMetaPattern = /<meta\s+http-equiv=["']Content-Security-Policy["'][^>]*>/gi;
 
   // Check if there's a CSP meta tag
   const hasCsp = cspMetaPattern.test(html);
 
-  if (!hasCsp) {
-    return html;
+  if (hasCsp) {
+    // Reset regex
+    cspMetaPattern.lastIndex = 0;
+    // Replace existing CSP with permissive one
+    return html.replace(cspMetaPattern, permissiveCsp);
   }
 
-  // Reset regex
-  cspMetaPattern.lastIndex = 0;
-
-  // Replace CSP meta tags with a more permissive version
-  return html.replace(cspMetaPattern, (match) => {
-    // Extract the content attribute
-    const contentMatch = match.match(/content=["']([^"']*)["']/i);
-    if (!contentMatch) {
-      // If no content, just remove the tag
-      return '';
-    }
-
-    let cspContent = contentMatch[1];
-
-    // Modify img-src to allow Supabase storage
-    if (cspContent.includes('img-src')) {
-      cspContent = cspContent.replace(
-        /img-src\s+([^;]*)/i,
-        `img-src $1 ${SUPABASE_STORAGE_DOMAIN} https://*.supabase.co`
-      );
-    } else {
-      // Add img-src directive if not present
-      cspContent += `; img-src 'self' data: blob: ${SUPABASE_STORAGE_DOMAIN}`;
-    }
-
-    // Modify connect-src to allow Supabase
-    if (cspContent.includes('connect-src')) {
-      cspContent = cspContent.replace(
-        /connect-src\s+([^;]*)/i,
-        `connect-src $1 ${SUPABASE_STORAGE_DOMAIN}`
-      );
-    }
-
-    // Modify default-src if it's too restrictive
-    if (cspContent.includes("default-src 'none'") || cspContent.includes("default-src 'self'")) {
-      cspContent = cspContent.replace(
-        /default-src\s+'(none|self)'/i,
-        `default-src 'self' ${SUPABASE_STORAGE_DOMAIN}`
-      );
-    }
-
-    return `<meta http-equiv="Content-Security-Policy" content="${cspContent}">`;
-  });
+  // No existing CSP - add permissive CSP to head
+  // This is crucial for srcdoc iframes which have default CSP restrictions
+  if (html.includes('<head>')) {
+    return html.replace('<head>', `<head>\n${permissiveCsp}`);
+  } else if (html.includes('<head ')) {
+    return html.replace(/<head\s[^>]*>/, (match) => `${match}\n${permissiveCsp}`);
+  } else if (html.includes('<html>') || html.includes('<html ')) {
+    // No head tag, add after html
+    return html.replace(/<html[^>]*>/, (match) => `${match}\n<head>${permissiveCsp}</head>`);
+  } else {
+    // No html or head tags, prepend CSP
+    return `${permissiveCsp}\n${html}`;
+  }
 }
 
 /**
