@@ -976,20 +976,11 @@ export function preparePrototypeHtml(
     console.error('[preparePrototypeHtml] First 500 chars:', html.slice(0, 500));
   }
 
-  // CRITICAL: Escape ALL </script patterns in the input HTML first
-  // This is the only reliable way to prevent script tag breakage
-  // We use a unique placeholder that won't appear in normal content
-  const SCRIPT_CLOSE_PLACEHOLDER = '___VOXEL_SCRIPT_CLOSE___';
-
-  // Replace all </script> closing tags with placeholder
-  let processed = html.replace(/<\/script>/gi, SCRIPT_CLOSE_PLACEHOLDER);
-
-  // Now escape any </script that might be in JavaScript strings
-  // This won't affect the placeholders we just added
-  processed = processed.replace(/<\/script/gi, '<\\/script');
-
-  // Restore the actual closing tags
-  processed = processed.replace(new RegExp(SCRIPT_CLOSE_PLACEHOLDER, 'g'), '</script>');
+  // CRITICAL: Escape ALL </script patterns in the LLM-generated HTML
+  // Using <\/script which is valid JS (backslash escapes the slash)
+  // but NOT a valid HTML closing tag
+  // This handles both real closing tags AND those in JS strings
+  let processed = html.replace(/<\/script/gi, '<\\/script');
 
   console.log('[preparePrototypeHtml] After script escaping, length:', processed.length);
 
@@ -997,12 +988,13 @@ export function preparePrototypeHtml(
   processed = sanitizeScriptsInHtml(processed);
   console.log('[preparePrototypeHtml] After sanitize, length:', processed.length);
 
-  // Then inject the runtime bundle
+  // Now inject our scripts which have REAL </script> tags
+  // These are safe because we control their content
   processed = injectVxRuntimeBundle(processed);
   console.log('[preparePrototypeHtml] After runtime injection, length:', processed.length);
   console.log('[preparePrototypeHtml] Has VxRuntime Bundle:', processed.includes('VxRuntime Bundle'));
 
-  // Then inject component scripts
+  // Inject component scripts (also with real </script> tags)
   processed = injectComponentScripts(processed, components);
 
   console.log('[preparePrototypeHtml] Final output length:', processed.length);
