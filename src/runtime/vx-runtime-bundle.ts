@@ -555,6 +555,9 @@ export function generateVxRuntimeBundle(): string {
 /**
  * Ensure HTML has proper structure (html, head, body tags)
  * LLM-generated HTML often lacks this structure
+ *
+ * IMPORTANT: This function does NOT try to extract/parse scripts
+ * because regex cannot reliably parse HTML with scripts containing '</script>' strings
  */
 function ensureProperHtmlStructure(html: string): string {
   const hasHtmlTag = /<html[^>]*>/i.test(html);
@@ -569,34 +572,31 @@ function ensureProperHtmlStructure(html: string): string {
 
   console.log('[VxRuntime] HTML missing structure, wrapping with proper tags');
 
-  // Extract any style and script tags from the content
-  const styleMatches = html.match(/<style[^>]*>[\s\S]*?<\/style>/gi) || [];
-  const scriptMatches = html.match(/<script[^>]*>[\s\S]*?<\/script>/gi) || [];
-
-  // Remove extracted styles and scripts from content to put in proper places
-  let bodyContent = html;
-  for (const style of styleMatches) {
-    bodyContent = bodyContent.replace(style, '');
-  }
-  for (const script of scriptMatches) {
-    bodyContent = bodyContent.replace(script, '');
-  }
-
-  // Build proper HTML structure
+  // Simply wrap the content - don't try to extract/reorganize scripts
+  // as that can break scripts containing '</script>' in strings
   const doctype = hasDoctype ? '' : '<!DOCTYPE html>\n';
-  const styles = styleMatches.join('\n');
-  const scripts = scriptMatches.join('\n');
 
+  // If it has head but no body, or vice versa, handle those cases
+  if (hasHeadTag && !hasBodyTag) {
+    // Has head but no body - add body wrapper
+    return html.replace(/<\/head>/i, '</head>\n<body>') + '\n</body></html>';
+  }
+
+  if (hasBodyTag && !hasHeadTag) {
+    // Has body but no head - add head before body
+    return `${doctype}<html lang="en">\n<head>\n  <meta charset="UTF-8">\n  <title>Prototype</title>\n</head>\n${html}\n</html>`;
+  }
+
+  // No head or body - wrap everything in a basic structure
+  // Put everything in body, add empty head for our runtime injection
   return `${doctype}<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Prototype</title>
-  ${styles}
 </head>
 <body>
-${bodyContent.trim()}
-${scripts}
+${html.trim()}
 </body>
 </html>`;
 }
@@ -900,22 +900,15 @@ ${cleanedCode}
 }
 
 /**
- * Sanitize JavaScript within HTML script tags
- * Finds all script tags and sanitizes their content for LLM artifacts
+ * Sanitize JavaScript for LLM artifacts (smart quotes, etc.)
+ * Note: We no longer try to parse script tags with regex as it breaks
+ * on scripts containing '</script>' in strings. The placeholder
+ * approach in preparePrototypeHtml handles that case.
  */
 function sanitizeScriptsInHtml(html: string): string {
-  // Find and sanitize all inline script contents
-  return html.replace(/<script([^>]*)>([\s\S]*?)<\/script>/gi, (match, attrs, content) => {
-    // Don't touch scripts with src attribute (external scripts)
-    if (attrs.includes('src=')) {
-      return match;
-    }
-    // Sanitize the script content for LLM artifacts
-    let sanitizedContent = sanitizeLLMCode(content);
-    // CRITICAL: Escape </script> in the content to prevent breaking HTML
-    sanitizedContent = escapeScriptTags(sanitizedContent);
-    return `<script${attrs}>${sanitizedContent}</script>`;
-  });
+  // Just sanitize LLM artifacts in the entire content
+  // The placeholder approach already handles </script> escaping
+  return sanitizeLLMCode(html);
 }
 
 /**
