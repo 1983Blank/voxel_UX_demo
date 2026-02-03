@@ -235,26 +235,6 @@ export function InteractiveVariantView({
 
         {/* Center Panel - Preview or Code */}
         <Box sx={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-          {/* Variant Info Header */}
-          {activePlan && (
-            <Box
-              sx={{
-                px: 2,
-                py: 1,
-                borderBottom: 1,
-                borderColor: 'divider',
-                bgcolor: (theme) => alpha(theme.palette.background.default, 0.5),
-              }}
-            >
-              <Typography variant="subtitle2" fontWeight={600}>
-                {activePlan.title}
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                {activePlan.description}
-              </Typography>
-            </Box>
-          )}
-
           {/* Content */}
           <Box sx={{ flex: 1, overflow: 'hidden' }}>
             {mainView === 'preview' && virtualFS && (
