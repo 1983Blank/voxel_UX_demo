@@ -44,11 +44,12 @@ BEGIN
 
   -- Determine which variant to show
   IF v_share.share_type = 'random' THEN
-    -- Select a random variant from those marked as selected
-    SELECT vv.variant_index INTO v_selected_variant
-    FROM vibe_variants vv
-    WHERE vv.session_id = v_share.session_id
-      AND vv.is_selected = true
+    -- Select a random variant from those marked as selected (is_selected is on vibe_variant_plans)
+    SELECT vp.variant_index INTO v_selected_variant
+    FROM vibe_variant_plans vp
+    JOIN vibe_variants vv ON vv.session_id = vp.session_id AND vv.variant_index = vp.variant_index
+    WHERE vp.session_id = v_share.session_id
+      AND vp.is_selected = true
       AND vv.status = 'complete'
     ORDER BY RANDOM()
     LIMIT 1;
