@@ -890,7 +890,7 @@ export function shouldUseInteractiveMode(): boolean {
  * Feature flag for server-side orchestration
  * When enabled, generation runs on the server and survives page refresh
  */
-export const USE_SERVER_ORCHESTRATION = false;
+export const USE_SERVER_ORCHESTRATION = true;
 
 /**
  * Check if server orchestration should be used
