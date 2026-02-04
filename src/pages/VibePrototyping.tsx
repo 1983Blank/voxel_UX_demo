@@ -3243,8 +3243,7 @@ export const VibePrototyping: React.FC = () => {
 
       // Build product context from context files
       const productContext: ProductContextForIteration = {
-        productName: sourceMetadata?.title || screen?.title,
-        productDescription: sourceMetadata?.description,
+        productName: screen?.name,
         goals: contextFiles
           .filter(f => f.category === 'goals')
           .map(f => f.title),
@@ -3259,7 +3258,7 @@ export const VibePrototyping: React.FC = () => {
         title: currentPlan.title,
         description: currentPlan.description,
         approach: getVibeVariantLabel(focusedVariantIndex),
-        keyFeatures: currentPlan.key_features,
+        keyFeatures: currentPlan.key_changes,
       } : undefined;
 
       const result = await iterateOnVariant(
