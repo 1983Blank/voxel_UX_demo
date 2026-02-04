@@ -63,7 +63,90 @@ export function removeCsp(html: string): string {
 }
 
 /**
+ * Escape </script> patterns inside script tag content.
+ * The browser's HTML parser sees ANY </script> and closes the script tag,
+ * even if it's inside a JavaScript string literal.
+ *
+ * CRITICAL: This function must use DOMParser to properly identify script boundaries.
+ * Regex-based approaches fail when scripts contain </script> in string literals.
+ */
+export function escapeScriptClosingTags(html: string): string {
+  if (!html) return html;
+
+  try {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+
+    let escapedCount = 0;
+    const scripts = doc.querySelectorAll('script');
+
+    scripts.forEach(script => {
+      const content = script.textContent || '';
+      // Check for </script patterns (case insensitive)
+      const matches = content.match(/<\/script/gi);
+      if (matches && matches.length > 0) {
+        // Escape by adding backslash: </script becomes <\/script
+        // This is valid JavaScript and prevents HTML parser confusion
+        const escapedContent = content.replace(/<\/script/gi, '<\\/script');
+        script.textContent = escapedContent;
+        escapedCount += matches.length;
+      }
+    });
+
+    if (escapedCount > 0) {
+      console.log(`[htmlUtils] Escaped ${escapedCount} </script pattern(s) in script content`);
+    }
+
+    // Serialize back to HTML
+    return '<!DOCTYPE html>\n' + doc.documentElement.outerHTML;
+  } catch (error) {
+    console.warn('[htmlUtils] Failed to escape script tags, returning original:', error);
+    return html;
+  }
+}
+
+/**
+ * Validate and diagnose HTML script tag issues.
+ * Returns diagnostic info without modifying the HTML.
+ */
+export function diagnoseHtmlScripts(html: string): {
+  scriptCount: number;
+  openTags: number;
+  closeTags: number;
+  balanced: boolean;
+  hasVxRuntime: boolean;
+  firstScriptPreview: string;
+} {
+  const openTags = (html.match(/<script[^>]*>/gi) || []).length;
+  const closeTags = (html.match(/<\/script>/gi) || []).length;
+
+  // Find first script content for preview
+  let firstScriptPreview = '';
+  try {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    const firstScript = doc.querySelector('script');
+    if (firstScript) {
+      const content = firstScript.textContent || '';
+      firstScriptPreview = content.slice(0, 200) + (content.length > 200 ? '...' : '');
+    }
+  } catch {
+    firstScriptPreview = 'Failed to parse';
+  }
+
+  return {
+    scriptCount: openTags,
+    openTags,
+    closeTags,
+    balanced: openTags === closeTags,
+    hasVxRuntime: html.includes('VxRuntime Bundle') || html.includes('__VX_RUNTIME'),
+    firstScriptPreview,
+  };
+}
+
+/**
  * Prepares HTML for safe display in an iframe with srcDoc.
+ * - Escapes </script> patterns inside script content
  * - Relaxes CSP to allow Supabase storage
  * - Ensures proper base tag handling
  *
@@ -73,10 +156,30 @@ export function removeCsp(html: string): string {
 export function prepareHtmlForIframe(html: string): string {
   if (!html) return html;
 
+  // Diagnostic logging
+  const beforeDiag = diagnoseHtmlScripts(html);
+  console.log('[htmlUtils:prepareHtmlForIframe] Input diagnostics:', beforeDiag);
+
   let processed = html;
+
+  // CRITICAL: Escape any </script> patterns inside script content
+  // This prevents the browser from prematurely closing script tags
+  processed = escapeScriptClosingTags(processed);
 
   // Relax CSP to allow Supabase resources
   processed = relaxCsp(processed);
+
+  // Diagnostic logging after processing
+  const afterDiag = diagnoseHtmlScripts(processed);
+  console.log('[htmlUtils:prepareHtmlForIframe] Output diagnostics:', afterDiag);
+
+  // Warn if there are issues
+  if (!afterDiag.balanced) {
+    console.error('[htmlUtils:prepareHtmlForIframe] WARNING: Script tags not balanced!', afterDiag);
+  }
+  if (!afterDiag.hasVxRuntime && html.includes('VxRuntime')) {
+    console.error('[htmlUtils:prepareHtmlForIframe] WARNING: VxRuntime may have been corrupted!');
+  }
 
   return processed;
 }

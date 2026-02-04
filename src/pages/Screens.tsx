@@ -43,7 +43,7 @@ import { useScreensStore } from '@/store/screensStore';
 import { useAuthStore } from '@/store/authStore';
 import { useThemeStore } from '@/store/themeStore';
 import type { CapturedScreen } from '@/types';
-import { relaxCsp } from '@/utils/htmlUtils';
+import { prepareHtmlForIframe } from '@/utils/htmlUtils';
 
 export function Screens() {
   const navigate = useNavigate();
@@ -471,7 +471,7 @@ export function Screens() {
               >
                 {screen.editedHtml || screen.filePath ? (
                   <iframe
-                    srcDoc={screen.editedHtml ? relaxCsp(screen.editedHtml) : undefined}
+                    srcDoc={screen.editedHtml ? prepareHtmlForIframe(screen.editedHtml) : undefined}
                     src={!screen.editedHtml && screen.filePath ? screen.filePath : undefined}
                     style={{
                       width: '400%',

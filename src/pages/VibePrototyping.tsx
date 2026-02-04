@@ -173,7 +173,7 @@ import WYSIWYGEditor from '@/components/WYSIWYGEditor';
 import { InteractiveVariantView } from '@/components/Vibe/InteractiveVariantView';
 import { captureHtmlScreenshot, compressScreenshot } from '@/services/screenshotService';
 import { quickEnhance, enhancePrototype, type EnhanceResult } from '@/services/injectionService';
-import { relaxCsp } from '@/utils/htmlUtils';
+import { prepareHtmlForIframe } from '@/utils/htmlUtils';
 
 // ============== Types ==============
 
@@ -841,7 +841,7 @@ function FetchedHtmlIframe({
     return (
       <Box sx={{ position: 'relative', width: '100%', height: '100%' }}>
         <iframe
-          srcDoc={relaxCsp(enhancedHtml)}
+          srcDoc={prepareHtmlForIframe(enhancedHtml)}
           title={title}
           style={style}
         />
@@ -985,7 +985,7 @@ function CanvasVariantCard({
               }}
             >
               <iframe
-                srcDoc={relaxCsp(streamingHtml!)}
+                srcDoc={prepareHtmlForIframe(streamingHtml!)}
                 title={`${label}${isLoading ? ' (streaming)' : ''}`}
                 style={{
                   width: '200%',
@@ -1319,7 +1319,7 @@ function InlineExpansionGrid({
           <Box sx={{ position: 'relative', width: '100%', height: '100%' }}>
             <iframe
               key={`html-${focusedIndex}-${effectiveHtml.length}`}
-              srcDoc={relaxCsp(effectiveHtml)}
+              srcDoc={prepareHtmlForIframe(effectiveHtml)}
               title={labels[focusedIndex - 1]}
               style={{
                 width: '100%',
@@ -4729,7 +4729,7 @@ export const VibePrototyping: React.FC = () => {
                         }}
                       >
                         <iframe
-                          srcDoc={relaxCsp(screen.editedHtml)}
+                          srcDoc={prepareHtmlForIframe(screen.editedHtml)}
                           title={screen.name || 'Screen Preview'}
                           style={{
                             width: '100%',
@@ -5120,7 +5120,7 @@ export const VibePrototyping: React.FC = () => {
                     (focusedVariant.edited_html || focusedVariant.html_url) ? (
                       <iframe
                         {...(focusedVariant.edited_html
-                          ? { srcDoc: relaxCsp(focusedVariant.edited_html) }
+                          ? { srcDoc: prepareHtmlForIframe(focusedVariant.edited_html) }
                           : { src: focusedVariant.html_url }
                         )}
                         title={`Preview Variant ${focusedVariantIndex}`}
