@@ -1029,14 +1029,25 @@ export function preparePrototypeHtml(
   console.log('[preparePrototypeHtml:DIAG] Input script tag counts:', countScriptTags(html));
   console.log('[preparePrototypeHtml:DIAG] Input first 200 chars:', html.slice(0, 200));
 
-  // CRITICAL: Escape ALL </script patterns in the LLM-generated HTML
-  // Using <\/script which is valid JS (backslash escapes the slash)
-  // but NOT a valid HTML closing tag
-  // This handles both real closing tags AND those in JS strings
-  let processed = html.replace(/<\/script/gi, '<\\/script');
+  // NOTE: We NO LONGER escape </script> in the LLM HTML.
+  // Previous approach (escaping ALL </script) was BREAKING the LLM's own script tags,
+  // leaving them unclosed and causing the runtime bundle to be parsed as part of
+  // an unclosed script, resulting in syntax errors.
+  //
+  // The LLM's script tags need to close properly. If the LLM generates JavaScript
+  // code containing the string "</script>", that's an edge case we handle separately
+  // in the component injection code (escapeForScriptInjection).
+  let processed = html;
 
-  console.log('[preparePrototypeHtml] After script escaping, length:', processed.length);
-  console.log('[preparePrototypeHtml:DIAG] After escape script tag counts:', countScriptTags(processed));
+  console.log('[preparePrototypeHtml] Preserving original script tags (no escaping)');
+  const scriptCounts = countScriptTags(processed);
+  console.log('[preparePrototypeHtml:DIAG] Script tag counts:', scriptCounts);
+
+  // Warn if script tags are unbalanced (potential issue with LLM output)
+  if (scriptCounts.open !== scriptCounts.close) {
+    console.warn('[preparePrototypeHtml] WARNING: Unbalanced script tags!',
+      `Open: ${scriptCounts.open}, Close: ${scriptCounts.close}`);
+  }
 
   // Sanitize LLM code artifacts (smart quotes, etc.)
   processed = sanitizeScriptsInHtml(processed);
