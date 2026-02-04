@@ -170,7 +170,6 @@ import {
 } from '@/services/sharingService';
 import DualModeEditor from '@/components/DualModeEditor';
 import WYSIWYGEditor from '@/components/WYSIWYGEditor';
-import { InteractiveVariantView } from '@/components/Vibe/InteractiveVariantView';
 import { UserFlowDiagram } from '@/components/Vibe/UserFlowDiagram';
 import { captureHtmlScreenshot, compressScreenshot } from '@/services/screenshotService';
 import { quickEnhance, enhancePrototype, type EnhanceResult } from '@/services/injectionService';
@@ -5181,7 +5180,7 @@ export const VibePrototyping: React.FC = () => {
             />
           )}
 
-          {/* Complete state - 2x2 grid with variants (no focus) */}
+          {/* Complete state - Gallery grid with all completed variants (no focus) */}
           {isComplete && !focusedVariantIndex && (
             <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
               {/* Header with mode toggle and Rebuild button */}
@@ -5190,6 +5189,9 @@ export const VibePrototyping: React.FC = () => {
                   All Variants Ready
                 </Typography>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Typography variant="caption" color="text.secondary">
+                    Click a variant to explore
+                  </Typography>
                   <Button
                     variant="outlined"
                     onClick={handleRebuild}
@@ -5202,17 +5204,53 @@ export const VibePrototyping: React.FC = () => {
                 </Box>
               </Box>
 
-              {/* Show InteractiveVariantView */}
-              <Card sx={{ flex: 1, mx: 2, mb: 2, overflow: 'hidden' }}>
-                <InteractiveVariantView
-                  plans={plan?.plans || []}
-                  variants={variants}
-                  selectedVariantIndex={focusedVariantIndex}
-                  onSelectVariant={handleVariantClick}
-                  panelView={panelView}
-                  onPanelViewChange={setPanelView}
-                />
-              </Card>
+              {/* Gallery Grid - shows all completed variants */}
+              <Box sx={{ flex: 1, p: 2, overflow: 'auto', minHeight: 0 }}>
+                <Grid container spacing={2} sx={{ height: '100%', minHeight: 0 }}>
+                  {(plan?.plans || []).map((p, idx) => {
+                    const variantIndex = idx + 1;
+                    const variant = variants.find((v) => v.variant_index === variantIndex);
+                    const wireframe = wireframes.find(w => w.variantIndex === variantIndex);
+
+                    // In single mode, only show the selected variant
+                    if (generationMode === 'single' && variantIndex !== selectedVariantToGenerate) {
+                      return null;
+                    }
+
+                    // Skip if variant not complete
+                    if (variant?.status !== 'complete') {
+                      return null;
+                    }
+
+                    // Calculate grid size based on number of completed variants
+                    const completedCount = variants.filter(v => v.status === 'complete').length;
+                    const isSingleMode = generationMode === 'single' || completedCount === 1;
+
+                    return (
+                      <Grid
+                        item
+                        xs={isSingleMode ? 12 : 6}
+                        key={variantIndex}
+                        sx={{ height: isSingleMode ? '100%' : '50%' }}
+                      >
+                        <CanvasVariantCard
+                          label={p.title || `Variant ${String.fromCharCode(64 + variantIndex)}`}
+                          isLoading={false}
+                          htmlUrl={variant?.html_url}
+                          wireframeUrl={wireframe?.wireframeUrl}
+                          wireframeHtml={wireframe?.wireframeHtml}
+                          progress={100}
+                          onClick={() => handleVariantClick(variantIndex)}
+                          viewMode={viewMode}
+                          enableInteractivity={interactivityEnabled}
+                          useLLMEnhancement={useLLMEnhancement}
+                          isHovered={hoveredVariantIndex === variantIndex}
+                        />
+                      </Grid>
+                    );
+                  })}
+                </Grid>
+              </Box>
             </Box>
           )}
 
