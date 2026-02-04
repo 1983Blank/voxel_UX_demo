@@ -1175,6 +1175,45 @@ function CanvasVariantCard({
   );
 }
 
+// Thumbnail preview that fetches HTML to bypass CSP issues
+function ThumbnailPreview({ url, fallbackHtml, title }: { url?: string; fallbackHtml?: string; title: string }) {
+  const [fetchedHtml, setFetchedHtml] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (url) {
+      fetch(url)
+        .then(res => res.ok ? res.text() : null)
+        .then(html => setFetchedHtml(html))
+        .catch(() => setFetchedHtml(null));
+    } else if (fallbackHtml) {
+      setFetchedHtml(fallbackHtml);
+    }
+  }, [url, fallbackHtml]);
+
+  if (!fetchedHtml) {
+    return (
+      <Box sx={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <CircularProgress size={16} />
+      </Box>
+    );
+  }
+
+  return (
+    <iframe
+      srcDoc={prepareHtmlForIframe(fetchedHtml)}
+      title={title}
+      style={{
+        width: '400%',
+        height: '400%',
+        border: 'none',
+        transform: 'scale(0.25)',
+        transformOrigin: 'top left',
+        pointerEvents: 'none',
+      }}
+    />
+  );
+}
+
 // Inline Expansion Grid - shows focused variant large with thumbnails on side
 function InlineExpansionGrid({
   wireframes,
@@ -1289,14 +1328,11 @@ function InlineExpansionGrid({
   );
   const effectiveHtml = shouldEnhance ? enhancedHtml : rawHtml;
 
-  // Get other variants for sidebar (exclude focused one)
-  const otherVariants = (allVariantIndices || []).filter(idx => idx !== focusedIndex);
-  const showSidebar = otherVariants.length > 0 && onSwitchVariant;
-
+  // Focused view = full screen, no sidebar
   return (
-    <Box sx={{ flex: 1, display: 'flex', gap: 2, p: 2, minHeight: 0 }}>
-      {/* Main content area */}
-      <Box sx={{ flex: showSidebar ? 3 : 1, display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0 }}>
+    <Box sx={{ flex: 1, display: 'flex', p: 2, minHeight: 0 }}>
+      {/* Full screen preview - focused variant takes entire area */}
+      <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0 }}>
         {/* Full screen preview */}
         <Card
           variant="outlined"
@@ -1393,103 +1429,6 @@ function InlineExpansionGrid({
           )}
         </Card>
       </Box>
-
-      {/* Sidebar with other variant thumbnails */}
-      {showSidebar && (
-        <Box sx={{
-          flex: 1,
-          minWidth: 180,
-          maxWidth: 240,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 1.5,
-          overflow: 'auto',
-        }}>
-          <Typography variant="caption" color="text.secondary" sx={{ px: 0.5 }}>
-            Other Variants
-          </Typography>
-          {otherVariants.map((variantIdx) => {
-            const variant = getVariantByIndex(variantIdx);
-            const wireframe = wireframes.find(w => w.variantIndex === variantIdx);
-            const variantPlan = variantPlans?.find(p => p.variant_index === variantIdx);
-            const variantLabel = `Variant ${String.fromCharCode(64 + variantIdx)}`;
-            const hasContent = variant?.html_url || wireframe?.wireframeUrl || wireframe?.wireframeHtml;
-
-            return (
-              <Card
-                key={variantIdx}
-                variant="outlined"
-                onClick={() => onSwitchVariant?.(variantIdx)}
-                sx={{
-                  cursor: 'pointer',
-                  minHeight: 100,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  transition: 'all 0.2s ease',
-                  '&:hover': {
-                    borderColor: config.colors.primary,
-                    boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-                    transform: 'translateY(-2px)',
-                  },
-                }}
-              >
-                {/* Thumbnail preview */}
-                <Box sx={{
-                  flex: 1,
-                  minHeight: 80,
-                  bgcolor: '#fafafa',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  overflow: 'hidden',
-                }}>
-                  {hasContent ? (
-                    <Box sx={{
-                      width: '100%',
-                      height: '100%',
-                      position: 'relative',
-                      overflow: 'hidden',
-                    }}>
-                      <iframe
-                        src={variant?.html_url || wireframe?.wireframeUrl || undefined}
-                        srcDoc={!variant?.html_url && !wireframe?.wireframeUrl && wireframe?.wireframeHtml
-                          ? prepareHtmlForIframe(wireframe.wireframeHtml)
-                          : undefined}
-                        title={variantLabel}
-                        style={{
-                          width: '400%',
-                          height: '400%',
-                          border: 'none',
-                          transform: 'scale(0.25)',
-                          transformOrigin: 'top left',
-                          pointerEvents: 'none',
-                        }}
-                      />
-                    </Box>
-                  ) : (
-                    <Box sx={{ textAlign: 'center', p: 1 }}>
-                      <Typography variant="caption" color="text.secondary" display="block">
-                        {variant?.status === 'generating' ? 'Generating...' : 'Not built yet'}
-                      </Typography>
-                    </Box>
-                  )}
-                </Box>
-                {/* Label */}
-                <Box sx={{ px: 1, py: 0.75, borderTop: 1, borderColor: 'divider' }}>
-                  <Typography variant="caption" fontWeight={600} noWrap>
-                    {variantPlan?.title || variantLabel}
-                  </Typography>
-                  {variantPlan?.title && (
-                    <Typography variant="caption" color="text.secondary" display="block" noWrap>
-                      {variantLabel}
-                    </Typography>
-                  )}
-                </Box>
-              </Card>
-            );
-          })}
-        </Box>
-      )}
     </Box>
   );
 }
