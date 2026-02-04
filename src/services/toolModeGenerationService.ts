@@ -507,15 +507,17 @@ function buildPromptFromPlan(plan: VariantPlan): string {
 
 /**
  * Check if tool mode should be used
- * Returns true if the account has approved components or tokens
+ * Returns true by default - tool mode is the preferred approach because:
+ * 1. LLM outputs modification instructions, not raw HTML/JS
+ * 2. No script escaping issues (</script> in strings)
+ * 3. Cleaner, more predictable output
+ * 4. Uses design system when available
  */
 export function shouldUseToolMode(): boolean {
-  const components = getApprovedComponents();
-  const tokens = getApprovedTokens();
-
-  // Use tool mode if we have any approved components or tokens
-  // This ensures we use the design system when available
-  return components.length > 0 || tokens.length > 0;
+  // Tool mode is now the DEFAULT approach
+  // It works with or without approved components/tokens
+  // (uses generic tools when no design system is available)
+  return true;
 }
 
 /**
