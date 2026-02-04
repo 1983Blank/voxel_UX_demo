@@ -1026,8 +1026,39 @@ export function preparePrototypeHtml(
     escapedClose: (s.match(/<\\\/script/gi) || []).length,
   });
 
+  // Helper to find positions of script tags for debugging
+  const findScriptTagPositions = (s: string) => {
+    const opens: number[] = [];
+    const closes: number[] = [];
+    let match;
+
+    const openRegex = /<script[^>]*>/gi;
+    while ((match = openRegex.exec(s)) !== null) {
+      opens.push(match.index);
+    }
+
+    const closeRegex = /<\/script>/gi;
+    while ((match = closeRegex.exec(s)) !== null) {
+      closes.push(match.index);
+    }
+
+    return { opens, closes };
+  };
+
   console.log('[preparePrototypeHtml:DIAG] Input script tag counts:', countScriptTags(html));
   console.log('[preparePrototypeHtml:DIAG] Input first 200 chars:', html.slice(0, 200));
+
+  // Log script tag positions to help diagnose unclosed tags
+  const positions = findScriptTagPositions(html);
+  console.log('[preparePrototypeHtml:DIAG] Script tag positions - opens:', positions.opens, 'closes:', positions.closes);
+
+  // If there are unclosed scripts, show what's around the last open tag
+  if (positions.opens.length > positions.closes.length) {
+    const lastOpenPos = positions.opens[positions.opens.length - 1];
+    console.log('[preparePrototypeHtml:DIAG] UNCLOSED SCRIPT! Last open tag at:', lastOpenPos);
+    console.log('[preparePrototypeHtml:DIAG] Content around unclosed tag:',
+      html.slice(lastOpenPos, Math.min(lastOpenPos + 300, html.length)));
+  }
 
   // NOTE: We NO LONGER escape </script> in the LLM HTML.
   // Previous approach (escaping ALL </script) was BREAKING the LLM's own script tags,
@@ -1039,13 +1070,38 @@ export function preparePrototypeHtml(
   // in the component injection code (escapeForScriptInjection).
   let processed = html;
 
-  console.log('[preparePrototypeHtml] Preserving original script tags (no escaping)');
+  console.log('[preparePrototypeHtml] Checking for script tag balance...');
   const scriptCounts = countScriptTags(processed);
   console.log('[preparePrototypeHtml:DIAG] Script tag counts:', scriptCounts);
 
-  // Warn if script tags are unbalanced (potential issue with LLM output)
-  if (scriptCounts.open !== scriptCounts.close) {
-    console.warn('[preparePrototypeHtml] WARNING: Unbalanced script tags!',
+  // FIX: If there are more open script tags than close tags, the LLM left some unclosed
+  // This would cause our runtime bundle to be parsed as part of an unclosed script!
+  if (scriptCounts.open > scriptCounts.close) {
+    const unclosedCount = scriptCounts.open - scriptCounts.close;
+    console.warn('[preparePrototypeHtml] WARNING: Found', unclosedCount, 'unclosed script tag(s)! Fixing...');
+
+    // Add missing closing tags before we inject our scripts
+    // Find the </head> or </body> tag and add closing tags before it
+    const closingTags = '</script>'.repeat(unclosedCount);
+
+    // Try to close before </head> first
+    if (processed.includes('</head>')) {
+      processed = processed.replace('</head>', `${closingTags}\n</head>`);
+      console.log('[preparePrototypeHtml] Added', unclosedCount, 'closing script tag(s) before </head>');
+    } else if (processed.includes('</body>')) {
+      processed = processed.replace('</body>', `${closingTags}\n</body>`);
+      console.log('[preparePrototypeHtml] Added', unclosedCount, 'closing script tag(s) before </body>');
+    } else {
+      // Append to end
+      processed += closingTags;
+      console.log('[preparePrototypeHtml] Appended', unclosedCount, 'closing script tag(s) to end');
+    }
+
+    // Verify fix
+    const newCounts = countScriptTags(processed);
+    console.log('[preparePrototypeHtml:DIAG] After fix, script tag counts:', newCounts);
+  } else if (scriptCounts.close > scriptCounts.open) {
+    console.warn('[preparePrototypeHtml] WARNING: More closing than opening script tags!',
       `Open: ${scriptCounts.open}, Close: ${scriptCounts.close}`);
   }
 
