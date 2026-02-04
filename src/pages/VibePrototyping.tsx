@@ -2188,8 +2188,24 @@ export const VibePrototyping: React.FC = () => {
         stack: err instanceof Error ? err.stack : undefined,
       });
 
-      setError(errorMsg);
-      showError('Failed to analyze your request');
+      // Check if this is an overload error
+      const isOverloaded = errorMsg.toLowerCase().includes('overload') ||
+        errorMsg.toLowerCase().includes('capacity') ||
+        errorMsg.toLowerCase().includes('rate limit') ||
+        errorMsg.toLowerCase().includes('too many requests') ||
+        errorMsg.includes('529') ||
+        errorMsg.includes('503');
+
+      if (isOverloaded) {
+        setGenerationError({
+          message: errorMsg,
+          code: 'OVERLOADED',
+          provider: selectedProvider || 'anthropic',
+        });
+      } else {
+        setError(errorMsg);
+        showError('Failed to analyze your request');
+      }
 
       // Clear processing state on error
       setIsProcessingPrompt(false);
@@ -2261,8 +2277,25 @@ export const VibePrototyping: React.FC = () => {
     } catch (err) {
       console.error('Error generating plan:', err);
       const errorMsg = err instanceof Error ? err.message : 'Failed to generate plan';
-      setError(errorMsg);
-      showError('Failed to generate variant plan');
+
+      // Check if this is an overload error
+      const isOverloaded = errorMsg.toLowerCase().includes('overload') ||
+        errorMsg.toLowerCase().includes('capacity') ||
+        errorMsg.toLowerCase().includes('rate limit') ||
+        errorMsg.toLowerCase().includes('too many requests') ||
+        errorMsg.includes('529') ||
+        errorMsg.includes('503');
+
+      if (isOverloaded) {
+        setGenerationError({
+          message: errorMsg,
+          code: 'OVERLOADED',
+          provider: selectedProvider || 'anthropic',
+        });
+      } else {
+        setError(errorMsg);
+        showError('Failed to generate variant plan');
+      }
     }
   }, [currentSession, screen, sourceMetadata, screenScreenshot, selectedProvider, selectedModel, storeApproveUnderstanding]);
 
@@ -2381,8 +2414,25 @@ export const VibePrototyping: React.FC = () => {
     } catch (err) {
       console.error('Error creating visual wireframes:', err);
       const errorMsg = err instanceof Error ? err.message : 'Failed to create wireframes';
-      showError(errorMsg);
-      setError(errorMsg);
+
+      // Check if this is an overload error
+      const isOverloaded = errorMsg.toLowerCase().includes('overload') ||
+        errorMsg.toLowerCase().includes('capacity') ||
+        errorMsg.toLowerCase().includes('rate limit') ||
+        errorMsg.toLowerCase().includes('too many requests') ||
+        errorMsg.includes('529') ||
+        errorMsg.includes('503');
+
+      if (isOverloaded) {
+        setGenerationError({
+          message: errorMsg,
+          code: 'OVERLOADED',
+          provider: selectedProvider || 'anthropic',
+        });
+      } else {
+        showError(errorMsg);
+        setError(errorMsg);
+      }
     } finally {
       setIsCreatingWireframes(false);
     }
@@ -2415,10 +2465,27 @@ export const VibePrototyping: React.FC = () => {
     } catch (err) {
       console.error('Error skipping to build:', err);
       const errorMsg = err instanceof Error ? err.message : 'Failed to skip to build';
-      showError(errorMsg);
-      setError(errorMsg);
+
+      // Check if this is an overload error
+      const isOverloaded = errorMsg.toLowerCase().includes('overload') ||
+        errorMsg.toLowerCase().includes('capacity') ||
+        errorMsg.toLowerCase().includes('rate limit') ||
+        errorMsg.toLowerCase().includes('too many requests') ||
+        errorMsg.includes('529') ||
+        errorMsg.includes('503');
+
+      if (isOverloaded) {
+        setGenerationError({
+          message: errorMsg,
+          code: 'OVERLOADED',
+          provider: selectedProvider || 'anthropic',
+        });
+      } else {
+        showError(errorMsg);
+        setError(errorMsg);
+      }
     }
-  }, [currentSession, plan, selectedVariants, addChatMessage, storeApprovePlan, setStatus, showError, setError]);
+  }, [currentSession, plan, selectedVariants, addChatMessage, storeApprovePlan, setStatus, showError, setError, selectedProvider]);
 
   // Handle Build High-Fidelity button - transitions from wireframe_ready to generating
   const handleBuildHighFidelity = useCallback(async () => {
@@ -2836,6 +2903,22 @@ export const VibePrototyping: React.FC = () => {
           message: errorMessage,
           code: err.code,
           provider: err.provider,
+        });
+      }
+
+      // Check if this is an overload error - show retry dialog with model selection
+      const isOverloaded = errorMessage.toLowerCase().includes('overload') ||
+        errorMessage.toLowerCase().includes('capacity') ||
+        errorMessage.toLowerCase().includes('rate limit') ||
+        errorMessage.toLowerCase().includes('too many requests') ||
+        errorMessage.includes('529') || // Anthropic overload status code
+        errorMessage.includes('503'); // Service unavailable
+
+      if (isOverloaded) {
+        setGenerationError({
+          message: errorMessage,
+          code: 'OVERLOADED',
+          provider: selectedProvider || 'anthropic',
         });
       }
 
@@ -5508,9 +5591,9 @@ export const VibePrototyping: React.FC = () => {
         fullWidth
         TransitionComponent={Fade}
       >
-        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1, fontFamily: config.fonts.display, color: 'error.main' }}>
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1, fontFamily: config.fonts.display, color: generationError?.code === 'OVERLOADED' ? 'warning.main' : 'error.main' }}>
           <Warning size={24} />
-          Generation Failed
+          {generationError?.code === 'OVERLOADED' ? 'API Overloaded' : 'Generation Failed'}
         </DialogTitle>
         <DialogContent>
           <Typography variant="body1" sx={{ mb: 2 }}>
@@ -5563,6 +5646,54 @@ export const VibePrototyping: React.FC = () => {
               )}
             </>
           )}
+          {generationError?.code === 'OVERLOADED' && (
+            <>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                The AI model is currently overloaded. You can retry with a different model or wait a moment and try again.
+              </Typography>
+              <FormControl fullWidth sx={{ mb: 2 }}>
+                <InputLabel id="retry-provider-label-overload">Select Provider</InputLabel>
+                <Select
+                  labelId="retry-provider-label-overload"
+                  value={selectedProvider || ''}
+                  label="Select Provider"
+                  onChange={(e) => {
+                    const provider = e.target.value as LLMProvider;
+                    setSelectedProvider(provider);
+                    // Set default model for provider
+                    const providerInfo = PROVIDER_INFO[provider];
+                    if (providerInfo?.models.length) {
+                      setSelectedModel(providerInfo.models[0]);
+                    }
+                  }}
+                >
+                  {availableKeys.map((key) => (
+                    <MenuItem key={key.provider} value={key.provider}>
+                      {PROVIDER_INFO[key.provider]?.name || key.provider}
+                      {key.provider === generationError?.provider && ' (current)'}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              {selectedProvider && PROVIDER_INFO[selectedProvider] && (
+                <FormControl fullWidth>
+                  <InputLabel id="retry-model-label-overload">Select Model</InputLabel>
+                  <Select
+                    labelId="retry-model-label-overload"
+                    value={selectedModel}
+                    label="Select Model"
+                    onChange={(e) => setSelectedModel(e.target.value)}
+                  >
+                    {PROVIDER_INFO[selectedProvider].models.map((model) => (
+                      <MenuItem key={model} value={model}>
+                        {model}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              )}
+            </>
+          )}
         </DialogContent>
         <DialogActions>
           <Button
@@ -5595,6 +5726,26 @@ export const VibePrototyping: React.FC = () => {
               }}
             >
               Retry with {PROVIDER_INFO[selectedProvider]?.name || selectedProvider}
+            </Button>
+          )}
+          {generationError?.code === 'OVERLOADED' && selectedProvider && (
+            <Button
+              variant="contained"
+              startIcon={<ArrowsClockwise size={18} />}
+              onClick={() => {
+                setGenerationError(null);
+                // Clear error state and retry with selected provider/model
+                setError(null);
+                handleBuildHighFidelity();
+              }}
+              sx={{
+                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                '&:hover': {
+                  background: 'linear-gradient(135deg, #5a6fd6 0%, #6a4190 100%)',
+                },
+              }}
+            >
+              Retry with {selectedModel || PROVIDER_INFO[selectedProvider]?.name || selectedProvider}
             </Button>
           )}
         </DialogActions>
