@@ -5162,8 +5162,34 @@ export const VibePrototyping: React.FC = () => {
             </Box>
           )}
 
-          {/* Planning state - show captured screen with plan cards on side */}
-          {(isPlanning || isPlanReady) && !focusedVariantIndex && screen?.editedHtml && (
+          {/* Planning state (no plans yet) - show captured screen full width */}
+          {isPlanning && !focusedVariantIndex && screen?.editedHtml && (
+            <Box sx={{ flex: 1, p: 2, minHeight: 0, overflow: 'hidden' }}>
+              <Card
+                variant="outlined"
+                sx={{
+                  height: '100%',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  borderRadius: 2,
+                  overflow: 'hidden',
+                }}
+              >
+                <iframe
+                  srcDoc={prepareHtmlForIframe(screen.editedHtml)}
+                  title={screen.name || 'Captured Screen'}
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    border: 'none',
+                  }}
+                />
+              </Card>
+            </Box>
+          )}
+
+          {/* Plan ready state - show captured screen with plan cards on side */}
+          {isPlanReady && !focusedVariantIndex && screen?.editedHtml && plan?.plans?.length > 0 && (
             <Box sx={{ flex: 1, display: 'flex', gap: 2, p: 2, minHeight: 0, overflow: 'hidden' }}>
               {/* Captured screen as main focus */}
               <Box sx={{ flex: 3, minHeight: 0, minWidth: 0 }}>
@@ -5201,7 +5227,7 @@ export const VibePrototyping: React.FC = () => {
                 <Typography variant="caption" color="text.secondary" sx={{ px: 0.5 }}>
                   Planned Variants
                 </Typography>
-                {(plan?.plans || []).map((p) => {
+                {plan.plans.map((p) => {
                   const variantLabel = `Variant ${String.fromCharCode(64 + p.variant_index)}`;
                   const isSelected = selectedVariants.includes(p.variant_index);
                   return (
