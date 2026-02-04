@@ -42,6 +42,17 @@ export interface IterationProgress {
 type ProgressCallback = (progress: IterationProgress) => void;
 
 /**
+ * Context about other variants for LLM awareness
+ */
+export interface VariantContext {
+  variantIndex: number;
+  title: string;
+  description: string;
+  approach: string;
+  screenshotUrl?: string;
+}
+
+/**
  * Iterate on a variant with a refinement prompt
  */
 export async function iterateOnVariant(
@@ -50,7 +61,8 @@ export async function iterateOnVariant(
   variantIndex: number,
   currentHtml: string,
   iterationPrompt: string,
-  onProgress?: ProgressCallback
+  onProgress?: ProgressCallback,
+  otherVariantsContext?: VariantContext[]
 ): Promise<IterationResult> {
   if (!isSupabaseConfigured()) {
     throw new Error('Supabase not configured');
@@ -92,6 +104,7 @@ export async function iterateOnVariant(
       variantIndex,
       currentHtml,
       iterationPrompt,
+      otherVariantsContext,  // Optional context about other variants
     },
     headers: {
       Authorization: `Bearer ${session.access_token}`,

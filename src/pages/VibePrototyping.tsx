@@ -28,6 +28,9 @@ import FormControl from '@mui/material/FormControl';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import RadioGroup from '@mui/material/RadioGroup';
 import Radio from '@mui/material/Radio';
+import Drawer from '@mui/material/Drawer';
+import List from '@mui/material/List';
+import ListItem from '@mui/material/ListItem';
 import Select from '@mui/material/Select';
 import InputLabel from '@mui/material/InputLabel';
 import ToggleButton from '@mui/material/ToggleButton';
@@ -86,11 +89,16 @@ import {
   Eye,
   Folders,
   FlowArrow,
+  ClockClockwise,
+  CopySimple,
+  ChatTeardropText,
+  CheckCircle,
+  MapPin,
 } from '@phosphor-icons/react';
 
 import { useSnackbar } from '@/components/SnackbarProvider';
 import { useScreensStore } from '@/store/screensStore';
-import { useVibeStore, type ChatMessage } from '@/store/vibeStore';
+import { useVibeStore, type ChatMessage, getVibeVariantLabel } from '@/store/vibeStore';
 import { useContextStore } from '@/store/contextStore';
 import { useThemeStore } from '@/store/themeStore';
 import { useDesignTokensStore } from '@/store/designTokensStore';
@@ -107,8 +115,10 @@ import {
   createVibeSession,
   generateVariantPlan,
   getVibeSession,
+  getVibeSessionsForScreen,
   getVariantPlans,
   approvePlan,
+  type VibeSession,
 } from '@/services/variantPlanService';
 import {
   getVariants,
@@ -134,6 +144,7 @@ import {
   getIterationHistory,
   revertToIteration,
   type VibeIteration,
+  type VariantContext,
 } from '@/services/iterationService';
 import {
   generateInteractivePrototypesWithAgent,
@@ -174,6 +185,10 @@ import { UserFlowDiagram } from '@/components/Vibe/UserFlowDiagram';
 import { captureHtmlScreenshot, compressScreenshot } from '@/services/screenshotService';
 import { quickEnhance, enhancePrototype, type EnhanceResult } from '@/services/injectionService';
 import { prepareHtmlForIframe } from '@/utils/htmlUtils';
+import {
+  getVariantDetailInsight,
+  type FeedbackComment,
+} from '@/services/feedbackInsightsService';
 
 // ============== Types ==============
 
@@ -1514,6 +1529,17 @@ export const VibePrototyping: React.FC = () => {
   const [generationMode, setGenerationMode] = useState<'single' | 'all'>('all'); // Single variant or all 4
   const [selectedVariantToGenerate, setSelectedVariantToGenerate] = useState<number>(1); // Which variant to generate in single mode
   const [hoveredVariantIndex, setHoveredVariantIndex] = useState<number | null>(null); // For chat card hover highlighting
+
+  // Session history for multiple sessions per project
+  const [sessionHistory, setSessionHistory] = useState<VibeSession[]>([]);
+  const [sessionHistoryOpen, setSessionHistoryOpen] = useState(false);
+  const [isDuplicatingSession, setIsDuplicatingSession] = useState(false);
+
+  // Per-variant feedback sub-threads
+  const [variantFeedback, setVariantFeedback] = useState<Map<number, FeedbackComment[]>>(new Map());
+  const [feedbackPanelOpen, setFeedbackPanelOpen] = useState(false);
+  const [loadingFeedback, setLoadingFeedback] = useState(false);
+
   const [createdShare, setCreatedShare] = useState<ShareLink | null>(null);
   const [pagesAnchorEl, setPagesAnchorEl] = useState<null | HTMLElement>(null);
   const [breadcrumbAnchorEl, setBreadcrumbAnchorEl] = useState<null | HTMLElement>(null);
@@ -2100,6 +2126,10 @@ export const VibePrototyping: React.FC = () => {
           } else {
             clearSession();
           }
+
+          // Fetch session history for this screen (multiple sessions feature)
+          const sessions = await getVibeSessionsForScreen(screenId);
+          setSessionHistory(sessions);
         }
       }
 
@@ -3225,6 +3255,20 @@ export const VibePrototyping: React.FC = () => {
       addChatMessage('user', iterationPrompt, undefined, { variantIndex: focusedVariantIndex, stage: 'iteration' });
       addChatMessage('assistant', 'Applying your changes...', 'pending', { variantIndex: focusedVariantIndex, stage: 'iteration' });
 
+      // Build context about other variants for LLM awareness
+      const otherVariantsContext: VariantContext[] = (plan?.plans || [])
+        .filter((p) => p.variant_index !== focusedVariantIndex)
+        .map((p) => {
+          const v = variants.find((vr) => vr.variant_index === p.variant_index);
+          return {
+            variantIndex: p.variant_index,
+            title: p.title,
+            description: p.description,
+            approach: getVibeVariantLabel(p.variant_index),
+            screenshotUrl: v?.screenshot_url || undefined,
+          };
+        });
+
       const result = await iterateOnVariant(
         currentSession.id,
         focusedVariant.id,
@@ -3235,7 +3279,8 @@ export const VibePrototyping: React.FC = () => {
           if (progress.stage === 'generating') {
             // Could show progress in chat
           }
-        }
+        },
+        otherVariantsContext
       );
 
       if (result.success && result.htmlUrl) {
@@ -3544,6 +3589,63 @@ export const VibePrototyping: React.FC = () => {
       setIsEditingName(false);
     }
   }, [screenId, editedName, updateScreen, showSuccess, showError]);
+
+  // Handle duplicating a session to create a new one
+  const handleDuplicateSession = useCallback(async (sourceSession: VibeSession) => {
+    if (!screenId || !screen?.editedHtml) return;
+
+    setIsDuplicatingSession(true);
+    try {
+      // Create new session with same prompt but new name
+      const newSession = await createVibeSession(
+        screenId,
+        `${sourceSession.name} (copy)`,
+        sourceSession.prompt
+      );
+
+      if (newSession) {
+        showSuccess('Session duplicated! Opening new session...');
+        setSessionHistoryOpen(false);
+        // Navigate to the new session
+        navigate(`/prototyping/${screenId}/${newSession.id}`);
+      } else {
+        showError('Failed to duplicate session');
+      }
+    } catch (error) {
+      console.error('Failed to duplicate session:', error);
+      showError('Failed to duplicate session');
+    } finally {
+      setIsDuplicatingSession(false);
+    }
+  }, [screenId, screen?.editedHtml, navigate, showSuccess, showError]);
+
+  // Fetch feedback for the focused variant
+  const fetchVariantFeedback = useCallback(async () => {
+    if (!currentSession || !focusedVariantIndex) return;
+
+    setLoadingFeedback(true);
+    try {
+      const insight = await getVariantDetailInsight(currentSession.id, focusedVariantIndex);
+      if (insight?.comments) {
+        setVariantFeedback(prev => {
+          const next = new Map(prev);
+          next.set(focusedVariantIndex, insight.comments);
+          return next;
+        });
+      }
+    } catch (error) {
+      console.error('Failed to fetch variant feedback:', error);
+    } finally {
+      setLoadingFeedback(false);
+    }
+  }, [currentSession, focusedVariantIndex]);
+
+  // Fetch feedback when opening feedback panel
+  useEffect(() => {
+    if (feedbackPanelOpen && focusedVariantIndex && !variantFeedback.has(focusedVariantIndex)) {
+      fetchVariantFeedback();
+    }
+  }, [feedbackPanelOpen, focusedVariantIndex, variantFeedback, fetchVariantFeedback]);
 
   // Fetch HTML content when switching to code mode for a focused variant
   // Prefers edited_html (user's changes) over original html_url
@@ -4987,6 +5089,24 @@ export const VibePrototyping: React.FC = () => {
 
               <Divider orientation="vertical" flexItem />
 
+              {/* Session History button */}
+              {sessionHistory.length > 1 && (
+                <Tooltip title={`${sessionHistory.length} sessions for this screen`}>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    startIcon={<ClockClockwise size={16} />}
+                    onClick={() => setSessionHistoryOpen(true)}
+                    sx={{
+                      textTransform: 'none',
+                      transition: 'all 0.2s ease',
+                    }}
+                  >
+                    History ({sessionHistory.length})
+                  </Button>
+                </Tooltip>
+              )}
+
               <Button
                 variant="contained"
                 size="small"
@@ -5321,6 +5441,17 @@ export const VibePrototyping: React.FC = () => {
                       </IconButton>
                     </Tooltip>
                   )}
+                  <Tooltip title="View feedback">
+                    <IconButton
+                      size="small"
+                      onClick={() => setFeedbackPanelOpen(true)}
+                      sx={{
+                        color: variantFeedback.get(focusedVariantIndex!)?.length ? 'primary.main' : 'text.secondary',
+                      }}
+                    >
+                      <ChatTeardropText size={18} weight={variantFeedback.get(focusedVariantIndex!)?.length ? 'fill' : 'regular'} />
+                    </IconButton>
+                  </Tooltip>
                   <Button
                     variant="outlined"
                     size="small"
@@ -6015,6 +6146,281 @@ export const VibePrototyping: React.FC = () => {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Session History Drawer */}
+      <Drawer
+        anchor="right"
+        open={sessionHistoryOpen}
+        onClose={() => setSessionHistoryOpen(false)}
+      >
+        <Box sx={{ width: 380, height: '100%', display: 'flex', flexDirection: 'column' }}>
+          <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1, fontFamily: config.fonts.display }}>
+                <ClockClockwise size={24} />
+                Session History
+              </Typography>
+              <IconButton size="small" onClick={() => setSessionHistoryOpen(false)}>
+                <X size={20} />
+              </IconButton>
+            </Box>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+              {sessionHistory.length} session{sessionHistory.length !== 1 ? 's' : ''} for this screen
+            </Typography>
+          </Box>
+
+          <List sx={{ flex: 1, overflow: 'auto', p: 1 }}>
+            {sessionHistory.map((historySession) => {
+              const isCurrentSession = historySession.id === sessionId;
+              return (
+                <ListItem
+                  key={historySession.id}
+                  disablePadding
+                  sx={{ mb: 1 }}
+                >
+                  <Card
+                    variant={isCurrentSession ? 'elevation' : 'outlined'}
+                    sx={{
+                      width: '100%',
+                      bgcolor: isCurrentSession ? 'action.selected' : 'background.paper',
+                      border: isCurrentSession ? 2 : 1,
+                      borderColor: isCurrentSession ? 'primary.main' : 'divider',
+                    }}
+                  >
+                    <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 0.5 }}>
+                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                          <Typography
+                            variant="subtitle2"
+                            fontWeight={600}
+                            sx={{
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {historySession.name || 'Untitled Session'}
+                            {isCurrentSession && (
+                              <Chip
+                                label="Current"
+                                size="small"
+                                color="primary"
+                                sx={{ ml: 1, height: 18, fontSize: 10 }}
+                              />
+                            )}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary" display="block">
+                            {new Date(historySession.created_at).toLocaleDateString(undefined, {
+                              month: 'short',
+                              day: 'numeric',
+                              year: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </Typography>
+                        </Box>
+                      </Box>
+
+                      {historySession.prompt && (
+                        <Typography
+                          variant="body2"
+                          color="text.secondary"
+                          sx={{
+                            mt: 0.5,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            display: '-webkit-box',
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: 'vertical',
+                            fontSize: 12,
+                            fontStyle: 'italic',
+                          }}
+                        >
+                          "{historySession.prompt}"
+                        </Typography>
+                      )}
+
+                      <Box sx={{ display: 'flex', gap: 1, mt: 1.5 }}>
+                        {!isCurrentSession && (
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            startIcon={<Eye size={14} />}
+                            onClick={() => {
+                              setSessionHistoryOpen(false);
+                              navigate(`/prototyping/${screenId}/${historySession.id}`);
+                            }}
+                            sx={{ flex: 1, fontSize: 11 }}
+                          >
+                            View
+                          </Button>
+                        )}
+                        <Button
+                          size="small"
+                          variant={isCurrentSession ? 'contained' : 'outlined'}
+                          startIcon={isDuplicatingSession ? <CircularProgress size={14} /> : <CopySimple size={14} />}
+                          onClick={() => handleDuplicateSession(historySession)}
+                          disabled={isDuplicatingSession}
+                          sx={{ flex: 1, fontSize: 11 }}
+                        >
+                          Duplicate
+                        </Button>
+                      </Box>
+                    </CardContent>
+                  </Card>
+                </ListItem>
+              );
+            })}
+          </List>
+
+          <Box sx={{ p: 2, borderTop: 1, borderColor: 'divider' }}>
+            <Button
+              fullWidth
+              variant="contained"
+              startIcon={<Plus size={18} />}
+              onClick={() => {
+                setSessionHistoryOpen(false);
+                navigate(`/prototyping/${screenId}`);
+              }}
+              sx={{
+                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                '&:hover': {
+                  background: 'linear-gradient(135deg, #5a6fd6 0%, #6a4190 100%)',
+                },
+              }}
+            >
+              New Session
+            </Button>
+          </Box>
+        </Box>
+      </Drawer>
+
+      {/* Per-variant Feedback Drawer */}
+      <Drawer
+        anchor="right"
+        open={feedbackPanelOpen}
+        onClose={() => setFeedbackPanelOpen(false)}
+      >
+        <Box sx={{ width: 400, height: '100%', display: 'flex', flexDirection: 'column' }}>
+          <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1, fontFamily: config.fonts.display }}>
+                <ChatTeardropText size={24} />
+                Feedback
+              </Typography>
+              <IconButton size="small" onClick={() => setFeedbackPanelOpen(false)}>
+                <X size={20} />
+              </IconButton>
+            </Box>
+            {focusedVariantIndex && (
+              <Chip
+                size="small"
+                label={`Variant ${String.fromCharCode(64 + focusedVariantIndex)}`}
+                sx={{ mt: 1 }}
+              />
+            )}
+          </Box>
+
+          <Box sx={{ flex: 1, overflow: 'auto', p: 2 }}>
+            {loadingFeedback ? (
+              <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+                <CircularProgress size={24} />
+              </Box>
+            ) : focusedVariantIndex && variantFeedback.get(focusedVariantIndex)?.length ? (
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                {variantFeedback.get(focusedVariantIndex)!.map((comment) => (
+                  <Card key={comment.id} variant="outlined" sx={{ p: 1.5 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5 }}>
+                      <Box
+                        sx={{
+                          width: 32,
+                          height: 32,
+                          borderRadius: '50%',
+                          bgcolor: 'primary.main',
+                          color: 'white',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: 12,
+                          fontWeight: 600,
+                          flexShrink: 0,
+                        }}
+                      >
+                        {comment.userName?.slice(0, 2).toUpperCase() || '??'}
+                      </Box>
+                      <Box sx={{ flex: 1, minWidth: 0 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                          <Typography variant="subtitle2" fontWeight={600} sx={{ fontSize: 13 }}>
+                            {comment.userName || 'Anonymous'}
+                          </Typography>
+                          {comment.resolved && (
+                            <Chip
+                              size="small"
+                              label="Resolved"
+                              icon={<CheckCircle size={12} />}
+                              color="success"
+                              sx={{ height: 18, fontSize: 10 }}
+                            />
+                          )}
+                          {comment.positionX !== null && comment.positionY !== null && (
+                            <Tooltip title="Pinned comment">
+                              <MapPin size={14} color="#667eea" />
+                            </Tooltip>
+                          )}
+                        </Box>
+                        <Typography variant="body2" sx={{ fontSize: 13, lineHeight: 1.5 }}>
+                          {comment.content}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+                          {new Date(comment.createdAt).toLocaleDateString(undefined, {
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </Typography>
+                      </Box>
+                    </Box>
+                  </Card>
+                ))}
+              </Box>
+            ) : (
+              <Box sx={{ textAlign: 'center', py: 6 }}>
+                <ChatTeardropText size={48} color="#ccc" />
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+                  No feedback yet for this variant.
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                  Share this prototype to collect feedback.
+                </Typography>
+              </Box>
+            )}
+          </Box>
+
+          {focusedVariantIndex && variantFeedback.get(focusedVariantIndex)?.length ? (
+            <Box sx={{ p: 2, borderTop: 1, borderColor: 'divider' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                <Typography variant="caption" color="text.secondary">
+                  {variantFeedback.get(focusedVariantIndex)!.length} comment{variantFeedback.get(focusedVariantIndex)!.length !== 1 ? 's' : ''}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {variantFeedback.get(focusedVariantIndex)!.filter(c => c.resolved).length} resolved
+                </Typography>
+              </Box>
+              <Button
+                fullWidth
+                variant="outlined"
+                size="small"
+                startIcon={<ArrowsClockwise size={16} />}
+                onClick={fetchVariantFeedback}
+                disabled={loadingFeedback}
+              >
+                Refresh
+              </Button>
+            </Box>
+          ) : null}
+        </Box>
+      </Drawer>
 
       {/* Generation Error Dialog - allows retry with different model */}
       <Dialog

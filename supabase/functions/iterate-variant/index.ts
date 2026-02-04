@@ -9,6 +9,14 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+interface VariantContext {
+  variantIndex: number
+  title: string
+  description: string
+  approach: string
+  screenshotUrl?: string
+}
+
 interface IterateRequest {
   sessionId: string
   variantId: string
@@ -17,6 +25,7 @@ interface IterateRequest {
   iterationPrompt: string
   provider?: 'anthropic' | 'openai' | 'google'
   model?: string
+  otherVariantsContext?: VariantContext[]
 }
 
 // System prompt for iteration
@@ -40,8 +49,28 @@ ITERATION GUIDELINES:
 
 Start your response directly with <!DOCTYPE html> or <html>.`
 
-function buildIterationPrompt(currentHtml: string, iterationPrompt: string): string {
-  return `Current HTML to modify:
+function buildIterationPrompt(
+  currentHtml: string,
+  iterationPrompt: string,
+  variantIndex: number,
+  otherVariantsContext?: VariantContext[]
+): string {
+  // Build context about other variants if provided
+  let contextSection = ''
+  if (otherVariantsContext && otherVariantsContext.length > 0) {
+    contextSection = `
+Context about other variants in this prototype session (for awareness, not for copying):
+${otherVariantsContext.map(v =>
+  `- Variant ${String.fromCharCode(64 + v.variantIndex)} (${v.approach}): "${v.title}"
+   ${v.description}`
+).join('\n')}
+
+You are modifying Variant ${String.fromCharCode(64 + variantIndex)}. Ensure your changes maintain this variant's unique identity and approach while addressing the user's request.
+
+`
+  }
+
+  return `${contextSection}Current HTML to modify:
 ${currentHtml}
 
 User's iteration request:
@@ -271,8 +300,13 @@ Deno.serve(async (req) => {
       throw new Error('Failed to retrieve API key')
     }
 
-    // Build prompt
-    const prompt = buildIterationPrompt(body.currentHtml, body.iterationPrompt)
+    // Build prompt with variant context
+    const prompt = buildIterationPrompt(
+      body.currentHtml,
+      body.iterationPrompt,
+      body.variantIndex,
+      body.otherVariantsContext
+    )
 
     // Generate iterated HTML based on provider
     let generatedHtml: string
