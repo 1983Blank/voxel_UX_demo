@@ -640,11 +640,23 @@ export function injectVxRuntimeBundle(html: string): string {
   let processed = ensureProperHtmlStructure(html);
 
   console.log('[VxRuntime] Injecting runtime bundle into HTML...');
+  console.log('[VxRuntime:DEBUG] Bundle length:', bundle.length);
+  console.log('[VxRuntime:DEBUG] Bundle starts with:', bundle.slice(0, 100));
+  console.log('[VxRuntime:DEBUG] Bundle ends with:', bundle.slice(-100));
 
   // Now we're guaranteed to have a <head> tag - inject there
   if (processed.includes('</head>')) {
     console.log('[VxRuntime] Injecting bundle in <head>');
-    return processed.replace('</head>', `${bundle}\n</head>`);
+    const result = processed.replace('</head>', `${bundle}\n</head>`);
+    // CRITICAL DEBUG: Check the result contains the runtime script
+    const hasRuntimeComment = result.includes('Voxel Runtime Bundle');
+    const hasRuntimeDiag = result.includes('[VxRuntime:DIAG]');
+    const headEndIndex = result.indexOf('</head>');
+    console.log('[VxRuntime:DEBUG] Result has runtime comment:', hasRuntimeComment);
+    console.log('[VxRuntime:DEBUG] Result has DIAG log:', hasRuntimeDiag);
+    console.log('[VxRuntime:DEBUG] </head> at index:', headEndIndex);
+    console.log('[VxRuntime:DEBUG] Content before </head>:', result.slice(Math.max(0, headEndIndex - 200), headEndIndex));
+    return result;
   }
 
   // Should never reach here after ensureProperHtmlStructure, but just in case

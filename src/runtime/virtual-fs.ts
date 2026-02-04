@@ -257,6 +257,15 @@ export class VirtualFS {
       throw new Error('No index.html found in virtual file system');
     }
 
+    // DIAGNOSTIC: Check what HTML we're building
+    const content = indexFile.content;
+    console.log('[VirtualFS:DEBUG] buildPreviewHtml() called');
+    console.log('[VirtualFS:DEBUG] index.html length:', content.length);
+    console.log('[VirtualFS:DEBUG] Contains "Voxel Runtime Bundle":', content.includes('Voxel Runtime Bundle'));
+    console.log('[VirtualFS:DEBUG] Contains "[VxRuntime:DIAG]":', content.includes('[VxRuntime:DIAG]'));
+    console.log('[VirtualFS:DEBUG] Count of <script>:', (content.match(/<script>/gi) || []).length);
+    console.log('[VirtualFS:DEBUG] Count of </script>:', (content.match(/<\/script>/gi) || []).length);
+
     // Generate blob URLs for all files
     this.generateAllBlobUrls();
 

@@ -662,6 +662,22 @@ export const usePrototypeStore = create<PrototypeStoreState>()(
         const fs = new VirtualFS({ variantId });
 
         files.forEach((file) => {
+          // DIAGNOSTIC: Check if index.html contains runtime
+          if (file.path === 'index.html') {
+            const content = file.content;
+            console.log('[prototypeStore:DEBUG] Writing index.html to VirtualFS');
+            console.log('[prototypeStore:DEBUG] Length:', content.length);
+            console.log('[prototypeStore:DEBUG] Contains "Voxel Runtime Bundle":', content.includes('Voxel Runtime Bundle'));
+            console.log('[prototypeStore:DEBUG] Contains "[VxRuntime:DIAG]":', content.includes('[VxRuntime:DIAG]'));
+            console.log('[prototypeStore:DEBUG] Contains "<script>":', content.includes('<script>'));
+            console.log('[prototypeStore:DEBUG] Contains "</script>":', content.includes('</script>'));
+            // Find the first <script> tag and output what's after it
+            const firstScript = content.indexOf('<script>');
+            if (firstScript !== -1) {
+              console.log('[prototypeStore:DEBUG] First <script> at index:', firstScript);
+              console.log('[prototypeStore:DEBUG] After first <script>:', content.slice(firstScript, firstScript + 200));
+            }
+          }
           fs.writeFile(file.path, file.content, file.type);
         });
 
