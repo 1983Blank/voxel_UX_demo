@@ -82,6 +82,7 @@ interface GenerateRequest {
   sourceScreenId: string
   sourceHtml: string
   components?: ExtractedComponent[]
+  componentLibrary?: ExtractedComponent[]  // ALL components for reference (not just approved)
   tokens?: DesignToken[]
   includeScreenTools?: boolean
   includeInteractionTools?: boolean
@@ -676,9 +677,11 @@ function summarizeDOM(html: string): string {
 function buildSystemPrompt(
   domSummary: string,
   components: ExtractedComponent[],
-  tokens: DesignToken[]
+  tokens: DesignToken[],
+  componentLibrary?: ExtractedComponent[]
 ): string {
   const approvedComponents = components.filter(c => c.approved)
+  const allComponents = componentLibrary || components
 
   let prompt = `You are a UI prototype modifier creating high-fidelity INTERACTIVE prototypes. Your job is to MODIFY an existing webpage DOM using the provided tools to implement the requested feature or change.
 
@@ -785,9 +788,37 @@ ${domSummary}
 `
 
   if (approvedComponents.length > 0) {
-    prompt += `\n## Available Components\n`
+    prompt += `\n## Available Components (You can use these as tools)\n`
     for (const comp of approvedComponents.slice(0, 10)) {
       prompt += `- insert_${sanitizeName(comp.category)}_${sanitizeName(comp.name)}: ${comp.description}\n`
+    }
+  }
+
+  // Add component library reference (all components, for understanding the design system)
+  if (allComponents.length > 0 && allComponents.length > approvedComponents.length) {
+    prompt += `\n## Component Library Reference (Design System)\n`
+    prompt += `The following components exist in the design system. Use similar patterns and styling:\n\n`
+
+    // Group by category
+    const byCategory = new Map<string, ExtractedComponent[]>()
+    for (const comp of allComponents) {
+      const cat = comp.category || 'other'
+      if (!byCategory.has(cat)) byCategory.set(cat, [])
+      byCategory.get(cat)!.push(comp)
+    }
+
+    for (const [category, comps] of byCategory) {
+      prompt += `### ${category}\n`
+      for (const comp of comps.slice(0, 5)) {
+        prompt += `- **${comp.name}**: ${comp.description || 'No description'}\n`
+        if (comp.variants && comp.variants.length > 0) {
+          prompt += `  Variants: ${comp.variants.map(v => v.name).join(', ')}\n`
+        }
+      }
+      if (comps.length > 5) {
+        prompt += `  ... and ${comps.length - 5} more ${category} components\n`
+      }
+      prompt += '\n'
     }
   }
 
@@ -1265,10 +1296,18 @@ Deno.serve(async (req) => {
       body.includeInteractionTools !== false  // Default to enabled
     )
 
-    // Build context
+    // Build context with component library for reference
+    const componentLibrary = body.componentLibrary || []
     const domSummary = summarizeDOM(body.sourceHtml)
-    const systemPrompt = buildSystemPrompt(domSummary, components, tokens)
+    const systemPrompt = buildSystemPrompt(domSummary, components, tokens, componentLibrary)
     const userPrompt = `Source DOM (modify this):\n\`\`\`html\n${body.sourceHtml.slice(0, 50000)}\n\`\`\`\n\nUser Request: ${body.prompt}`
+
+    console.log('[generate-prototype-v2] Context built:', {
+      promptLength: body.prompt.length,
+      systemPromptLength: systemPrompt.length,
+      componentLibraryCount: componentLibrary.length,
+      approvedComponentsCount: components.filter(c => c.approved).length,
+    })
 
     // Call LLM with tools (with retry and fallback logic for overload errors)
     let toolCalls: ToolCall[]

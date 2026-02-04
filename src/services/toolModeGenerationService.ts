@@ -17,6 +17,7 @@ import { supabase, isSupabaseConfigured } from './supabase';
 import { useComponentsStore, type ExtractedComponent } from '@/store/componentsStore';
 import { useDesignTokensStore, type DesignToken } from '@/store/designTokensStore';
 import { usePrototypeStore } from '@/store/prototypeStore';
+import { useContextStore } from '@/store/contextStore';
 import { VirtualFS } from '@/runtime/virtual-fs';
 import { injectVxRuntimeBundle } from '@/runtime/vx-runtime-bundle';
 import {
@@ -440,13 +441,17 @@ async function generateSpec(
     throw new Error('Generation aborted');
   }
 
+  // Get ALL components for reference (not just approved)
+  const allComponents = getAllComponentsForReference();
+
   console.log('[ToolModeGeneration] Calling generate-prototype-v2:', {
     sessionId,
     variantIndex,
     promptLength: prompt.length,
     sourceHtmlLength: sourceHtml.length,
     truncatedHtmlLength: truncatedHtml.length,
-    componentsCount: components.length,
+    approvedComponentsCount: components.length,
+    allComponentsCount: allComponents.length,
     tokensCount: tokens.length,
   });
 
@@ -456,7 +461,8 @@ async function generateSpec(
       variantIndex,
       prompt,
       sourceHtml: truncatedHtml,
-      components,
+      components,  // Approved components - these become tools
+      componentLibrary: allComponents,  // ALL components - for reference in prompt
       tokens,
       includeScreenTools: options.includeScreenTools !== false,
       includeInteractionTools: options.includeInteractionTools !== false,
@@ -977,16 +983,37 @@ export async function generateAllVariantsToolMode(
 // =============================================================================
 
 /**
- * Build prompt from variant plan
+ * Build prompt from variant plan with full context
  */
 function buildPromptFromPlan(plan: VariantPlan): string {
-  const parts = [
-    `Create a "${plan.title}" variant.`,
-    '',
-    `Description: ${plan.description}`,
-    '',
-    'Key changes to make:',
-  ];
+  const parts: string[] = [];
+
+  // Get product context and UX guidelines from context store
+  const contextStore = useContextStore.getState();
+  const productContext = contextStore.getAIContextPrompt();
+  const uxGuidelines = contextStore.getUXGuidelinesPrompt();
+
+  // Add product context if available
+  if (productContext) {
+    parts.push('## Product Context');
+    parts.push(productContext);
+    parts.push('');
+  }
+
+  // Add UX guidelines if available
+  if (uxGuidelines) {
+    parts.push('## UX Guidelines (Follow These)');
+    parts.push(uxGuidelines);
+    parts.push('');
+  }
+
+  // Add variant-specific request
+  parts.push('## Variant Request');
+  parts.push(`Create a "${plan.title}" variant.`);
+  parts.push('');
+  parts.push(`Description: ${plan.description}`);
+  parts.push('');
+  parts.push('Key changes to make:');
 
   for (const change of plan.key_changes) {
     parts.push(`- ${change}`);
@@ -998,6 +1025,14 @@ function buildPromptFromPlan(plan: VariantPlan): string {
   }
 
   return parts.join('\n');
+}
+
+/**
+ * Get all components (for reference, even if not approved)
+ */
+export function getAllComponentsForReference(): ExtractedComponentForTools[] {
+  const { components } = useComponentsStore.getState();
+  return components.map(convertComponentForTools);
 }
 
 /**
