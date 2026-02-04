@@ -1493,6 +1493,8 @@ export const VibePrototyping: React.FC = () => {
   const [shareWireframes, setShareWireframes] = useState(false); // Share wireframes vs prototypes
   const [isCreatingShare, setIsCreatingShare] = useState(false);
   const [viewMode, setViewMode] = useState<'wireframes' | 'prototypes'>('prototypes'); // Toggle between views
+  const [generationMode, setGenerationMode] = useState<'single' | 'all'>('all'); // Single variant or all 4
+  const [selectedVariantToGenerate, setSelectedVariantToGenerate] = useState<number>(1); // Which variant to generate in single mode
   const [createdShare, setCreatedShare] = useState<ShareLink | null>(null);
   const [pagesAnchorEl, setPagesAnchorEl] = useState<null | HTMLElement>(null);
   const [breadcrumbAnchorEl, setBreadcrumbAnchorEl] = useState<null | HTMLElement>(null);
@@ -2669,9 +2671,16 @@ export const VibePrototyping: React.FC = () => {
         generationAbortControllerRef.current = abortController;
 
         try {
+          // Filter plans based on generation mode
+          const plansToGenerate = generationMode === 'single'
+            ? plan.plans.filter(p => p.variant_index === selectedVariantToGenerate)
+            : plan.plans;
+
+          console.log('[VibePrototyping] Generation mode:', generationMode, 'Plans to generate:', plansToGenerate.length);
+
           const results = await generateAllVariantsToolMode(
             currentSession.id,
-            plan.plans,
+            plansToGenerate,
             screen.editedHtml,
             // Progress callback
             (p: ToolModeProgress) => {
@@ -4012,6 +4021,36 @@ export const VibePrototyping: React.FC = () => {
                       sx={{ mr: 1 }}
                     />
                   )}
+                  {/* Generation Mode Selector */}
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <ToggleButtonGroup
+                      value={generationMode}
+                      exclusive
+                      onChange={(_, value) => value && setGenerationMode(value)}
+                      size="small"
+                      sx={{ height: 32 }}
+                    >
+                      <ToggleButton value="single" sx={{ px: 1.5, fontSize: '0.75rem' }}>
+                        Single
+                      </ToggleButton>
+                      <ToggleButton value="all" sx={{ px: 1.5, fontSize: '0.75rem' }}>
+                        All 4
+                      </ToggleButton>
+                    </ToggleButtonGroup>
+                    {generationMode === 'single' && (
+                      <Select
+                        value={selectedVariantToGenerate}
+                        onChange={(e) => setSelectedVariantToGenerate(Number(e.target.value))}
+                        size="small"
+                        sx={{ minWidth: 100, height: 32, fontSize: '0.75rem' }}
+                      >
+                        <MenuItem value={1}>Variant A</MenuItem>
+                        <MenuItem value={2}>Variant B</MenuItem>
+                        <MenuItem value={3}>Variant C</MenuItem>
+                        <MenuItem value={4}>Variant D</MenuItem>
+                      </Select>
+                    )}
+                  </Box>
                   <Button
                     variant="outlined"
                     onClick={() => handleRepromptWireframes()}
@@ -4027,7 +4066,7 @@ export const VibePrototyping: React.FC = () => {
                     startIcon={error ? <ArrowClockwise size={14} /> : undefined}
                     sx={{ background: config.gradients?.primary || config.colors.primary }}
                   >
-                    {error ? 'Retry Build' : 'Build Interactive'}
+                    {error ? 'Retry Build' : generationMode === 'single' ? 'Build Variant' : 'Build All'}
                   </Button>
                 </>
               )}
@@ -4855,13 +4894,19 @@ export const VibePrototyping: React.FC = () => {
             </Box>
           )}
 
-          {/* Loading/Planning/Wireframing/Generating state - 2x2 grid with loading indicators or wireframes */}
+          {/* Loading/Planning/Wireframing/Generating state - 2x2 grid or single expanded variant */}
           {/* During generation, users can click completed variants to preview them */}
           {(isPlanning || isPlanReady || isWireframing || isWireframeReady || isGenerating) && !focusedVariantIndex && (
             <Box sx={{ flex: 1, p: 2, overflow: 'auto', minHeight: 0 }}>
               <Grid container spacing={2} sx={{ height: '100%', minHeight: 0 }}>
                 {['Variant A', 'Variant B', 'Variant C', 'Variant D'].map((label, idx) => {
                   const variantIndex = idx + 1;
+
+                  // In single mode, only show the selected variant
+                  if (generationMode === 'single' && variantIndex !== selectedVariantToGenerate) {
+                    return null;
+                  }
+
                   const variant = variants.find((v) => v.variant_index === variantIndex);
                   const variantProgress = getVariantProgress(variantIndex);
                   const variantStreamingHtml = streamingHtml[variantIndex];
@@ -4873,8 +4918,16 @@ export const VibePrototyping: React.FC = () => {
                   // Allow clicking when: variant complete OR wireframe ready with wireframe available
                   const canClick = isVariantComplete || (isWireframeReady && wireframe?.wireframeUrl);
 
+                  // In single mode, expand to full width and height
+                  const isSingleMode = generationMode === 'single';
+
                   return (
-                    <Grid item xs={6} key={label} sx={{ height: '50%' }}>
+                    <Grid
+                      item
+                      xs={isSingleMode ? 12 : 6}
+                      key={label}
+                      sx={{ height: isSingleMode ? '100%' : '50%' }}
+                    >
                       <CanvasVariantCard
                         label={label}
                         isLoading={isGenerating && !isVariantComplete}
