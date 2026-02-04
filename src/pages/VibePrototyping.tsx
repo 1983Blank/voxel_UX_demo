@@ -4290,7 +4290,7 @@ export const VibePrototyping: React.FC = () => {
           )}
 
           {/* Prompt Input at bottom */}
-          <Box sx={{ p: 2, borderTop: '1px solid', borderColor: 'divider', flexShrink: 0 }}>
+          <Box sx={{ px: 2, pt: 1.5, pb: 2, flexShrink: 0 }}>
             {/* Context indicator */}
             {contextFiles.length > 0 && (
               <Box sx={{ mb: 1.5 }}>
