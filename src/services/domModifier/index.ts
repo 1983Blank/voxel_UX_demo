@@ -304,11 +304,43 @@ export async function applyModifications(
   const navigationConfig = spec.navigation || extractNavigationFromSpec(spec);
   const navigation = buildNavigationManifest(navigationConfig, screens);
 
+  // Extract the last interaction state (from the last screen processed)
+  // In single-screen mode, this is the only interaction state
+  // For multi-screen, we'd need to merge them, but typically interactions are per-screen
+  let lastInteractionState: InteractionState | null = null;
+
+  // Process each screen again just to get the interaction state
+  // (this is a bit wasteful but keeps the code cleaner)
+  for (const screenMod of spec.screens) {
+    const baseHtml = screens.get(screenMod.screenId);
+    if (!baseHtml) continue;
+
+    // Parse to extract interaction state
+    const doc = parseHTML(baseHtml);
+    const interactionState = createInteractionState();
+
+    // Collect interaction tools from modifications
+    for (const mod of screenMod.modifications) {
+      if (isInteractionTool(mod.tool)) {
+        processInteractionTool(mod, interactionState);
+      }
+    }
+
+    lastInteractionState = interactionState;
+  }
+
   return {
     screens,
     navigation,
     assets: [],
     errors: allErrors,
+    interactionState: lastInteractionState ? {
+      hiddenSelectors: lastInteractionState.hiddenSelectors,
+      clickToggles: lastInteractionState.clickToggles,
+      hoverEffects: lastInteractionState.hoverEffects,
+      tabInteractions: lastInteractionState.tabInteractions,
+      accordions: lastInteractionState.accordions,
+    } : undefined,
   };
 }
 

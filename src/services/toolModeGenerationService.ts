@@ -430,13 +430,38 @@ async function generateSpec(
 
 /**
  * Apply modification spec to source HTML and inject runtime
+ * Returns both the HTML and the interaction state for the runtime state panel
  */
 async function buildHtmlFromSpec(
   sourceHtml: string,
   spec: ModificationSpec,
   components: ExtractedComponentForTools[],
   tokens: ToolDesignToken[]
-): Promise<string> {
+): Promise<{
+  html: string;
+  interactionState?: {
+    hiddenSelectors: string[];
+    clickToggles: Array<{
+      triggerSelector: string;
+      targetSelector: string;
+      closeOnClickOutside?: boolean;
+      closeButtonSelector?: string;
+    }>;
+    hoverEffects: Array<{
+      triggerSelector: string;
+      targetSelector: string;
+    }>;
+    tabInteractions: Array<{
+      tabsSelector: string;
+      panelsSelector: string;
+    }>;
+    accordions: Array<{
+      containerSelector: string;
+      headerSelector: string;
+      contentSelector: string;
+    }>;
+  };
+}> {
   console.log('[ToolModeGeneration] Stripping scripts from source HTML...');
 
   // Strip scripts from source HTML to prevent errors from original page's JavaScript
@@ -488,7 +513,10 @@ async function buildHtmlFromSpec(
 
   console.log('[ToolModeGeneration] Runtime injected, HTML ready');
 
-  return html;
+  return {
+    html,
+    interactionState: result.interactionState,
+  };
 }
 
 // =============================================================================
@@ -605,12 +633,14 @@ export async function generateVariantToolMode(
     completedSteps: 2 + modificationCount,
   });
 
-  const html = await buildHtmlFromSpec(
+  const buildResult = await buildHtmlFromSpec(
     sourceHtml,
     specResult.spec,
     components,
     tokens
   );
+
+  const { html, interactionState } = buildResult;
 
   // Step 3: Create VirtualFS and update store
   // Mark Building Preview step as in_progress
@@ -635,6 +665,64 @@ export async function generateVariantToolMode(
     { path: 'index.html', content: html, type: 'html' as const },
   ];
 
+  // Convert interaction state to runtime state format for the State Inspector panel
+  const runtimeState: Record<string, unknown> = {};
+  if (interactionState) {
+    // Track hidden elements
+    if (interactionState.hiddenSelectors.length > 0) {
+      runtimeState.hiddenElements = interactionState.hiddenSelectors.reduce((acc, selector) => {
+        // Convert selector to a readable key
+        const key = selector.replace(/[#.[\]]/g, '').replace(/\s+/g, '_');
+        acc[key] = { selector, visible: false };
+        return acc;
+      }, {} as Record<string, { selector: string; visible: boolean }>);
+    }
+
+    // Track click toggles (modals, panels, etc.)
+    if (interactionState.clickToggles.length > 0) {
+      runtimeState.toggles = interactionState.clickToggles.reduce((acc, toggle, index) => {
+        const triggerKey = toggle.triggerSelector.replace(/[#.[\]]/g, '').replace(/\s+/g, '_') || `toggle_${index}`;
+        acc[triggerKey] = {
+          trigger: toggle.triggerSelector,
+          target: toggle.targetSelector,
+          isOpen: false,
+          closeOnClickOutside: toggle.closeOnClickOutside ?? true,
+        };
+        return acc;
+      }, {} as Record<string, unknown>);
+    }
+
+    // Track hover effects
+    if (interactionState.hoverEffects.length > 0) {
+      runtimeState.hoverEffects = interactionState.hoverEffects.map(effect => ({
+        trigger: effect.triggerSelector,
+        target: effect.targetSelector,
+        isHovering: false,
+      }));
+    }
+
+    // Track tabs
+    if (interactionState.tabInteractions.length > 0) {
+      runtimeState.tabs = interactionState.tabInteractions.map((tab, index) => ({
+        id: `tabs_${index}`,
+        container: tab.tabsSelector,
+        panels: tab.panelsSelector,
+        activeIndex: 0,
+      }));
+    }
+
+    // Track accordions
+    if (interactionState.accordions.length > 0) {
+      runtimeState.accordions = interactionState.accordions.map((accordion, index) => ({
+        id: `accordion_${index}`,
+        container: accordion.containerSelector,
+        expandedItems: [],
+      }));
+    }
+
+    console.log('[ToolModeGeneration] Created runtime state from interactions:', runtimeState);
+  }
+
   // Find the variant in the store and mark it as ready
   const prototypeStore = usePrototypeStore.getState();
   const approach = INDEX_TO_APPROACH_NAME[variantIndex]?.toLowerCase() || 'standard';
@@ -648,6 +736,11 @@ export async function generateVariantToolMode(
   if (variantId) {
     // Use store's method which creates VirtualFS internally
     prototypeStore.setVariantReady(variantId, files, []);
+
+    // Set the runtime state if we have interaction state
+    if (Object.keys(runtimeState).length > 0) {
+      prototypeStore.setRuntimeState(runtimeState);
+    }
 
     // Get the VirtualFS instance from the store
     virtualFS = prototypeStore.getVirtualFS(variantId) || new VirtualFS({ variantId });

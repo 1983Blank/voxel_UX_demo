@@ -335,6 +335,29 @@ export interface ModificationResult {
   assets: string[];
   /** Errors encountered during modification */
   errors: ModificationError[];
+  /** Interaction state (hidden elements, click toggles, etc.) for runtime state panel */
+  interactionState?: {
+    hiddenSelectors: string[];
+    clickToggles: Array<{
+      triggerSelector: string;
+      targetSelector: string;
+      closeOnClickOutside?: boolean;
+      closeButtonSelector?: string;
+    }>;
+    hoverEffects: Array<{
+      triggerSelector: string;
+      targetSelector: string;
+    }>;
+    tabInteractions: Array<{
+      tabsSelector: string;
+      panelsSelector: string;
+    }>;
+    accordions: Array<{
+      containerSelector: string;
+      headerSelector: string;
+      contentSelector: string;
+    }>;
+  };
 }
 
 /** Error during modification */
