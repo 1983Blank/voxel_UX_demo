@@ -1297,44 +1297,6 @@ function InlineExpansionGrid({
     <Box sx={{ flex: 1, display: 'flex', gap: 2, p: 2, minHeight: 0 }}>
       {/* Main content area */}
       <Box sx={{ flex: showSidebar ? 3 : 1, display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0 }}>
-        {/* Header toolbar with status and actions */}
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
-          {/* Status chips */}
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            {isWireframe && (
-              <Chip
-                size="small"
-                label="Wireframe"
-                sx={{
-                  bgcolor: 'rgba(255, 193, 7, 0.2)',
-                  color: '#f57c00',
-                  fontSize: 11,
-                  height: 22,
-                }}
-              />
-            )}
-            {!isWireframe && isComplete && (
-              <Chip
-                size="small"
-                label="Prototype"
-                sx={{
-                  bgcolor: 'rgba(102, 126, 234, 0.2)',
-                  color: '#667eea',
-                  fontSize: 11,
-                  height: 22,
-                }}
-              />
-            )}
-            {focusedVariant?.iteration_count && focusedVariant.iteration_count > 0 && (
-              <Chip
-                size="small"
-                label={`${focusedVariant.iteration_count} iteration${focusedVariant.iteration_count > 1 ? 's' : ''}`}
-                sx={{ fontSize: 11, height: 22 }}
-              />
-            )}
-          </Box>
-        </Box>
-
         {/* Full screen preview */}
         <Card
           variant="outlined"
@@ -1474,7 +1436,7 @@ function InlineExpansionGrid({
                 {/* Thumbnail preview */}
                 <Box sx={{
                   flex: 1,
-                  minHeight: 60,
+                  minHeight: 80,
                   bgcolor: '#fafafa',
                   display: 'flex',
                   alignItems: 'center',
@@ -1489,23 +1451,27 @@ function InlineExpansionGrid({
                       overflow: 'hidden',
                     }}>
                       <iframe
-                        src={variant?.html_url || wireframe?.wireframeUrl}
-                        srcDoc={!variant?.html_url && !wireframe?.wireframeUrl ? wireframe?.wireframeHtml : undefined}
+                        src={variant?.html_url || wireframe?.wireframeUrl || undefined}
+                        srcDoc={!variant?.html_url && !wireframe?.wireframeUrl && wireframe?.wireframeHtml
+                          ? prepareHtmlForIframe(wireframe.wireframeHtml)
+                          : undefined}
                         title={variantLabel}
                         style={{
-                          width: '200%',
-                          height: '200%',
+                          width: '400%',
+                          height: '400%',
                           border: 'none',
-                          transform: 'scale(0.5)',
+                          transform: 'scale(0.25)',
                           transformOrigin: 'top left',
                           pointerEvents: 'none',
                         }}
                       />
                     </Box>
                   ) : (
-                    <Typography variant="caption" color="text.secondary">
-                      No preview
-                    </Typography>
+                    <Box sx={{ textAlign: 'center', p: 1 }}>
+                      <Typography variant="caption" color="text.secondary" display="block">
+                        {variant?.status === 'generating' ? 'Generating...' : 'Not built yet'}
+                      </Typography>
+                    </Box>
                   )}
                 </Box>
                 {/* Label */}
@@ -3809,7 +3775,7 @@ export const VibePrototyping: React.FC = () => {
     };
 
     fetchVariantHtml();
-  }, [editMode, focusedVariantIndex, getVariantByIndex, completedVariantIndices]);
+  }, [editMode, focusedVariantIndex, getVariantByIndex, completedVariantIndices, variants]);
 
   // Fetch interaction state when switching to flow view
   useEffect(() => {
@@ -5303,10 +5269,92 @@ export const VibePrototyping: React.FC = () => {
             </Box>
           )}
 
-          {/* Loading/Planning/Wireframing/Generating state - gallery or single expanded variant */}
+          {/* Planning state - show captured screen with plan cards on side */}
+          {(isPlanning || isPlanReady) && !focusedVariantIndex && screen?.editedHtml && (
+            <Box sx={{ flex: 1, display: 'flex', gap: 2, p: 2, minHeight: 0, overflow: 'hidden' }}>
+              {/* Captured screen as main focus */}
+              <Box sx={{ flex: 3, minHeight: 0, minWidth: 0 }}>
+                <Card
+                  variant="outlined"
+                  sx={{
+                    height: '100%',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    borderRadius: 2,
+                    overflow: 'hidden',
+                  }}
+                >
+                  <iframe
+                    srcDoc={prepareHtmlForIframe(screen.editedHtml)}
+                    title={screen.name || 'Captured Screen'}
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      border: 'none',
+                    }}
+                  />
+                </Card>
+              </Box>
+              {/* Plan cards as thumbnails on right */}
+              <Box sx={{
+                flex: 1,
+                minWidth: 200,
+                maxWidth: 280,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 1.5,
+                overflow: 'auto',
+              }}>
+                <Typography variant="caption" color="text.secondary" sx={{ px: 0.5 }}>
+                  Planned Variants
+                </Typography>
+                {(plan?.plans || []).map((p) => {
+                  const variantLabel = `Variant ${String.fromCharCode(64 + p.variant_index)}`;
+                  const isSelected = selectedVariants.includes(p.variant_index);
+                  return (
+                    <Card
+                      key={p.variant_index}
+                      variant="outlined"
+                      onClick={() => handleVariantClick(p.variant_index)}
+                      sx={{
+                        cursor: 'pointer',
+                        p: 1.5,
+                        transition: 'all 0.2s ease',
+                        borderColor: isSelected ? 'primary.main' : 'divider',
+                        bgcolor: isSelected ? 'rgba(102, 126, 234, 0.05)' : 'background.paper',
+                        '&:hover': {
+                          borderColor: 'primary.main',
+                          boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                          transform: 'translateY(-2px)',
+                        },
+                      }}
+                    >
+                      <Typography variant="caption" fontWeight={600} noWrap>
+                        {p.title}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" display="block" noWrap>
+                        {variantLabel}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" sx={{
+                        display: '-webkit-box',
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: 'vertical',
+                        overflow: 'hidden',
+                        mt: 0.5,
+                      }}>
+                        {p.description}
+                      </Typography>
+                    </Card>
+                  );
+                })}
+              </Box>
+            </Box>
+          )}
+
+          {/* Wireframing/Generating state - gallery or single expanded variant */}
           {/* During generation, users can click completed variants to preview them */}
           {/* Focus+Context Gallery: Large variant on left, thumbnails stacked on right */}
-          {(isPlanning || isPlanReady || isWireframing || isWireframeReady || isGenerating) && !focusedVariantIndex && (
+          {(isWireframing || isWireframeReady || isGenerating) && !focusedVariantIndex && (
             <Box sx={{ flex: 1, display: 'flex', gap: 2, p: 2, minHeight: 0, overflow: 'hidden' }}>
               {(() => {
                 // Get all planned variants
