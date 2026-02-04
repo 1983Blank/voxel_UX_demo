@@ -140,6 +140,12 @@ import {
   restoreFromCheckpoint,
 } from '@/services/interactivePrototypeService';
 import {
+  generateAllVariantsToolMode,
+  shouldUseToolMode,
+  type ToolModeProgress,
+  type ToolModeResult,
+} from '@/services/toolModeGenerationService';
+import {
   getActiveCheckpoint,
   buildFilesFromCheckpoint,
   buildAgentProgressFromCheckpoint,
@@ -2486,13 +2492,86 @@ export const VibePrototyping: React.FC = () => {
         return;
       }
 
-      // Always use Interactive Mode: multi-stage agent architecture for file-based Web Components
-      console.log('[VibePrototyping] Using Interactive Mode with Multi-Stage Agent');
+      // Check which generation mode to use
+      // Priority: Tool Mode > Server Orchestration > Client Orchestration
+      const useToolModeGeneration = shouldUseToolMode();
+      const useServerOrchestration = !useToolModeGeneration && shouldUseServerOrchestration();
 
-        // Check if server orchestration is enabled (for server-persistent generation)
-        const useServerOrchestration = shouldUseServerOrchestration();
+      console.log('[VibePrototyping] Generation mode:', {
+        useToolMode: useToolModeGeneration,
+        useServerOrchestration,
+      });
 
-        if (useServerOrchestration) {
+      if (useToolModeGeneration) {
+        // TOOL MODE: Uses design system components and tokens
+        // LLM outputs modification instructions, NOT raw HTML
+        // This eliminates script escaping issues and ensures design consistency
+        console.log('[VibePrototyping] Using TOOL MODE generation (design system)');
+        addChatMessage('assistant', 'Generating prototypes using your design system components and tokens. This produces cleaner, more consistent results.');
+
+        // Reset agent progress
+        setAgentProgress([]);
+
+        try {
+          const results = await generateAllVariantsToolMode(
+            currentSession.id,
+            plan.plans,
+            screen.editedHtml,
+            // Progress callback
+            (p: ToolModeProgress) => {
+              const stageMap: Record<string, 'analyzing' | 'generating' | 'complete'> = {
+                'preparing': 'analyzing',
+                'generating-spec': 'generating',
+                'applying-modifications': 'generating',
+                'injecting-runtime': 'generating',
+                'complete': 'complete',
+                'failed': 'generating',
+              };
+              setProgress({
+                stage: stageMap[p.stage] || 'generating',
+                message: p.message,
+                percent: p.percent,
+                variantIndex: p.variantIndex,
+              });
+
+              if (p.variantIndex) {
+                setVariantStartTimes((prev) => {
+                  if (!prev[p.variantIndex!]) {
+                    return { ...prev, [p.variantIndex!]: Date.now() };
+                  }
+                  return prev;
+                });
+              }
+            },
+            // Variant complete callback
+            (result: ToolModeResult) => {
+              setCompletedVariantIndices((prev) => new Set([...prev, result.variantIndex]));
+              // Store the HTML for preview
+              setStreamingHtml((prev) => ({
+                ...prev,
+                [result.variantIndex]: result.html,
+              }));
+              console.log('[VibePrototyping] Tool mode variant complete:', {
+                variantIndex: result.variantIndex,
+                toolCallCount: result.toolCallCount,
+                screensGenerated: result.screensGenerated,
+                htmlLength: result.html.length,
+              });
+            },
+            // Options
+            {
+              provider: selectedProvider as 'anthropic' | 'openai' | undefined,
+              model: selectedModel || undefined,
+            }
+          );
+
+          console.log('[VibePrototyping] Tool mode generation complete:', results.length, 'variants');
+        } catch (error) {
+          console.error('[VibePrototyping] Tool mode generation failed, falling back:', error);
+          // Don't fall back silently - re-throw so user knows what happened
+          throw error;
+        }
+      } else if (useServerOrchestration) {
           // Server-orchestrated generation: survives page refresh, streams progress via Realtime
           console.log('[VibePrototyping] Using SERVER orchestration for generation');
           addChatMessage('assistant', 'Generating interactive prototypes on the server. Generation will continue even if you refresh the page. Progress streams in real-time.');

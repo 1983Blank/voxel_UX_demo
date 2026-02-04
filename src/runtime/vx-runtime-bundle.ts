@@ -700,6 +700,79 @@ function sanitizeLLMCode(code: string): string {
 }
 
 /**
+ * Escape </script> patterns that appear inside JavaScript string literals.
+ *
+ * The LLM sometimes generates code like: var x = "</script>" which breaks HTML parsing.
+ * This function escapes ONLY the </script> patterns inside strings, NOT the actual
+ * HTML closing </script> tags.
+ *
+ * Strategy: Look for </script> preceded by a quote character (", ', `) on the same line,
+ * which indicates it's inside a string literal.
+ */
+function escapeScriptInStringLiterals(html: string): string {
+  // Pattern matches </script> that appears to be inside a string literal
+  // We look for common patterns:
+  // 1. "</script>" - double-quoted string
+  // 2. '</script>' - single-quoted string
+  // 3. `</script>` - template literal
+  // 4. "</script - partial, at end of string
+
+  let result = html;
+  let escapedCount = 0;
+
+  // Escape </script> inside double-quoted strings
+  // Match: "...anything...</script>...anything..."
+  result = result.replace(/"([^"]*)<\/script([^"]*)"/gi, (match, before, after) => {
+    escapedCount++;
+    console.log('[escapeScriptInStringLiterals] Found in double quotes:', match.slice(0, 50));
+    return `"${before}<\\/script${after}"`;
+  });
+
+  // Escape </script> inside single-quoted strings
+  result = result.replace(/'([^']*)<\/script([^']*)'/gi, (match, before, after) => {
+    escapedCount++;
+    console.log('[escapeScriptInStringLiterals] Found in single quotes:', match.slice(0, 50));
+    return `'${before}<\\/script${after}'`;
+  });
+
+  // Escape </script> inside template literals (backticks)
+  // This is trickier because template literals can span multiple lines
+  // and contain ${} expressions. We'll handle simple cases.
+  result = result.replace(/`([^`]*)<\/script([^`]*)`/gi, (match, before, after) => {
+    escapedCount++;
+    console.log('[escapeScriptInStringLiterals] Found in template literal:', match.slice(0, 50));
+    return `\`${before}<\\/script${after}\``;
+  });
+
+  // Also handle cases where </script is at a line boundary after a quote
+  // Pattern: quote, content, newline, </script
+  result = result.replace(/(["'`][^"'`\n]*)\n\s*<\/script/gi, (match, prefix) => {
+    escapedCount++;
+    console.log('[escapeScriptInStringLiterals] Found at line boundary');
+    return `${prefix}\n<\\/script`;
+  });
+
+  // Handle innerHTML-style patterns where </script> appears in concatenated strings
+  // Pattern: + "</script>" or += "</script>" etc.
+  result = result.replace(/(\+\s*["'`])([^"'`]*)<\/script([^"'`]*)(["'`])/gi, (match, prefix, before, after, quote) => {
+    escapedCount++;
+    console.log('[escapeScriptInStringLiterals] Found in concatenation:', match.slice(0, 50));
+    return `${prefix}${before}<\\/script${after}${quote}`;
+  });
+
+  // Additional fallback: catch </script> that appears after = and a quote
+  // This handles: var x = "</script>" or element.innerHTML = '</script>'
+  result = result.replace(/(=\s*["'`])([^"'`]*)<\/script([^"'`]*)(["'`])/gi, (match, prefix, before, after, quote) => {
+    escapedCount++;
+    console.log('[escapeScriptInStringLiterals] Found after assignment:', match.slice(0, 50));
+    return `${prefix}${before}<\\/script${after}${quote}`;
+  });
+
+  console.log('[escapeScriptInStringLiterals] Total escaped:', escapedCount);
+  return result;
+}
+
+/**
  * Escape </script> tags in code to prevent breaking HTML
  * This is critical - any </script> in the code will close the script tag prematurely
  */
@@ -1060,15 +1133,18 @@ export function preparePrototypeHtml(
       html.slice(lastOpenPos, Math.min(lastOpenPos + 300, html.length)));
   }
 
-  // NOTE: We NO LONGER escape </script> in the LLM HTML.
-  // Previous approach (escaping ALL </script) was BREAKING the LLM's own script tags,
-  // leaving them unclosed and causing the runtime bundle to be parsed as part of
-  // an unclosed script, resulting in syntax errors.
+  // FIX: Escape </script> patterns that appear INSIDE JavaScript string literals.
+  // The LLM sometimes generates code like: var x = "</script>" which breaks HTML parsing.
+  // We need to escape these WITHOUT escaping the actual closing </script> tags.
   //
-  // The LLM's script tags need to close properly. If the LLM generates JavaScript
-  // code containing the string "</script>", that's an edge case we handle separately
-  // in the component injection code (escapeForScriptInjection).
+  // Strategy: Escape </script when it appears after a quote character within the same line
+  // This catches common cases like: "</script>", '</script>', `</script>`
   let processed = html;
+
+  // Escape </script that appears inside string literals
+  // Pattern: quote char, any content, </script (inside a string)
+  // We look for </script that's preceded by an odd number of quotes on the same line
+  processed = escapeScriptInStringLiterals(processed);
 
   console.log('[preparePrototypeHtml] Checking for script tag balance...');
   const scriptCounts = countScriptTags(processed);
