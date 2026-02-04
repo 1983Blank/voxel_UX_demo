@@ -3196,8 +3196,9 @@ export const VibePrototyping: React.FC = () => {
     setIterationDialogOpen(false);
 
     try {
-      addChatMessage('user', `Iterate on Variant ${String.fromCharCode(64 + focusedVariantIndex)}: ${iterationPrompt}`);
-      addChatMessage('assistant', 'Applying your changes to the variant...');
+      // Add messages with variant metadata for sub-thread display
+      addChatMessage('user', iterationPrompt, undefined, { variantIndex: focusedVariantIndex, stage: 'iteration' });
+      addChatMessage('assistant', 'Applying your changes...', 'pending', { variantIndex: focusedVariantIndex, stage: 'iteration' });
 
       const result = await iterateOnVariant(
         currentSession.id,
@@ -3226,10 +3227,10 @@ export const VibePrototyping: React.FC = () => {
         const history = await getIterationHistory(focusedVariant.id);
         setIterationHistory(history);
 
-        addChatMessage('assistant', `Iteration ${result.iterationNumber} complete! The variant has been updated.`);
+        addChatMessage('assistant', `Iteration ${result.iterationNumber} complete! The variant has been updated.`, 'complete', { variantIndex: focusedVariantIndex, stage: 'iteration' });
         showSuccess('Variant updated successfully!');
       } else {
-        addChatMessage('assistant', `Iteration failed: ${result.error}`);
+        addChatMessage('assistant', `Iteration failed: ${result.error}`, 'error', { variantIndex: focusedVariantIndex, stage: 'iteration' });
         showError(result.error || 'Failed to iterate');
       }
     } catch (err) {
@@ -3588,6 +3589,9 @@ export const VibePrototyping: React.FC = () => {
   const projectName = screen?.name || 'Untitled Project';
   const focusedVariant = focusedVariantIndex ? getVariantByIndex(focusedVariantIndex) : null;
   const focusedPlan = focusedVariantIndex ? getPlanByIndex(focusedVariantIndex) : null;
+
+  // Iteration mode: when a complete variant is focused, the prompt input becomes iteration input
+  const isIterationMode = focusedVariantIndex && (focusedVariant?.status === 'complete' || completedVariantIndices.has(focusedVariantIndex));
 
   // Get progress for each variant - calculate from agent progress steps
   const getVariantProgress = useCallback((index: number) => {
@@ -4204,19 +4208,49 @@ export const VibePrototyping: React.FC = () => {
               </Box>
             )}
 
+            {/* Iteration mode indicator */}
+            {isIterationMode && (
+              <Box sx={{ mb: 1.5, display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Chip
+                  icon={<ArrowsClockwise size={14} />}
+                  label={`Iterating on Variant ${String.fromCharCode(64 + focusedVariantIndex!)}`}
+                  size="small"
+                  sx={{
+                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                    color: 'white',
+                    '& .MuiChip-icon': { color: 'white' },
+                  }}
+                  onDelete={() => setFocusedVariantIndex(null)}
+                  deleteIcon={<X size={14} style={{ color: 'white' }} />}
+                />
+                {iterationHistory.length > 0 && (
+                  <Typography variant="caption" color="text.secondary">
+                    {iterationHistory.length} previous iteration{iterationHistory.length > 1 ? 's' : ''}
+                  </Typography>
+                )}
+              </Box>
+            )}
+
             <TextField
               fullWidth
               multiline
               minRows={2}
               maxRows={4}
-              placeholder="What would you like to build? Describe your idea..."
-              value={promptValue}
-              onChange={(e) => setPromptValue(e.target.value)}
-              disabled={isAnalyzing || isPlanning || isGenerating}
+              placeholder={isIterationMode
+                ? `Describe changes for Variant ${String.fromCharCode(64 + focusedVariantIndex!)}...`
+                : "What would you like to build? Describe your idea..."
+              }
+              value={isIterationMode ? iterationPrompt : promptValue}
+              onChange={(e) => isIterationMode ? setIterationPrompt(e.target.value) : setPromptValue(e.target.value)}
+              disabled={isAnalyzing || isPlanning || isGenerating || isIterating}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey && promptValue.trim()) {
+                if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
-                  handleBuild();
+                  if (isIterationMode && iterationPrompt.trim()) {
+                    handleIterate();
+                  } else if (!isIterationMode && promptValue.trim()) {
+                    handleBuild();
+                  }
                 }
               }}
               sx={{
@@ -4357,6 +4391,26 @@ export const VibePrototyping: React.FC = () => {
                     startIcon={<Stop size={16} weight="fill" />}
                   >
                     Stop
+                  </Button>
+                ) : isIterationMode ? (
+                  <Button
+                    variant="contained"
+                    size="small"
+                    onClick={handleIterate}
+                    disabled={!iterationPrompt.trim() || isIterating || !fetchedVariantHtml}
+                    startIcon={isIterating ? <CircularProgress size={14} color="inherit" /> : <Lightning size={16} />}
+                    sx={{
+                      textTransform: 'none',
+                      minWidth: 90,
+                      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                      transition: 'all 0.2s ease',
+                      '&:hover': {
+                        background: 'linear-gradient(135deg, #5a6fd6 0%, #6a4190 100%)',
+                        transform: 'translateY(-1px)',
+                      },
+                    }}
+                  >
+                    {isIterating ? 'Iterating...' : 'Iterate'}
                   </Button>
                 ) : (
                   <Button
