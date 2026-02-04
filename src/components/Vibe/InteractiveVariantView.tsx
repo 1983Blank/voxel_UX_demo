@@ -58,8 +58,12 @@ export function InteractiveVariantView({
   panelView: externalPanelView,
   onPanelViewChange,
 }: InteractiveVariantViewProps) {
+  // Find the first complete variant to use as default
+  const firstCompleteVariant = variants.find(v => v.status === 'complete');
+  const defaultVariantIndex = selectedVariantIndex || firstCompleteVariant?.variant_index || 1;
+
   // Local state
-  const [activeVariantIndex, setActiveVariantIndex] = useState<number>(selectedVariantIndex || 1);
+  const [activeVariantIndex, setActiveVariantIndex] = useState<number>(defaultVariantIndex);
   const [internalMainView, setInternalMainView] = useState<PanelView>('preview');
   const [debugPanel, setDebugPanel] = useState<DebugPanel>('state');
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
@@ -75,6 +79,17 @@ export function InteractiveVariantView({
       setActiveVariantIndex(selectedVariantIndex);
     }
   }, [selectedVariantIndex]);
+
+  // When variants change, update to first complete if current is not complete
+  useEffect(() => {
+    const currentVariant = variants.find(v => v.variant_index === activeVariantIndex);
+    if (!currentVariant || currentVariant.status !== 'complete') {
+      const firstComplete = variants.find(v => v.status === 'complete');
+      if (firstComplete && firstComplete.variant_index !== activeVariantIndex) {
+        setActiveVariantIndex(firstComplete.variant_index);
+      }
+    }
+  }, [variants, activeVariantIndex]);
 
   // Prototype store state
   const {
