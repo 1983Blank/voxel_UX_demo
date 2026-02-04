@@ -125,6 +125,13 @@ function toolToLabel(toolName: string, params?: Record<string, unknown>): string
     'add_click_handler': 'Add Click Handler',
     'add_form_handler': 'Add Form Handler',
     'bind_state': 'Bind State',
+    // Interaction tools
+    'add_click_toggle': `Connect "${params?.triggerSelector || 'trigger'}" to "${params?.targetSelector || 'target'}"`,
+    'set_initial_hidden': `Hide "${params?.selector || 'element'}" initially`,
+    'add_hover_effect': `Add hover effect`,
+    'add_tab_interaction': 'Setup tab navigation',
+    'add_accordion_interaction': 'Setup accordion',
+    'add_form_validation': 'Add form validation',
   };
 
   if (toolLabels[toolName]) {

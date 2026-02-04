@@ -36,12 +36,21 @@ import {
   isScreenTool,
   extractNavigationConfig,
 } from './multiFileBuilder';
+import {
+  isInteractionTool,
+  processInteractionTool,
+  createInteractionState,
+  injectInteractionScript,
+  injectInteractionStyles,
+  type InteractionState,
+} from './interactionHandler';
 
 // Re-export sub-modules
 export * from './operations';
 export * from './componentInjector';
 export * from './styleApplicator';
 export * from './multiFileBuilder';
+export * from './interactionHandler';
 
 /**
  * Parse HTML into a Document (browser or server-side)
@@ -133,9 +142,16 @@ function applySingleModification(
   mod: Modification,
   componentMap: Map<string, ExtractedComponentForTools>,
   tokenMap: Map<string, string>,
-  screens: Map<string, string>
+  screens: Map<string, string>,
+  interactionState: InteractionState
 ): { success: boolean; error?: string } {
   const { tool } = mod;
+
+  // Interaction tools - process and store for later injection
+  if (isInteractionTool(tool)) {
+    const result = processInteractionTool(mod, interactionState);
+    return { success: result.success, error: result.error };
+  }
 
   // Screen management tools
   if (isScreenTool(tool)) {
@@ -174,13 +190,14 @@ function applyScreenModifications(
   componentMap: Map<string, ExtractedComponentForTools>,
   tokenMap: Map<string, string>,
   screens: Map<string, string>
-): { html: string; errors: ModificationError[] } {
+): { html: string; errors: ModificationError[]; interactionState: InteractionState } {
   const doc = parseHTML(sourceHtml);
   const errors: ModificationError[] = [];
+  const interactionState = createInteractionState();
 
   for (let i = 0; i < modifications.length; i++) {
     const mod = modifications[i];
-    const result = applySingleModification(doc, mod, componentMap, tokenMap, screens);
+    const result = applySingleModification(doc, mod, componentMap, tokenMap, screens, interactionState);
 
     if (!result.success) {
       errors.push({
@@ -194,9 +211,20 @@ function applyScreenModifications(
     }
   }
 
+  // Inject interaction script if there are any interactions
+  injectInteractionStyles(doc);
+  injectInteractionScript(doc, interactionState);
+
+  console.log('[domModifier] Applied modifications with interactions:', {
+    hiddenCount: interactionState.hiddenSelectors.length,
+    clickToggles: interactionState.clickToggles.length,
+    hoverEffects: interactionState.hoverEffects.length,
+  });
+
   return {
     html: serializeDOM(doc),
     errors,
+    interactionState,
   };
 }
 
@@ -236,14 +264,19 @@ export async function applyModifications(
       startingHtml = sourceHtml;
     }
 
-    // Apply modifications
-    const { html, errors } = applyScreenModifications(
+    // Apply modifications (now includes interaction handling)
+    const { html, errors, interactionState } = applyScreenModifications(
       startingHtml,
       modifications,
       componentMap,
       tokenMap,
       screens
     );
+
+    console.log(`[domModifier] Screen ${screenId}: ${modifications.length} modifications, interactions:`, {
+      hidden: interactionState.hiddenSelectors.length,
+      toggles: interactionState.clickToggles.length,
+    });
 
     // Update errors with screen ID
     for (const error of errors) {

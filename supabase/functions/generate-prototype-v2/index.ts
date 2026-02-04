@@ -306,6 +306,107 @@ const SCREEN_TOOLS: ToolDefinition[] = [
   },
 ]
 
+// Interaction tools - add click handlers, toggle visibility, state management
+const INTERACTION_TOOLS: ToolDefinition[] = [
+  {
+    type: 'function',
+    function: {
+      name: 'add_click_toggle',
+      description: 'Make an element clickable to toggle visibility of another element (for modals, panels, dropdowns). IMPORTANT: Use this to connect trigger buttons to their modal/panel targets.',
+      parameters: {
+        type: 'object',
+        properties: {
+          triggerSelector: { type: 'string', description: 'CSS selector for the clickable element (e.g., button that opens modal)' },
+          targetSelector: { type: 'string', description: 'CSS selector for the element to show/hide (e.g., the modal itself)' },
+          closeOnClickOutside: { type: 'boolean', description: 'Close when clicking outside the target (default: true for modals)' },
+          closeButtonSelector: { type: 'string', description: 'Optional: CSS selector for close button inside the target' },
+        },
+        required: ['triggerSelector', 'targetSelector'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'set_initial_hidden',
+      description: 'Set an element to be initially hidden (for modals, panels, dropdowns that should only appear on interaction). ALWAYS call this for modals and panels you create.',
+      parameters: {
+        type: 'object',
+        properties: {
+          selector: { type: 'string', description: 'CSS selector for element to hide initially' },
+        },
+        required: ['selector'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'add_hover_effect',
+      description: 'Add hover effect that shows/hides a tooltip or dropdown on hover',
+      parameters: {
+        type: 'object',
+        properties: {
+          triggerSelector: { type: 'string', description: 'CSS selector for the hoverable element' },
+          targetSelector: { type: 'string', description: 'CSS selector for element to show on hover' },
+          showDelay: { type: 'number', description: 'Delay in ms before showing (default: 0)' },
+          hideDelay: { type: 'number', description: 'Delay in ms before hiding (default: 200)' },
+        },
+        required: ['triggerSelector', 'targetSelector'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'add_tab_interaction',
+      description: 'Set up tab navigation where clicking a tab shows its content panel and hides others',
+      parameters: {
+        type: 'object',
+        properties: {
+          tabsSelector: { type: 'string', description: 'CSS selector for tab buttons container' },
+          panelsSelector: { type: 'string', description: 'CSS selector for tab panels container' },
+          activeClass: { type: 'string', description: 'CSS class for active tab (default: "active")' },
+        },
+        required: ['tabsSelector', 'panelsSelector'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'add_accordion_interaction',
+      description: 'Set up accordion where clicking a header toggles its content panel',
+      parameters: {
+        type: 'object',
+        properties: {
+          containerSelector: { type: 'string', description: 'CSS selector for accordion container' },
+          headerSelector: { type: 'string', description: 'CSS selector for clickable headers within container' },
+          contentSelector: { type: 'string', description: 'CSS selector for content panels within container' },
+          allowMultiple: { type: 'boolean', description: 'Allow multiple panels open (default: false)' },
+        },
+        required: ['containerSelector', 'headerSelector', 'contentSelector'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'add_form_validation',
+      description: 'Add basic form validation that shows error messages for required fields',
+      parameters: {
+        type: 'object',
+        properties: {
+          formSelector: { type: 'string', description: 'CSS selector for the form element' },
+          submitButtonSelector: { type: 'string', description: 'CSS selector for submit button' },
+          errorClass: { type: 'string', description: 'CSS class to add to invalid inputs (default: "error")' },
+        },
+        required: ['formSelector'],
+      },
+    },
+  },
+]
+
 // Generic component insertion tools
 const GENERIC_COMPONENT_TOOLS: ToolDefinition[] = [
   {
@@ -460,7 +561,8 @@ function generateStyleTool(tokens: DesignToken[]): ToolDefinition {
 function generateAllTools(
   components: ExtractedComponent[],
   tokens: DesignToken[],
-  includeScreenTools: boolean
+  includeScreenTools: boolean,
+  includeInteractionTools: boolean = true  // Default to enabled
 ): ToolDefinition[] {
   const tools: ToolDefinition[] = [...DOM_TOOLS]
 
@@ -478,6 +580,11 @@ function generateAllTools(
   // Add screen tools if enabled
   if (includeScreenTools) {
     tools.push(...SCREEN_TOOLS)
+  }
+
+  // Add interaction tools if enabled (default: enabled)
+  if (includeInteractionTools) {
+    tools.push(...INTERACTION_TOOLS)
   }
 
   return tools
@@ -541,21 +648,45 @@ function buildSystemPrompt(
 ): string {
   const approvedComponents = components.filter(c => c.approved)
 
-  let prompt = `You are a UI prototype modifier creating high-fidelity prototypes. Your job is to MODIFY an existing webpage DOM using the provided tools to implement the requested feature or change.
+  let prompt = `You are a UI prototype modifier creating high-fidelity INTERACTIVE prototypes. Your job is to MODIFY an existing webpage DOM using the provided tools to implement the requested feature or change.
 
 CRITICAL RULES:
 1. Use ONLY the provided tools - never output raw HTML in your response text
-2. Make MULTIPLE tool calls (typically 5-15) to fully implement the request
+2. Make MULTIPLE tool calls (typically 8-20) to fully implement the request
 3. Add new UI elements, update text, apply styling to create a complete implementation
 4. Reference elements using CSS selectors from the source DOM
-5. Create realistic, interactive-feeling prototypes
+5. Create realistic, INTERACTIVE prototypes - not just static HTML!
 
-IMPORTANT: A good prototype requires multiple modifications:
+## INTERACTION RULES (VERY IMPORTANT):
+
+When creating modals, panels, dropdowns, or any overlay UI:
+1. FIRST: Add the modal/panel HTML using add_element (with id attribute for targeting)
+2. SECOND: Call set_initial_hidden to hide it initially
+3. THIRD: Call add_click_toggle to connect the trigger button to the modal/panel
+4. If the modal has a close button, include closeButtonSelector in add_click_toggle
+
+Example for a modal:
+\`\`\`
+1. add_element(selector: "body", position: "append", html: "<div id='my-modal' class='modal'>...</div>")
+2. set_initial_hidden(selector: "#my-modal")
+3. add_click_toggle(triggerSelector: ".open-modal-btn", targetSelector: "#my-modal", closeButtonSelector: ".close-btn", closeOnClickOutside: true)
+\`\`\`
+
+For side panels:
+\`\`\`
+1. add_element(selector: "body", position: "append", html: "<div id='side-panel' class='side-panel'>...</div>")
+2. set_initial_hidden(selector: "#side-panel")
+3. add_click_toggle(triggerSelector: ".panel-trigger", targetSelector: "#side-panel", closeButtonSelector: ".close-panel")
+\`\`\`
+
+For tabs/accordions: Use add_tab_interaction or add_accordion_interaction
+
+IMPORTANT: A good interactive prototype requires:
 - Add new buttons, forms, modals, or panels as needed
-- Update existing text and labels to match the feature
+- UPDATE existing text and labels to match the feature
 - Apply visual styling (colors, spacing, borders)
-- Add or modify multiple related elements
-- Make the prototype feel complete and polished
+- SET UP INTERACTIVITY with set_initial_hidden and add_click_toggle
+- Give new elements unique IDs so they can be targeted by interaction tools
 
 ${domSummary}
 `
@@ -582,9 +713,9 @@ ${domSummary}
 update_text(selector: ".hero-title", text: "New Headline")
 \`\`\`
 
-### Add element
+### Add element with unique ID
 \`\`\`
-add_element(selector: ".actions", position: "append", html: "<button class='btn'>Click Me</button>")
+add_element(selector: ".actions", position: "append", html: "<button id='open-modal-btn' class='btn'>Open Modal</button>")
 \`\`\`
 
 ### Apply styles
@@ -592,13 +723,38 @@ add_element(selector: ".actions", position: "append", html: "<button class='btn'
 set_style(selector: ".cta-button", styles: { "backgroundColor": "#007bff", "color": "white" })
 \`\`\`
 
-Now implement the user's request comprehensively. Use 5-15 tool calls to:
-1. Add any new UI elements needed (buttons, forms, modals, panels)
+### Create interactive modal
+\`\`\`
+// 1. Add the modal HTML with unique ID
+add_element(selector: "body", position: "append", html: "<div id='contact-modal' class='modal-overlay'><div class='modal-content'><button class='close-modal'>&times;</button><h2>Contact Form</h2><form>...</form></div></div>")
+
+// 2. Hide it initially
+set_initial_hidden(selector: "#contact-modal")
+
+// 3. Connect trigger to modal
+add_click_toggle(triggerSelector: "#open-modal-btn", targetSelector: "#contact-modal", closeButtonSelector: ".close-modal", closeOnClickOutside: true)
+\`\`\`
+
+### Create slide-out panel
+\`\`\`
+// 1. Add panel HTML
+add_element(selector: "body", position: "append", html: "<div id='detail-panel' class='slide-panel'>...</div>")
+
+// 2. Hide initially
+set_initial_hidden(selector: "#detail-panel")
+
+// 3. Connect trigger
+add_click_toggle(triggerSelector: ".view-details", targetSelector: "#detail-panel", closeButtonSelector: ".panel-close")
+\`\`\`
+
+Now implement the user's request comprehensively. Use 8-20 tool calls to:
+1. Add any new UI elements needed (buttons, forms, modals, panels) WITH UNIQUE IDs
 2. Update text content to match the feature
 3. Apply visual styling for a polished look
-4. Connect related elements together
+4. SET UP INTERACTIVITY - use set_initial_hidden + add_click_toggle for ANY overlay UI
+5. Make it feel like a real, working prototype
 
-Be thorough - create a complete, realistic prototype that demonstrates the full feature.`
+REMEMBER: Modals and panels must be HIDDEN initially and shown on click. Always call set_initial_hidden and add_click_toggle for overlay UI.`
 
   return prompt
 }
@@ -900,7 +1056,8 @@ Deno.serve(async (req) => {
     const tools = generateAllTools(
       components,
       tokens,
-      body.includeScreenTools !== false
+      body.includeScreenTools !== false,
+      body.includeInteractionTools !== false  // Default to enabled
     )
 
     // Build context
