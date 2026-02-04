@@ -667,9 +667,12 @@ When creating modals, panels, dropdowns, or any overlay UI, you MUST follow this
 4. FOURTH: Call add_click_toggle to connect trigger to modal/panel
 
 ⚠️ IMPORTANT: The triggerSelector in add_click_toggle MUST reference an element that EXISTS in the DOM!
-- If you're adding a new button, add it FIRST with add_element, then use its selector
-- If reusing an existing button from the source, use that selector
+- PREFER using existing buttons/links from the source DOM as triggers (check the DOM summary above!)
+- Only add a new button if no suitable existing button exists
 - NEVER use a triggerSelector for an element that doesn't exist!
+
+🎯 PREFER EXISTING ELEMENTS: When the source page already has a button like "Add Contact", "Create New", "Open", etc.,
+USE THAT BUTTON as the trigger instead of creating a new one. Look at the DOM summary to find existing interactive elements.
 
 Example for a modal (CORRECT ORDER):
 \`\`\`

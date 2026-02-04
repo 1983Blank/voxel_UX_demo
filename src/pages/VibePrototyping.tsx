@@ -45,7 +45,6 @@ import {
 } from '@/components/ui';
 import {
   Code,
-  Cursor,
   PencilSimple,
   ArrowCounterClockwise,
   ArrowClockwise,
@@ -85,7 +84,6 @@ import {
   Play,
   Stop,
   Eye,
-  TreeStructure,
   Folders,
 } from '@phosphor-icons/react';
 
@@ -4337,7 +4335,7 @@ export const VibePrototyping: React.FC = () => {
           >
             {/* Left: Edit mode toggle + Project breadcrumb */}
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              {/* Edit mode group */}
+              {/* Consolidated view/edit mode toggle */}
               <Box
                 sx={{
                   display: 'flex',
@@ -4346,39 +4344,39 @@ export const VibePrototyping: React.FC = () => {
                   p: 0.25,
                 }}
               >
-                <Tooltip title="Preview Mode (V)">
+                <Tooltip title="Preview Mode">
                   <IconButton
                     size="small"
-                    onClick={() => setEditMode('cursor')}
+                    onClick={() => { setEditMode('cursor'); setPanelView('preview'); }}
                     sx={{
-                      bgcolor: editMode === 'cursor' ? 'background.paper' : 'transparent',
-                      boxShadow: editMode === 'cursor' ? 1 : 0,
+                      bgcolor: editMode === 'cursor' && panelView === 'preview' ? 'background.paper' : 'transparent',
+                      boxShadow: editMode === 'cursor' && panelView === 'preview' ? 1 : 0,
                     }}
                   >
-                    <Cursor size={18} weight={editMode === 'cursor' ? 'fill' : 'regular'} />
+                    <Eye size={18} weight={editMode === 'cursor' && panelView === 'preview' ? 'fill' : 'regular'} />
                   </IconButton>
                 </Tooltip>
-                <Tooltip title={!isComplete && !variants.some(v => v.status === 'complete') ? 'Code Editor (available after variants are built)' : 'Code Editor'}>
+                <Tooltip title={!isComplete && !variants.some(v => v.status === 'complete') ? 'Code View (available after generation)' : 'View/Edit Code'}>
                   <span>
                     <IconButton
                       size="small"
-                      onClick={() => setEditMode('code')}
+                      onClick={() => { setEditMode('code'); setPanelView('code'); }}
                       disabled={!isComplete && !variants.some(v => v.status === 'complete')}
                       sx={{
-                        bgcolor: editMode === 'code' ? 'background.paper' : 'transparent',
-                        boxShadow: editMode === 'code' ? 1 : 0,
+                        bgcolor: editMode === 'code' || panelView === 'code' ? 'background.paper' : 'transparent',
+                        boxShadow: editMode === 'code' || panelView === 'code' ? 1 : 0,
                         opacity: (!isComplete && !variants.some(v => v.status === 'complete')) ? 0.4 : 1,
                       }}
                     >
-                      <Code size={18} weight={editMode === 'code' ? 'fill' : 'regular'} />
+                      <Code size={18} weight={editMode === 'code' || panelView === 'code' ? 'fill' : 'regular'} />
                     </IconButton>
                   </span>
                 </Tooltip>
-                <Tooltip title={!isComplete && !variants.some(v => v.status === 'complete') ? 'WYSIWYG Editor (available after variants are built)' : 'WYSIWYG Editor'}>
+                <Tooltip title={!isComplete && !variants.some(v => v.status === 'complete') ? 'WYSIWYG Editor (available after generation)' : 'Visual Editor'}>
                   <span>
                     <IconButton
                       size="small"
-                      onClick={() => setEditMode('wysiwyg')}
+                      onClick={() => { setEditMode('wysiwyg'); setPanelView('preview'); }}
                       disabled={!isComplete && !variants.some(v => v.status === 'complete')}
                       sx={{
                         bgcolor: editMode === 'wysiwyg' ? 'background.paper' : 'transparent',
@@ -4390,47 +4388,11 @@ export const VibePrototyping: React.FC = () => {
                     </IconButton>
                   </span>
                 </Tooltip>
-              </Box>
-
-              {/* Panel View Toggle - moved to left side (only show when variants are ready) */}
-              {isComplete && focusedVariantIndex && (
-                <Box
-                  sx={{
-                    display: 'flex',
-                    bgcolor: 'action.hover',
-                    borderRadius: 1,
-                    p: 0.25,
-                    ml: 0.5,
-                  }}
-                >
-                  <Tooltip title="Preview">
+                {isComplete && focusedVariantIndex && (
+                  <Tooltip title="File Browser">
                     <IconButton
                       size="small"
-                      onClick={() => setPanelView('preview')}
-                      sx={{
-                        bgcolor: panelView === 'preview' ? 'background.paper' : 'transparent',
-                        boxShadow: panelView === 'preview' ? 1 : 0,
-                      }}
-                    >
-                      <Eye size={18} weight={panelView === 'preview' ? 'fill' : 'regular'} />
-                    </IconButton>
-                  </Tooltip>
-                  <Tooltip title="Code">
-                    <IconButton
-                      size="small"
-                      onClick={() => setPanelView('code')}
-                      sx={{
-                        bgcolor: panelView === 'code' ? 'background.paper' : 'transparent',
-                        boxShadow: panelView === 'code' ? 1 : 0,
-                      }}
-                    >
-                      <TreeStructure size={18} weight={panelView === 'code' ? 'fill' : 'regular'} />
-                    </IconButton>
-                  </Tooltip>
-                  <Tooltip title="Files">
-                    <IconButton
-                      size="small"
-                      onClick={() => setPanelView('files')}
+                      onClick={() => { setEditMode('cursor'); setPanelView('files'); }}
                       sx={{
                         bgcolor: panelView === 'files' ? 'background.paper' : 'transparent',
                         boxShadow: panelView === 'files' ? 1 : 0,
@@ -4439,8 +4401,8 @@ export const VibePrototyping: React.FC = () => {
                       <Folders size={18} weight={panelView === 'files' ? 'fill' : 'regular'} />
                     </IconButton>
                   </Tooltip>
-                </Box>
-              )}
+                )}
+              </Box>
 
               <Divider orientation="vertical" flexItem />
 
