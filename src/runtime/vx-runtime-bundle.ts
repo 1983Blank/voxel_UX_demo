@@ -957,6 +957,15 @@ export function preparePrototypeHtml(
   console.log('[preparePrototypeHtml] Input starts with:', html?.slice(0, 100));
   console.log('[preparePrototypeHtml] Components to inject:', components.length);
 
+  // CRITICAL: Check for double-processing
+  if (html?.includes('[VxRuntime:DIAG]')) {
+    console.warn('[preparePrototypeHtml] WARNING: Input already contains runtime! Double-processing detected.');
+    return html; // Return as-is to avoid double-injection
+  }
+  if (html?.includes('Voxel Runtime Bundle')) {
+    console.warn('[preparePrototypeHtml] WARNING: Input already has runtime bundle comment!');
+  }
+
   if (!html || html.length === 0) {
     console.error('[preparePrototypeHtml] ERROR: Empty HTML input!');
     return '<!DOCTYPE html><html><head></head><body><h1>Error: Empty HTML</h1></body></html>';
@@ -1045,6 +1054,13 @@ export function preparePrototypeHtml(
 
   console.log('[preparePrototypeHtml] Final output length:', processed.length);
   console.log('[preparePrototypeHtml] Output starts with:', processed.slice(0, 100));
+
+  // FINAL DIAGNOSTIC: Check for runtime in output
+  console.log('[preparePrototypeHtml:FINAL] Contains "Voxel Runtime Bundle":', processed.includes('Voxel Runtime Bundle'));
+  console.log('[preparePrototypeHtml:FINAL] Contains "[VxRuntime:DIAG]":', processed.includes('[VxRuntime:DIAG]'));
+  console.log('[preparePrototypeHtml:FINAL] Count of <script>:', (processed.match(/<script>/gi) || []).length);
+  console.log('[preparePrototypeHtml:FINAL] Count of </script>:', (processed.match(/<\/script>/gi) || []).length);
+  console.log('[preparePrototypeHtml:FINAL] Count of escaped <\\/script>:', (processed.match(/<\\\/script>/gi) || []).length);
 
   return processed;
 }
