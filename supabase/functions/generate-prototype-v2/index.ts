@@ -88,6 +88,7 @@ interface GenerateRequest {
   includeInteractionTools?: boolean
   provider?: 'anthropic' | 'openai'
   model?: string
+  stream?: boolean  // Enable SSE streaming of tool calls
 }
 
 // =============================================================================
@@ -1064,6 +1065,218 @@ async function callAnthropicWithTools(
   return toolCalls
 }
 
+/**
+ * Convert tool name to human-readable label for streaming UI
+ */
+function toolToLabel(toolName: string, params?: Record<string, unknown>): string {
+  const html = params?.html as string | undefined
+  const selector = params?.selector as string | undefined
+  const targetSelector = params?.targetSelector as string | undefined
+
+  // Infer element type from HTML or selector
+  const getElementDesc = (): string => {
+    if (html) {
+      const h = html.toLowerCase()
+      if (h.includes('modal') || h.includes('dialog')) return 'modal'
+      if (h.includes('panel') || h.includes('drawer')) return 'panel'
+      if (h.includes('form')) return 'form'
+      if (h.includes('button')) return 'button'
+      if (h.includes('input')) return 'input field'
+    }
+    if (selector) {
+      const s = selector.toLowerCase()
+      if (s.includes('modal')) return 'modal'
+      if (s.includes('panel')) return 'panel'
+      if (s.includes('form')) return 'form'
+      if (s.includes('btn') || s.includes('button')) return 'button'
+    }
+    return 'element'
+  }
+
+  const labels: Record<string, string | (() => string)> = {
+    'update_text': () => `Updating text: "${(params?.text as string)?.slice(0, 25) || '...'}"`,
+    'update_html': () => `Building ${getElementDesc()}`,
+    'update_attribute': () => `Setting ${params?.attribute || 'attribute'}`,
+    'remove_element': () => `Removing ${getElementDesc()}`,
+    'add_element': () => {
+      const desc = getElementDesc()
+      if (desc === 'modal') return 'Creating modal dialog'
+      if (desc === 'panel') return 'Creating side panel'
+      if (desc === 'form') return 'Building form'
+      return `Adding ${desc}`
+    },
+    'add_class': 'Applying styles',
+    'remove_class': 'Removing styles',
+    'set_style': 'Applying inline styles',
+    'hide_element': () => `Hiding ${getElementDesc()}`,
+    'show_element': () => `Showing ${getElementDesc()}`,
+    'add_click_toggle': () => {
+      const target = targetSelector?.toLowerCase() || ''
+      if (target.includes('modal')) return 'Wiring button to open modal'
+      if (target.includes('panel')) return 'Wiring button to open panel'
+      return 'Connecting click toggle'
+    },
+    'set_initial_hidden': () => `Hiding ${getElementDesc()} initially`,
+    'add_hover_effect': 'Adding hover effect',
+    'add_tab_interaction': 'Setting up tabs',
+    'add_accordion_interaction': 'Setting up accordion',
+    'add_form_validation': 'Adding form validation',
+    'create_screen': () => `Creating "${params?.screenId || 'new'}" screen`,
+    'add_navigation': 'Adding navigation',
+  }
+
+  // Handle insert_* tools
+  if (toolName.startsWith('insert_')) {
+    const name = toolName.replace('insert_', '').replace(/_/g, ' ')
+    return `Adding ${name}`
+  }
+
+  const label = labels[toolName]
+  if (label) {
+    return typeof label === 'function' ? label() : label
+  }
+
+  // Fallback: make tool name readable
+  return toolName.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+}
+
+/**
+ * Streaming version of Anthropic call - yields tool calls as they complete
+ * Uses Server-Sent Events to stream tool calls to the client
+ */
+async function* callAnthropicWithToolsStreaming(
+  apiKey: string,
+  model: string,
+  systemPrompt: string,
+  userPrompt: string,
+  tools: ToolDefinition[]
+): AsyncGenerator<{ type: 'tool_call' | 'complete' | 'error', data: unknown }> {
+  console.log('[generate-prototype-v2] Calling Anthropic with streaming,', tools.length, 'tools')
+
+  // Convert tools to Anthropic format
+  const anthropicTools = tools.map(t => ({
+    name: t.function.name,
+    description: t.function.description,
+    input_schema: t.function.parameters,
+  }))
+
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model: model || 'claude-sonnet-4-20250514',
+      max_tokens: 8192,
+      stream: true,  // Enable streaming
+      system: systemPrompt,
+      tools: anthropicTools,
+      tool_choice: { type: 'any' },
+      messages: [{ role: 'user', content: userPrompt }],
+    }),
+  })
+
+  if (!response.ok) {
+    const error = await response.json()
+    yield { type: 'error', data: { message: error.error?.message || 'Anthropic API error' } }
+    return
+  }
+
+  const reader = response.body?.getReader()
+  if (!reader) {
+    yield { type: 'error', data: { message: 'No response body' } }
+    return
+  }
+
+  const decoder = new TextDecoder()
+  let buffer = ''
+  const toolCalls: ToolCall[] = []
+  let currentToolUse: { id: string; name: string; input: string } | null = null
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true })
+
+      // Parse SSE events from buffer
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || '' // Keep incomplete line in buffer
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const data = line.slice(6)
+          if (data === '[DONE]') continue
+
+          try {
+            const event = JSON.parse(data)
+
+            // Handle content_block_start - new tool use begins
+            if (event.type === 'content_block_start' && event.content_block?.type === 'tool_use') {
+              currentToolUse = {
+                id: event.content_block.id,
+                name: event.content_block.name,
+                input: '',
+              }
+            }
+
+            // Handle content_block_delta - tool input JSON streaming
+            if (event.type === 'content_block_delta' && event.delta?.type === 'input_json_delta') {
+              if (currentToolUse) {
+                currentToolUse.input += event.delta.partial_json || ''
+              }
+            }
+
+            // Handle content_block_stop - tool use complete
+            if (event.type === 'content_block_stop' && currentToolUse) {
+              try {
+                const parsedInput = JSON.parse(currentToolUse.input)
+                const toolCall: ToolCall = {
+                  id: currentToolUse.id,
+                  name: currentToolUse.name,
+                  arguments: parsedInput,
+                }
+                toolCalls.push(toolCall)
+
+                // Yield the tool call immediately
+                yield {
+                  type: 'tool_call',
+                  data: {
+                    toolCall,
+                    index: toolCalls.length - 1,
+                    total: null, // Unknown at this point
+                  },
+                }
+              } catch (parseErr) {
+                console.error('[generate-prototype-v2] Failed to parse tool input:', parseErr)
+              }
+              currentToolUse = null
+            }
+
+            // Handle message_stop - all done
+            if (event.type === 'message_stop') {
+              yield {
+                type: 'complete',
+                data: {
+                  toolCalls,
+                  total: toolCalls.length,
+                },
+              }
+            }
+          } catch (parseErr) {
+            // Ignore parse errors for non-JSON lines
+          }
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock()
+  }
+}
+
 async function callOpenAIWithTools(
   apiKey: string,
   model: string,
@@ -1307,9 +1520,101 @@ Deno.serve(async (req) => {
       systemPromptLength: systemPrompt.length,
       componentLibraryCount: componentLibrary.length,
       approvedComponentsCount: components.filter(c => c.approved).length,
+      streaming: body.stream || false,
     })
 
-    // Call LLM with tools (with retry and fallback logic for overload errors)
+    // STREAMING MODE: Return SSE stream of tool calls
+    if (body.stream && keyConfig.provider === 'anthropic') {
+      console.log('[generate-prototype-v2] Starting streaming mode...')
+
+      // Create a ReadableStream for SSE
+      const stream = new ReadableStream({
+        async start(controller) {
+          const encoder = new TextEncoder()
+
+          const sendEvent = (type: string, data: unknown) => {
+            const event = `event: ${type}\ndata: ${JSON.stringify(data)}\n\n`
+            controller.enqueue(encoder.encode(event))
+          }
+
+          try {
+            sendEvent('start', { variantIndex: body.variantIndex, model: modelToUse })
+
+            const generator = callAnthropicWithToolsStreaming(
+              apiKey,
+              modelToUse,
+              systemPrompt,
+              userPrompt,
+              tools
+            )
+
+            const toolCalls: ToolCall[] = []
+
+            for await (const event of generator) {
+              if (event.type === 'tool_call') {
+                const { toolCall, index } = event.data as { toolCall: ToolCall; index: number }
+                toolCalls.push(toolCall)
+
+                // Generate a human-readable label for the tool
+                const label = toolToLabel(toolCall.name, toolCall.arguments)
+
+                sendEvent('tool_call', {
+                  toolCall,
+                  index,
+                  label,
+                  variantIndex: body.variantIndex,
+                })
+              } else if (event.type === 'complete') {
+                // Parse tool calls into modification spec
+                const spec = parseToolCallsToSpec(toolCalls)
+
+                const duration = Date.now() - startTime
+                console.log('[generate-prototype-v2] Streaming complete:', toolCalls.length, 'tool calls in', duration, 'ms')
+
+                // Store the spec
+                const specPath = `${user.id}/${body.sessionId}/variant_${body.variantIndex}_spec.json`
+                await supabase.storage
+                  .from('vibe-files')
+                  .upload(specPath, new Blob([JSON.stringify(spec, null, 2)], { type: 'application/json' }), {
+                    contentType: 'application/json',
+                    upsert: true,
+                  })
+
+                sendEvent('complete', {
+                  spec,
+                  specPath,
+                  toolCallCount: toolCalls.length,
+                  screensGenerated: spec.screens.length,
+                  durationMs: duration,
+                  model: modelToUse,
+                  provider: keyConfig.provider,
+                  variantIndex: body.variantIndex,
+                })
+              } else if (event.type === 'error') {
+                sendEvent('error', event.data)
+              }
+            }
+          } catch (err) {
+            const errorMessage = err instanceof Error ? err.message : 'Unknown error'
+            console.error('[generate-prototype-v2] Streaming error:', errorMessage)
+            sendEvent('error', { message: errorMessage })
+          } finally {
+            controller.close()
+          }
+        },
+      })
+
+      return new Response(stream, {
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive',
+        },
+      })
+    }
+
+    // NON-STREAMING MODE: Call LLM with tools (with retry and fallback logic for overload errors)
     let toolCalls: ToolCall[]
     let actualModelUsed = modelToUse
     const maxRetries = 3

@@ -2811,11 +2811,23 @@ export const VibePrototyping: React.FC = () => {
                 htmlLength: result.html.length,
               });
             },
-            // Options with abort signal
+            // Options with abort signal and streaming
             {
               provider: selectedProvider as 'anthropic' | 'openai' | undefined,
               model: selectedModel || undefined,
               abortSignal: abortController.signal,
+              streaming: selectedProvider === 'anthropic', // Enable streaming for Anthropic
+              onStreamEvent: (event) => {
+                // Handle streaming events for real-time UI updates
+                if (event.type === 'tool_call') {
+                  const toolData = event.data as { label: string; variantIndex: number };
+                  // Update the variant's progress message in real-time
+                  setVariantProgressMessages((prev) => ({
+                    ...prev,
+                    [toolData.variantIndex]: toolData.label,
+                  }));
+                }
+              },
             }
           );
 

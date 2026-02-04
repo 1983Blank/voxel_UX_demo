@@ -77,6 +77,10 @@ export interface ToolModeOptions {
   model?: string;
   /** Abort signal to cancel generation */
   abortSignal?: AbortSignal;
+  /** Enable streaming mode - tool calls are sent as they happen */
+  streaming?: boolean;
+  /** Callback for streaming events */
+  onStreamEvent?: StreamingCallback;
 }
 
 type ProgressCallback = (progress: ToolModeProgress) => void;
@@ -514,6 +518,179 @@ async function generateSpec(
   };
 }
 
+/**
+ * Streaming callback for tool calls
+ */
+export interface StreamingToolCall {
+  toolCall: {
+    id: string;
+    name: string;
+    arguments: Record<string, unknown>;
+  };
+  index: number;
+  label: string;
+  variantIndex: number;
+}
+
+export type StreamingCallback = (event: {
+  type: 'start' | 'tool_call' | 'complete' | 'error';
+  data: unknown;
+}) => void;
+
+/**
+ * Streaming version of generateSpec - receives tool calls as they happen
+ */
+async function generateSpecStreaming(
+  sessionId: string,
+  variantIndex: number,
+  prompt: string,
+  sourceHtml: string,
+  components: ExtractedComponentForTools[],
+  tokens: ToolDesignToken[],
+  onStreamEvent: StreamingCallback,
+  options: ToolModeOptions = {}
+): Promise<{
+  spec: ModificationSpec;
+  toolCallCount: number;
+  screensGenerated: number;
+  durationMs: number;
+  model: string;
+  provider: string;
+}> {
+  if (!isSupabaseConfigured()) {
+    throw new Error('Supabase not configured');
+  }
+
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) {
+    throw new Error('Not authenticated');
+  }
+
+  // Truncate source HTML
+  const maxSourceHtmlSize = 100000;
+  const truncatedHtml = sourceHtml.length > maxSourceHtmlSize
+    ? sourceHtml.slice(0, maxSourceHtmlSize)
+    : sourceHtml;
+
+  if (options.abortSignal?.aborted) {
+    throw new Error('Generation aborted');
+  }
+
+  const allComponents = getAllComponentsForReference();
+
+  console.log('[ToolModeGeneration] Starting streaming generation:', {
+    sessionId,
+    variantIndex,
+    promptLength: prompt.length,
+  });
+
+  // Get Supabase URL for direct fetch
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  const functionUrl = `${supabaseUrl}/functions/v1/generate-prototype-v2`;
+
+  const response = await fetch(functionUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${session.access_token}`,
+    },
+    body: JSON.stringify({
+      sessionId,
+      variantIndex,
+      prompt,
+      sourceHtml: truncatedHtml,
+      components,
+      componentLibrary: allComponents,
+      tokens,
+      includeScreenTools: options.includeScreenTools !== false,
+      includeInteractionTools: options.includeInteractionTools !== false,
+      provider: options.provider,
+      model: options.model,
+      stream: true,  // Enable streaming
+    }),
+    signal: options.abortSignal,
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Streaming request failed: ${errorText}`);
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) {
+    throw new Error('No response body for streaming');
+  }
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let result: {
+    spec: ModificationSpec;
+    toolCallCount: number;
+    screensGenerated: number;
+    durationMs: number;
+    model: string;
+    provider: string;
+  } | null = null;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+
+      // Parse SSE events
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      let eventType = '';
+      for (const line of lines) {
+        if (line.startsWith('event: ')) {
+          eventType = line.slice(7).trim();
+        } else if (line.startsWith('data: ')) {
+          const data = line.slice(6);
+          try {
+            const parsed = JSON.parse(data);
+
+            // Call the streaming callback
+            onStreamEvent({ type: eventType as 'start' | 'tool_call' | 'complete' | 'error', data: parsed });
+
+            // Capture the final result
+            if (eventType === 'complete') {
+              result = {
+                spec: parsed.spec,
+                toolCallCount: parsed.toolCallCount,
+                screensGenerated: parsed.screensGenerated,
+                durationMs: parsed.durationMs,
+                model: parsed.model,
+                provider: parsed.provider,
+              };
+            } else if (eventType === 'error') {
+              throw new Error(parsed.message || 'Streaming error');
+            }
+          } catch (parseErr) {
+            console.warn('[ToolModeGeneration] Failed to parse SSE data:', parseErr);
+          }
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  if (!result) {
+    throw new Error('Streaming completed without result');
+  }
+
+  console.log('[ToolModeGeneration] Streaming complete:', {
+    toolCallCount: result.toolCallCount,
+    screensGenerated: result.screensGenerated,
+    durationMs: result.durationMs,
+  });
+
+  return result;
+}
+
 // =============================================================================
 // HTML Generation (Apply Modifications + Inject Runtime)
 // =============================================================================
@@ -657,15 +834,67 @@ export async function generateVariantToolMode(
     variantTitle: plan.title,
   });
 
-  const specResult = await generateSpec(
-    sessionId,
-    variantIndex,
-    prompt,
-    sourceHtml,
-    components,
-    tokens,
-    options
-  );
+  // Track streaming tool calls for real-time progress
+  const streamingToolCalls: { name: string; label: string; params: unknown }[] = [];
+
+  // Use streaming or non-streaming based on options
+  const specResult = options.streaming && options.provider === 'anthropic'
+    ? await generateSpecStreaming(
+        sessionId,
+        variantIndex,
+        prompt,
+        sourceHtml,
+        components,
+        tokens,
+        // Streaming event handler - update progress in real-time
+        (event) => {
+          if (event.type === 'start') {
+            console.log('[ToolModeGeneration] Streaming started');
+          } else if (event.type === 'tool_call') {
+            const toolData = event.data as StreamingToolCall;
+            streamingToolCalls.push({
+              name: toolData.toolCall.name,
+              label: toolData.label,
+              params: toolData.toolCall.arguments,
+            });
+
+            // Call the external streaming callback if provided
+            options.onStreamEvent?.(event);
+
+            // Update progress with the new tool call
+            onProgress?.({
+              stage: 'generating-spec',
+              message: toolData.label,
+              percent: 30 + Math.min(40, streamingToolCalls.length * 3), // Progress based on tool calls
+              variantIndex,
+              variantTitle: plan.title,
+              steps: streamingToolCalls.map((tc, idx) => ({
+                stepKey: `tool-${idx}`,
+                label: tc.label,
+                status: 'completed' as const,
+              })),
+              totalSteps: undefined, // Unknown until complete
+              completedSteps: streamingToolCalls.length,
+            });
+          } else if (event.type === 'complete') {
+            console.log('[ToolModeGeneration] Streaming complete');
+            options.onStreamEvent?.(event);
+          } else if (event.type === 'error') {
+            console.error('[ToolModeGeneration] Streaming error:', event.data);
+            options.onStreamEvent?.(event);
+          }
+        },
+        options
+      )
+    : await generateSpec(
+        sessionId,
+        variantIndex,
+        prompt,
+        sourceHtml,
+        components,
+        tokens,
+        options
+      );
 
   // Extract custom steps from the spec
   const customSteps = extractStepsFromSpec(specResult.spec);
