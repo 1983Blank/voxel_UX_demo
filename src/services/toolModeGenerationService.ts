@@ -293,11 +293,19 @@ async function generateSpec(
     throw new Error('Not authenticated');
   }
 
+  // Truncate source HTML to reduce payload size
+  // The edge function only uses the first 50000 chars for LLM context anyway
+  const maxSourceHtmlSize = 100000; // 100KB max, edge function further truncates to 50KB for LLM
+  const truncatedHtml = sourceHtml.length > maxSourceHtmlSize
+    ? sourceHtml.slice(0, maxSourceHtmlSize)
+    : sourceHtml;
+
   console.log('[ToolModeGeneration] Calling generate-prototype-v2:', {
     sessionId,
     variantIndex,
     promptLength: prompt.length,
     sourceHtmlLength: sourceHtml.length,
+    truncatedHtmlLength: truncatedHtml.length,
     componentsCount: components.length,
     tokensCount: tokens.length,
   });
@@ -307,7 +315,7 @@ async function generateSpec(
       sessionId,
       variantIndex,
       prompt,
-      sourceHtml,
+      sourceHtml: truncatedHtml,
       components,
       tokens,
       includeScreenTools: options.includeScreenTools !== false,
@@ -322,6 +330,20 @@ async function generateSpec(
 
   if (error) {
     console.error('[ToolModeGeneration] Edge function error:', error);
+    // Try to extract more details from the error
+    const errorContext = (error as { context?: { json?: () => Promise<unknown> } })?.context;
+    if (errorContext?.json) {
+      try {
+        const errorBody = await errorContext.json();
+        console.error('[ToolModeGeneration] Error body:', errorBody);
+        const errorMessage = (errorBody as { error?: string })?.error;
+        if (errorMessage) {
+          throw new Error(errorMessage);
+        }
+      } catch (parseErr) {
+        console.error('[ToolModeGeneration] Failed to parse error body:', parseErr);
+      }
+    }
     throw new Error(error.message || 'Failed to generate modification spec');
   }
 
