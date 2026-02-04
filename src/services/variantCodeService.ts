@@ -6,6 +6,11 @@
 import { supabase, isSupabaseConfigured } from './supabase';
 import type { UIMetadata } from './screenAnalyzerService';
 import type { VariantPlan } from './variantPlanService';
+import type {
+  ModificationSpec,
+  ExtractedComponentForTools,
+  DesignToken,
+} from '@/types/toolSchema';
 
 // Types
 export interface VibeVariant {
@@ -792,4 +797,202 @@ export async function getFullSession(sessionId: string): Promise<{
     variants: data.variants || [],
     metadata: data.screen_metadata || null,
   };
+}
+
+// =============================================================================
+// Tool-Based Generation (Dynamic Tools Architecture)
+// =============================================================================
+
+export interface ToolModeGenerationOptions {
+  /** Use tool-based modification mode instead of raw HTML */
+  useToolMode: true;
+  /** Include multi-screen navigation tools */
+  includeScreenTools?: boolean;
+  /** Include state/interaction tools */
+  includeInteractionTools?: boolean;
+  /** Extracted components for the account */
+  components?: ExtractedComponentForTools[];
+  /** Design tokens for the account */
+  tokens?: DesignToken[];
+  /** Provider to use */
+  provider?: 'anthropic' | 'openai';
+  /** Model to use */
+  model?: string;
+}
+
+export interface ToolModeGenerationResult {
+  /** The modification specification */
+  spec: ModificationSpec;
+  /** Path to stored spec file */
+  specPath: string;
+  /** Number of tool calls made */
+  toolCallCount: number;
+  /** Number of screens generated */
+  screensGenerated: number;
+  /** Generation duration in ms */
+  durationMs: number;
+  /** Model used */
+  model: string;
+  /** Provider used */
+  provider: string;
+}
+
+/**
+ * Generate a variant using tool-based modifications
+ *
+ * Instead of generating raw HTML, this calls an LLM with tool definitions
+ * and receives modification instructions that are applied to the source DOM.
+ */
+export async function generateVariantWithTools(
+  sessionId: string,
+  variantIndex: number,
+  prompt: string,
+  sourceHtml: string,
+  options: ToolModeGenerationOptions,
+  onProgress?: ProgressCallback
+): Promise<ToolModeGenerationResult> {
+  if (!isSupabaseConfigured()) {
+    throw new Error('Supabase not configured');
+  }
+
+  // Get session for auth token
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) {
+    throw new Error('Not authenticated');
+  }
+
+  // Progress: Starting
+  onProgress?.({
+    stage: 'generating',
+    message: `Generating with tool mode...`,
+    percent: 10,
+    variantIndex,
+  });
+
+  console.log('[VariantCodeService] Calling generate-prototype-v2 edge function:', {
+    sessionId,
+    variantIndex,
+    promptLength: prompt.length,
+    sourceHtmlLength: sourceHtml.length,
+    hasComponents: !!options.components?.length,
+    hasTokens: !!options.tokens?.length,
+  });
+
+  // Call the v2 Edge Function
+  const { data, error } = await supabase.functions.invoke('generate-prototype-v2', {
+    body: {
+      sessionId,
+      variantIndex,
+      prompt,
+      sourceHtml,
+      components: options.components || [],
+      tokens: options.tokens || [],
+      includeScreenTools: options.includeScreenTools !== false,
+      includeInteractionTools: options.includeInteractionTools !== false,
+      provider: options.provider,
+      model: options.model,
+    },
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+    },
+  });
+
+  if (error) {
+    onProgress?.({
+      stage: 'failed',
+      message: `Tool generation failed: ${error.message}`,
+      percent: 100,
+      variantIndex,
+    });
+    throw new Error(error.message || 'Failed to generate with tools');
+  }
+
+  if (!data.success) {
+    onProgress?.({
+      stage: 'failed',
+      message: `Tool generation failed: ${data.error}`,
+      percent: 100,
+      variantIndex,
+    });
+    throw new Error(data.error || 'Tool generation failed');
+  }
+
+  // Progress: Complete
+  onProgress?.({
+    stage: 'complete',
+    message: `Generated ${data.toolCallCount} modifications`,
+    percent: 100,
+    variantIndex,
+  });
+
+  return {
+    spec: data.spec,
+    specPath: data.specPath,
+    toolCallCount: data.toolCallCount,
+    screensGenerated: data.screensGenerated,
+    durationMs: data.durationMs,
+    model: data.model,
+    provider: data.provider,
+  };
+}
+
+/**
+ * Check if a variant was generated with tool mode
+ */
+export async function isVariantToolMode(
+  sessionId: string,
+  variantIndex: number
+): Promise<boolean> {
+  if (!isSupabaseConfigured()) {
+    return false;
+  }
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    return false;
+  }
+
+  // Check if spec file exists in storage
+  const { data } = await supabase.storage
+    .from('vibe-files')
+    .list(`${user.id}/${sessionId}`, {
+      search: `variant_${variantIndex}_spec.json`,
+    });
+
+  return (data?.length || 0) > 0;
+}
+
+/**
+ * Get the modification spec for a tool-mode variant
+ */
+export async function getVariantSpec(
+  sessionId: string,
+  variantIndex: number
+): Promise<ModificationSpec | null> {
+  if (!isSupabaseConfigured()) {
+    return null;
+  }
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    return null;
+  }
+
+  const specPath = `${user.id}/${sessionId}/variant_${variantIndex}_spec.json`;
+  const { data, error } = await supabase.storage
+    .from('vibe-files')
+    .download(specPath);
+
+  if (error || !data) {
+    console.log('[VariantCodeService] No spec found for variant:', variantIndex);
+    return null;
+  }
+
+  try {
+    const text = await data.text();
+    return JSON.parse(text) as ModificationSpec;
+  } catch (parseError) {
+    console.error('[VariantCodeService] Failed to parse spec:', parseError);
+    return null;
+  }
 }

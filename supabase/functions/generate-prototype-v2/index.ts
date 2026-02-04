@@ -1,0 +1,929 @@
+// Supabase Edge Function for generating prototypes using tool-based modifications
+// Uses the Dynamic Tools Architecture for surgical DOM modifications
+// Deploy with: supabase functions deploy generate-prototype-v2
+
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+
+// =============================================================================
+// Type Definitions (matching src/types/toolSchema.ts)
+// =============================================================================
+
+interface ToolDefinition {
+  type: 'function'
+  function: {
+    name: string
+    description: string
+    parameters: {
+      type: 'object'
+      properties: Record<string, unknown>
+      required: string[]
+    }
+  }
+}
+
+interface ToolCall {
+  id: string
+  name: string
+  arguments: Record<string, unknown>
+}
+
+interface Modification {
+  tool: string
+  selector?: string
+  position?: 'before' | 'after' | 'prepend' | 'append' | 'replace'
+  params: Record<string, unknown>
+}
+
+interface ScreenModification {
+  screenId: string
+  sourceScreenId?: string
+  title?: string
+  modifications: Modification[]
+}
+
+interface ModificationSpec {
+  screens: ScreenModification[]
+  navigation?: {
+    routes: Array<{ path: string; screenId: string; params?: string[] }>
+    defaultScreen: string
+    defaultTransition?: string
+  }
+  metadata?: Record<string, unknown>
+}
+
+interface ExtractedComponent {
+  id: string
+  name: string
+  category: string
+  description: string
+  html: string
+  css?: string
+  props: Array<{ name: string; type: string; required?: boolean }>
+  variants: Array<{ name: string; description?: string; styles?: string }>
+  approved: boolean
+}
+
+interface DesignToken {
+  name: string
+  category: string
+  value: string
+  cssVariable?: string
+}
+
+interface GenerateRequest {
+  sessionId: string
+  variantIndex: number
+  prompt: string
+  sourceScreenId: string
+  sourceHtml: string
+  components?: ExtractedComponent[]
+  tokens?: DesignToken[]
+  includeScreenTools?: boolean
+  includeInteractionTools?: boolean
+  provider?: 'anthropic' | 'openai'
+  model?: string
+}
+
+// =============================================================================
+// Tool Definitions
+// =============================================================================
+
+// Core DOM modification tools
+const DOM_TOOLS: ToolDefinition[] = [
+  {
+    type: 'function',
+    function: {
+      name: 'update_text',
+      description: 'Update the text content of an element',
+      parameters: {
+        type: 'object',
+        properties: {
+          selector: { type: 'string', description: 'CSS selector for the target element' },
+          text: { type: 'string', description: 'New text content' },
+        },
+        required: ['selector', 'text'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'update_html',
+      description: 'Update the inner HTML of an element',
+      parameters: {
+        type: 'object',
+        properties: {
+          selector: { type: 'string', description: 'CSS selector for the target element' },
+          html: { type: 'string', description: 'New HTML content' },
+        },
+        required: ['selector', 'html'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'update_attribute',
+      description: 'Update an attribute on an element',
+      parameters: {
+        type: 'object',
+        properties: {
+          selector: { type: 'string', description: 'CSS selector' },
+          attribute: { type: 'string', description: 'Attribute name' },
+          value: { type: 'string', description: 'New value' },
+        },
+        required: ['selector', 'attribute', 'value'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'add_class',
+      description: 'Add CSS classes to an element',
+      parameters: {
+        type: 'object',
+        properties: {
+          selector: { type: 'string', description: 'CSS selector' },
+          classes: { type: 'string', description: 'Space-separated class names' },
+        },
+        required: ['selector', 'classes'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'remove_class',
+      description: 'Remove CSS classes from an element',
+      parameters: {
+        type: 'object',
+        properties: {
+          selector: { type: 'string', description: 'CSS selector' },
+          classes: { type: 'string', description: 'Space-separated class names' },
+        },
+        required: ['selector', 'classes'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'remove_element',
+      description: 'Remove an element from the DOM',
+      parameters: {
+        type: 'object',
+        properties: {
+          selector: { type: 'string', description: 'CSS selector for element to remove' },
+        },
+        required: ['selector'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'add_element',
+      description: 'Add a new HTML element relative to an existing element',
+      parameters: {
+        type: 'object',
+        properties: {
+          selector: { type: 'string', description: 'CSS selector for reference element' },
+          position: {
+            type: 'string',
+            enum: ['before', 'after', 'prepend', 'append', 'replace'],
+            description: 'Where to insert',
+          },
+          html: { type: 'string', description: 'HTML to insert' },
+        },
+        required: ['selector', 'position', 'html'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'set_style',
+      description: 'Set inline CSS styles on an element',
+      parameters: {
+        type: 'object',
+        properties: {
+          selector: { type: 'string', description: 'CSS selector' },
+          styles: { type: 'object', description: 'CSS properties and values' },
+        },
+        required: ['selector', 'styles'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'hide_element',
+      description: 'Hide an element (display: none)',
+      parameters: {
+        type: 'object',
+        properties: {
+          selector: { type: 'string', description: 'CSS selector' },
+        },
+        required: ['selector'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'show_element',
+      description: 'Show a hidden element',
+      parameters: {
+        type: 'object',
+        properties: {
+          selector: { type: 'string', description: 'CSS selector' },
+          display: { type: 'string', description: 'Display value (optional)' },
+        },
+        required: ['selector'],
+      },
+    },
+  },
+]
+
+// Screen management tools
+const SCREEN_TOOLS: ToolDefinition[] = [
+  {
+    type: 'function',
+    function: {
+      name: 'create_screen',
+      description: 'Create a new screen for the prototype',
+      parameters: {
+        type: 'object',
+        properties: {
+          screenId: { type: 'string', description: 'Unique screen identifier' },
+          baseScreenId: { type: 'string', description: 'Screen to copy as starting point' },
+          title: { type: 'string', description: 'Page title' },
+        },
+        required: ['screenId'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'add_navigation',
+      description: 'Make an element navigate to another screen when clicked',
+      parameters: {
+        type: 'object',
+        properties: {
+          selector: { type: 'string', description: 'CSS selector for clickable element' },
+          targetScreen: { type: 'string', description: 'Screen ID to navigate to' },
+          transition: {
+            type: 'string',
+            enum: ['instant', 'fade', 'slide-left', 'slide-right'],
+            description: 'Transition animation',
+          },
+        },
+        required: ['selector', 'targetScreen'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'define_route',
+      description: 'Define URL route for a screen',
+      parameters: {
+        type: 'object',
+        properties: {
+          screenId: { type: 'string', description: 'Screen ID' },
+          path: { type: 'string', description: 'URL path pattern' },
+        },
+        required: ['screenId', 'path'],
+      },
+    },
+  },
+]
+
+// Generic component insertion tools
+const GENERIC_COMPONENT_TOOLS: ToolDefinition[] = [
+  {
+    type: 'function',
+    function: {
+      name: 'insert_generic_button',
+      description: 'Insert a button element',
+      parameters: {
+        type: 'object',
+        properties: {
+          selector: { type: 'string', description: 'Parent element selector' },
+          position: { type: 'string', enum: ['before', 'after', 'prepend', 'append', 'replace'] },
+          text: { type: 'string', description: 'Button text' },
+          variant: { type: 'string', enum: ['primary', 'secondary', 'outline', 'ghost', 'danger'] },
+        },
+        required: ['selector', 'position', 'text'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'insert_generic_input',
+      description: 'Insert an input field',
+      parameters: {
+        type: 'object',
+        properties: {
+          selector: { type: 'string', description: 'Parent element selector' },
+          position: { type: 'string', enum: ['before', 'after', 'prepend', 'append', 'replace'] },
+          type: { type: 'string', enum: ['text', 'email', 'password', 'number', 'tel', 'url', 'search'] },
+          placeholder: { type: 'string', description: 'Placeholder text' },
+          label: { type: 'string', description: 'Label text' },
+        },
+        required: ['selector', 'position', 'type'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'insert_generic_card',
+      description: 'Insert a card container',
+      parameters: {
+        type: 'object',
+        properties: {
+          selector: { type: 'string', description: 'Parent element selector' },
+          position: { type: 'string', enum: ['before', 'after', 'prepend', 'append', 'replace'] },
+          title: { type: 'string', description: 'Card title' },
+          content: { type: 'string', description: 'Card body content' },
+          imageUrl: { type: 'string', description: 'Header image URL' },
+        },
+        required: ['selector', 'position'],
+      },
+    },
+  },
+]
+
+// =============================================================================
+// Tool Generation
+// =============================================================================
+
+function sanitizeName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .substring(0, 30)
+}
+
+function generateComponentTool(component: ExtractedComponent): ToolDefinition {
+  const toolName = `insert_${sanitizeName(component.category)}_${sanitizeName(component.name)}`
+
+  const properties: Record<string, unknown> = {
+    selector: { type: 'string', description: 'Parent element selector' },
+    position: {
+      type: 'string',
+      enum: ['before', 'after', 'prepend', 'append', 'replace'],
+      description: 'Where to insert',
+    },
+  }
+
+  // Add component props
+  for (const prop of component.props) {
+    properties[prop.name] = {
+      type: prop.type === 'enum' ? 'string' : prop.type,
+      description: `${prop.name} property`,
+    }
+  }
+
+  // Add variant option if component has variants
+  if (component.variants.length > 0) {
+    properties['variant'] = {
+      type: 'string',
+      enum: component.variants.map(v => v.name),
+      description: 'Component variant',
+    }
+  }
+
+  const required = ['selector', 'position']
+  for (const prop of component.props) {
+    if (prop.required) {
+      required.push(prop.name)
+    }
+  }
+
+  return {
+    type: 'function',
+    function: {
+      name: toolName,
+      description: `Insert ${component.name}: ${component.description}`,
+      parameters: {
+        type: 'object',
+        properties,
+        required,
+      },
+    },
+  }
+}
+
+function generateStyleTool(tokens: DesignToken[]): ToolDefinition {
+  const colorTokens = tokens.filter(t => t.category === 'color').map(t => t.name)
+  const spacingTokens = tokens.filter(t => t.category === 'spacing').map(t => t.name)
+
+  return {
+    type: 'function',
+    function: {
+      name: 'apply_style',
+      description: 'Apply design token styles to an element',
+      parameters: {
+        type: 'object',
+        properties: {
+          selector: { type: 'string', description: 'CSS selector' },
+          backgroundColor: colorTokens.length > 0
+            ? { type: 'string', enum: colorTokens, description: 'Background color token' }
+            : { type: 'string', description: 'Background color value' },
+          textColor: colorTokens.length > 0
+            ? { type: 'string', enum: colorTokens, description: 'Text color token' }
+            : { type: 'string', description: 'Text color value' },
+          padding: spacingTokens.length > 0
+            ? { type: 'string', enum: spacingTokens, description: 'Padding token' }
+            : { type: 'string', description: 'Padding value' },
+          margin: spacingTokens.length > 0
+            ? { type: 'string', enum: spacingTokens, description: 'Margin token' }
+            : { type: 'string', description: 'Margin value' },
+        },
+        required: ['selector'],
+      },
+    },
+  }
+}
+
+function generateAllTools(
+  components: ExtractedComponent[],
+  tokens: DesignToken[],
+  includeScreenTools: boolean
+): ToolDefinition[] {
+  const tools: ToolDefinition[] = [...DOM_TOOLS]
+
+  // Add component tools
+  const approvedComponents = components.filter(c => c.approved)
+  if (approvedComponents.length > 0) {
+    tools.push(...approvedComponents.map(generateComponentTool))
+  } else {
+    tools.push(...GENERIC_COMPONENT_TOOLS)
+  }
+
+  // Add style tool
+  tools.push(generateStyleTool(tokens))
+
+  // Add screen tools if enabled
+  if (includeScreenTools) {
+    tools.push(...SCREEN_TOOLS)
+  }
+
+  return tools
+}
+
+// =============================================================================
+// DOM Summarization
+// =============================================================================
+
+function summarizeDOM(html: string): string {
+  // Simple regex-based summary for edge function (no DOM parser)
+  const lines: string[] = ['## Source DOM Structure\n']
+
+  // Extract IDs
+  const idMatches = html.matchAll(/id=["']([^"']+)["']/g)
+  const ids: string[] = []
+  for (const match of idMatches) {
+    ids.push(`#${match[1]}`)
+  }
+  if (ids.length > 0) {
+    lines.push(`### Elements with IDs:\n${ids.slice(0, 15).join(', ')}\n`)
+  }
+
+  // Extract unique classes
+  const classMatches = html.matchAll(/class=["']([^"']+)["']/g)
+  const classSet = new Set<string>()
+  for (const match of classMatches) {
+    const classes = match[1].split(/\s+/).filter(c =>
+      c.length > 2 && !c.startsWith('css-') && !c.match(/^[a-z]{6,}$/)
+    )
+    classes.slice(0, 2).forEach(c => classSet.add(c))
+  }
+  if (classSet.size > 0) {
+    lines.push(`### Key Classes:\n${Array.from(classSet).slice(0, 20).map(c => `.${c}`).join(', ')}\n`)
+  }
+
+  // Detect sections
+  const sections: string[] = []
+  if (html.includes('<header')) sections.push('header')
+  if (html.includes('<nav')) sections.push('nav')
+  if (html.includes('<main')) sections.push('main')
+  if (html.includes('<section')) sections.push('section')
+  if (html.includes('<footer')) sections.push('footer')
+  if (sections.length > 0) {
+    lines.push(`### Sections: ${sections.join(', ')}\n`)
+  }
+
+  lines.push(`### Size: ~${Math.round(html.length / 1024)}KB\n`)
+
+  return lines.join('\n')
+}
+
+// =============================================================================
+// System Prompt
+// =============================================================================
+
+function buildSystemPrompt(
+  domSummary: string,
+  components: ExtractedComponent[],
+  tokens: DesignToken[]
+): string {
+  const approvedComponents = components.filter(c => c.approved)
+
+  let prompt = `You are a UI prototype modifier. Your job is to MODIFY an existing webpage DOM using the provided tools.
+
+CRITICAL RULES:
+1. Use ONLY the provided tools to make changes - never output raw HTML in your response text
+2. Reference elements using CSS selectors from the source DOM
+3. Make targeted modifications - preserve as much original structure as possible
+4. Use design tokens for styling when available
+5. Insert components from the library rather than building from scratch
+
+${domSummary}
+`
+
+  if (approvedComponents.length > 0) {
+    prompt += `\n## Available Components\n`
+    for (const comp of approvedComponents.slice(0, 10)) {
+      prompt += `- insert_${sanitizeName(comp.category)}_${sanitizeName(comp.name)}: ${comp.description}\n`
+    }
+  }
+
+  if (tokens.length > 0) {
+    const colorTokens = tokens.filter(t => t.category === 'color').slice(0, 8)
+    if (colorTokens.length > 0) {
+      prompt += `\n## Color Tokens\n${colorTokens.map(t => `- ${t.name}: ${t.value}`).join('\n')}\n`
+    }
+  }
+
+  prompt += `
+## Usage Examples
+
+### Update text content
+\`\`\`
+update_text(selector: ".hero-title", text: "New Headline")
+\`\`\`
+
+### Add element
+\`\`\`
+add_element(selector: ".actions", position: "append", html: "<button class='btn'>Click Me</button>")
+\`\`\`
+
+### Apply styles
+\`\`\`
+set_style(selector: ".cta-button", styles: { "backgroundColor": "#007bff", "color": "white" })
+\`\`\`
+
+Now use the tools to fulfill the user's request. Make surgical modifications to achieve the desired changes.`
+
+  return prompt
+}
+
+// =============================================================================
+// Tool Call Parsing
+// =============================================================================
+
+function parseToolCallsToSpec(toolCalls: ToolCall[]): ModificationSpec {
+  const screens = new Map<string, ScreenModification>()
+  let currentScreen = 'main'
+
+  // Initialize main screen
+  screens.set('main', {
+    screenId: 'main',
+    modifications: [],
+  })
+
+  for (const call of toolCalls) {
+    const args = call.arguments
+
+    // Handle screen creation
+    if (call.name === 'create_screen') {
+      const screenId = args.screenId as string
+      screens.set(screenId, {
+        screenId,
+        sourceScreenId: args.baseScreenId as string | undefined,
+        title: args.title as string | undefined,
+        modifications: [],
+      })
+      currentScreen = screenId
+      continue
+    }
+
+    // Handle screen switching
+    if (call.name === 'switch_screen') {
+      currentScreen = args.screenId as string
+      continue
+    }
+
+    // Add modification to current screen
+    const screen = screens.get(currentScreen)
+    if (screen) {
+      screen.modifications.push({
+        tool: call.name,
+        selector: args.selector as string | undefined,
+        position: args.position as Modification['position'],
+        params: args,
+      })
+    }
+  }
+
+  // Extract navigation config
+  const routes: Array<{ path: string; screenId: string }> = []
+  let defaultScreen = 'main'
+
+  for (const call of toolCalls) {
+    if (call.name === 'define_route') {
+      routes.push({
+        path: call.arguments.path as string,
+        screenId: call.arguments.screenId as string,
+      })
+    }
+    if (call.name === 'set_default_screen') {
+      defaultScreen = call.arguments.screenId as string
+    }
+  }
+
+  return {
+    screens: Array.from(screens.values()),
+    navigation: routes.length > 0 ? { routes, defaultScreen } : undefined,
+    metadata: {
+      toolCallCount: toolCalls.length,
+      generatedAt: new Date().toISOString(),
+    },
+  }
+}
+
+// =============================================================================
+// LLM Calls
+// =============================================================================
+
+async function callAnthropicWithTools(
+  apiKey: string,
+  model: string,
+  systemPrompt: string,
+  userPrompt: string,
+  tools: ToolDefinition[]
+): Promise<ToolCall[]> {
+  console.log('[generate-prototype-v2] Calling Anthropic with', tools.length, 'tools')
+
+  // Convert tools to Anthropic format
+  const anthropicTools = tools.map(t => ({
+    name: t.function.name,
+    description: t.function.description,
+    input_schema: t.function.parameters,
+  }))
+
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model: model || 'claude-sonnet-4-20250514',
+      max_tokens: 8192,
+      system: systemPrompt,
+      tools: anthropicTools,
+      tool_choice: { type: 'any' },
+      messages: [{ role: 'user', content: userPrompt }],
+    }),
+  })
+
+  if (!response.ok) {
+    const error = await response.json()
+    throw new Error(error.error?.message || 'Anthropic API error')
+  }
+
+  const data = await response.json()
+
+  // Extract tool calls from response
+  const toolCalls: ToolCall[] = []
+  for (const block of data.content) {
+    if (block.type === 'tool_use') {
+      toolCalls.push({
+        id: block.id,
+        name: block.name,
+        arguments: block.input,
+      })
+    }
+  }
+
+  console.log('[generate-prototype-v2] Received', toolCalls.length, 'tool calls')
+  return toolCalls
+}
+
+async function callOpenAIWithTools(
+  apiKey: string,
+  model: string,
+  systemPrompt: string,
+  userPrompt: string,
+  tools: ToolDefinition[]
+): Promise<ToolCall[]> {
+  console.log('[generate-prototype-v2] Calling OpenAI with', tools.length, 'tools')
+
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: model || 'gpt-4o',
+      max_tokens: 8192,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      tools: tools,
+      tool_choice: 'required',
+    }),
+  })
+
+  if (!response.ok) {
+    const error = await response.json()
+    throw new Error(error.error?.message || 'OpenAI API error')
+  }
+
+  const data = await response.json()
+  const message = data.choices?.[0]?.message
+
+  // Extract tool calls
+  const toolCalls: ToolCall[] = []
+  if (message?.tool_calls) {
+    for (const tc of message.tool_calls) {
+      try {
+        toolCalls.push({
+          id: tc.id,
+          name: tc.function.name,
+          arguments: JSON.parse(tc.function.arguments),
+        })
+      } catch {
+        console.warn('[generate-prototype-v2] Failed to parse tool call arguments')
+      }
+    }
+  }
+
+  console.log('[generate-prototype-v2] Received', toolCalls.length, 'tool calls')
+  return toolCalls
+}
+
+// =============================================================================
+// Main Handler
+// =============================================================================
+
+Deno.serve(async (req) => {
+  console.log('[generate-prototype-v2] Request received:', req.method)
+
+  // Handle CORS preflight
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders })
+  }
+
+  const startTime = Date.now()
+  let parsedBody: GenerateRequest | null = null
+
+  try {
+    // Environment variables
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+
+    if (!supabaseUrl || !supabaseServiceKey) {
+      throw new Error('Missing Supabase environment variables')
+    }
+
+    // Verify authorization
+    const authHeader = req.headers.get('Authorization')
+    if (!authHeader?.startsWith('Bearer ')) {
+      throw new Error('Missing or invalid authorization header')
+    }
+    const jwt = authHeader.replace('Bearer ', '')
+
+    // Create Supabase client
+    const supabase = createClient(supabaseUrl, supabaseServiceKey)
+
+    // Verify user
+    const { data: { user }, error: userError } = await supabase.auth.getUser(jwt)
+    if (userError || !user) {
+      throw new Error(`Unauthorized: ${userError?.message || 'Invalid token'}`)
+    }
+    console.log('[generate-prototype-v2] User authenticated:', user.id)
+
+    // Parse request
+    parsedBody = await req.json()
+    const body = parsedBody
+    console.log('[generate-prototype-v2] Generating variant', body.variantIndex, 'for session:', body.sessionId)
+
+    if (!body.sessionId || body.variantIndex === undefined || !body.prompt || !body.sourceHtml) {
+      throw new Error('Missing required fields: sessionId, variantIndex, prompt, sourceHtml')
+    }
+
+    // Get user's API key
+    const requestedProvider = body.provider
+    let keyQuery = supabase
+      .from('user_api_key_refs')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('is_active', true)
+
+    if (requestedProvider) {
+      keyQuery = keyQuery.eq('provider', requestedProvider)
+    }
+
+    const { data: keyConfigs } = await keyQuery.limit(1)
+    const keyConfig = keyConfigs?.[0]
+
+    if (!keyConfig) {
+      throw new Error('No API key configured. Please add your API key in Settings.')
+    }
+
+    const modelToUse = body.model || keyConfig.model
+    console.log('[generate-prototype-v2] Using provider:', keyConfig.provider, 'model:', modelToUse)
+
+    // Get decrypted API key
+    const { data: apiKey, error: decryptError } = await supabase
+      .rpc('get_api_key', { p_user_id: user.id, p_provider: keyConfig.provider })
+
+    if (decryptError || !apiKey) {
+      throw new Error('Failed to retrieve API key')
+    }
+
+    // Generate tools
+    const components = body.components || []
+    const tokens = body.tokens || []
+    const tools = generateAllTools(
+      components,
+      tokens,
+      body.includeScreenTools !== false
+    )
+
+    // Build context
+    const domSummary = summarizeDOM(body.sourceHtml)
+    const systemPrompt = buildSystemPrompt(domSummary, components, tokens)
+    const userPrompt = `Source DOM (modify this):\n\`\`\`html\n${body.sourceHtml.slice(0, 50000)}\n\`\`\`\n\nUser Request: ${body.prompt}`
+
+    // Call LLM with tools
+    let toolCalls: ToolCall[]
+    if (keyConfig.provider === 'anthropic') {
+      toolCalls = await callAnthropicWithTools(apiKey, modelToUse, systemPrompt, userPrompt, tools)
+    } else if (keyConfig.provider === 'openai') {
+      toolCalls = await callOpenAIWithTools(apiKey, modelToUse, systemPrompt, userPrompt, tools)
+    } else {
+      throw new Error(`Unsupported provider: ${keyConfig.provider}`)
+    }
+
+    // Parse tool calls into modification spec
+    const spec = parseToolCallsToSpec(toolCalls)
+
+    const duration = Date.now() - startTime
+    console.log('[generate-prototype-v2] Generated spec with', toolCalls.length, 'tool calls in', duration, 'ms')
+
+    // Store the spec
+    const specPath = `${user.id}/${body.sessionId}/variant_${body.variantIndex}_spec.json`
+    await supabase.storage
+      .from('vibe-files')
+      .upload(specPath, new Blob([JSON.stringify(spec, null, 2)], { type: 'application/json' }), {
+        contentType: 'application/json',
+        upsert: true,
+      })
+
+    return new Response(
+      JSON.stringify({
+        success: true,
+        spec,
+        specPath,
+        toolCallCount: toolCalls.length,
+        screensGenerated: spec.screens.length,
+        durationMs: duration,
+        model: modelToUse,
+        provider: keyConfig.provider,
+      }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    )
+
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    console.error('[generate-prototype-v2] Error:', errorMessage)
+
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: errorMessage,
+        variantIndex: parsedBody?.variantIndex,
+        sessionId: parsedBody?.sessionId,
+      }),
+      { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    )
+  }
+})
