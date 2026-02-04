@@ -14,19 +14,9 @@ import {
   Box,
   Typography,
   Chip,
-  IconButton,
-  Tooltip,
-  Tabs,
-  Tab,
-  Collapse,
 } from '@mui/material';
-import {
-  Lightning,
-} from '@phosphor-icons/react';
 import { FileTreeView } from './FileTreeView';
 import { CodeViewer } from './CodeViewer';
-import { StateInspector } from './StateInspector';
-import { FlowDebugger } from './FlowDebugger';
 import { PrototypePreview } from './PrototypePreview';
 import { usePrototypeStore } from '../../store/prototypeStore';
 import { getVibeVariantLabel } from '../../store/vibeStore';
@@ -36,7 +26,6 @@ import type { VibeVariant } from '../../services/variantCodeService';
 // ============ Types ============
 
 type PanelView = 'preview' | 'code' | 'files';
-type DebugPanel = 'state' | 'flows' | 'none';
 
 interface InteractiveVariantViewProps {
   plans: VariantPlan[];
@@ -65,9 +54,7 @@ export function InteractiveVariantView({
   // Local state
   const [activeVariantIndex, setActiveVariantIndex] = useState<number>(defaultVariantIndex);
   const [internalMainView, setInternalMainView] = useState<PanelView>('preview');
-  const [debugPanel, setDebugPanel] = useState<DebugPanel>('state');
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
-  const [showDebugPanels, setShowDebugPanels] = useState(true);
 
   // Use external view if provided, otherwise use internal state
   const mainView = externalPanelView ?? internalMainView;
@@ -92,14 +79,7 @@ export function InteractiveVariantView({
   }, [variants, activeVariantIndex]);
 
   // Prototype store state
-  const {
-    prototypeState,
-    getVirtualFS,
-    getFlows,
-    updateRuntimeState,
-    resetRuntimeState,
-    clearExecutionHistory,
-  } = usePrototypeStore();
+  const { getVirtualFS } = usePrototypeStore();
 
   // Build variant map
   const variantMap = useMemo(
@@ -162,13 +142,6 @@ export function InteractiveVariantView({
   }, [files, selectedFilePath]);
 
   // Handlers
-  const handleStateChange = useCallback(
-    (path: string, value: unknown) => {
-      updateRuntimeState(path, value);
-    },
-    [updateRuntimeState]
-  );
-
   const handleFileSelect = useCallback((path: string) => {
     setSelectedFilePath(path);
     setMainView('code');
@@ -198,12 +171,6 @@ export function InteractiveVariantView({
               {activePlan.description}
             </Typography>
           </Box>
-          {/* Debug panel toggle - keep this here as it's specific to this view */}
-          <Tooltip title={showDebugPanels ? 'Hide debug panels' : 'Show debug panels'}>
-            <IconButton size="small" onClick={() => setShowDebugPanels(!showDebugPanels)}>
-              <Lightning size={16} />
-            </IconButton>
-          </Tooltip>
         </Box>
       )}
 
@@ -235,8 +202,6 @@ export function InteractiveVariantView({
             {mainView === 'preview' && virtualFS && (
               <PrototypePreview
                 virtualFS={virtualFS}
-                state={prototypeState.runtimeState}
-                onStateChange={handleStateChange}
                 title={activePlan?.title}
                 loading={activeVariant?.status === 'generating'}
               />
@@ -330,51 +295,6 @@ export function InteractiveVariantView({
             )}
           </Box>
         </Box>
-
-        {/* Right Panel - Debug Tools */}
-        <Collapse in={showDebugPanels} orientation="horizontal">
-          <Box
-            sx={{
-              width: 320,
-              borderLeft: 1,
-              borderColor: 'divider',
-              display: 'flex',
-              flexDirection: 'column',
-              overflow: 'hidden',
-            }}
-          >
-            {/* Debug Panel Tabs */}
-            <Tabs
-              value={debugPanel}
-              onChange={(_, v) => setDebugPanel(v)}
-              sx={{ borderBottom: 1, borderColor: 'divider', minHeight: 36 }}
-            >
-              <Tab label="State" value="state" sx={{ minHeight: 36, py: 0 }} />
-              <Tab label="Flows" value="flows" sx={{ minHeight: 36, py: 0 }} />
-            </Tabs>
-
-            {/* Debug Content */}
-            <Box sx={{ flex: 1, overflow: 'hidden' }}>
-              {debugPanel === 'state' && (
-                <StateInspector
-                  state={prototypeState.runtimeState}
-                  onStateChange={handleStateChange}
-                  onReset={resetRuntimeState}
-                  editable
-                  title="Runtime State"
-                  compact
-                />
-              )}
-              {debugPanel === 'flows' && (
-                <FlowDebugger
-                  flows={getFlows()}
-                  history={prototypeState.executionHistory}
-                  onClearHistory={clearExecutionHistory}
-                />
-              )}
-            </Box>
-          </Box>
-        </Collapse>
       </Box>
 
       {/* Footer - Select Winner */}

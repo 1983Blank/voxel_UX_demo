@@ -78,8 +78,6 @@ interface PrototypeStoreState {
 
   // UI state
   selectedFilePath: string | null;
-  showStateInspector: boolean;
-  showFlowDebugger: boolean;
 
   // VirtualFS instances (not persisted, recreated from snapshots)
   _virtualFSInstances: Record<string, VirtualFS>;
@@ -147,8 +145,6 @@ interface PrototypeStoreState {
   // Actions - UI state
   setActiveVariant: (variantId: string | null) => void;
   setSelectedFile: (path: string | null) => void;
-  toggleStateInspector: () => void;
-  toggleFlowDebugger: () => void;
 
   // Actions - Persistence
   saveToStorage: () => void;
@@ -309,8 +305,6 @@ export const usePrototypeStore = create<PrototypeStoreState>()(
       },
 
       selectedFilePath: null,
-      showStateInspector: true,
-      showFlowDebugger: true,
 
       _virtualFSInstances: {},
 
@@ -920,14 +914,6 @@ export const usePrototypeStore = create<PrototypeStoreState>()(
 
       setSelectedFile: (path) => {
         set({ selectedFilePath: path });
-      },
-
-      toggleStateInspector: () => {
-        set({ showStateInspector: !get().showStateInspector });
-      },
-
-      toggleFlowDebugger: () => {
-        set({ showFlowDebugger: !get().showFlowDebugger });
       },
 
       // ============ Persistence Actions ============
