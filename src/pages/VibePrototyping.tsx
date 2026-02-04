@@ -1766,6 +1766,7 @@ export const VibePrototyping: React.FC = () => {
   const [isIterating, setIsIterating] = useState(false);
   const [iterationHistory, setIterationHistory] = useState<VibeIteration[]>([]);
   const [showIterationHistory, setShowIterationHistory] = useState(false);
+  const [iterationDialogOpen, setIterationDialogOpen] = useState(false);
 
   // Generation error state (for retry dialog)
   const [generationError, setGenerationError] = useState<{
@@ -3174,8 +3175,18 @@ export const VibePrototyping: React.FC = () => {
     }
   }, [shouldBuildAfterSkip, status, handleBuildHighFidelity]);
 
-  // Handle iteration on a variant
-  const handleIterate = useCallback(async () => {
+  // Open iteration dialog to choose mode (replace vs add new)
+  const handleIterateClick = useCallback(() => {
+    if (!currentSession || !focusedVariantIndex || !fetchedVariantHtml || !iterationPrompt.trim()) {
+      return;
+    }
+    setIterationDialogOpen(true);
+  }, [currentSession, focusedVariantIndex, fetchedVariantHtml, iterationPrompt]);
+
+  // Handle iteration on a variant with specified mode
+  const handleIterateWithMode = useCallback(async (mode: 'replace' | 'add_new') => {
+    setIterationDialogOpen(false);
+
     if (!currentSession || !focusedVariantIndex || !fetchedVariantHtml || !iterationPrompt.trim()) {
       return;
     }
@@ -3189,9 +3200,17 @@ export const VibePrototyping: React.FC = () => {
     setIsIterating(true);
 
     try {
+      // Determine target variant index for new variant
+      const existingVariantCount = variants.length;
+      const newVariantIndex = mode === 'add_new' ? existingVariantCount + 1 : focusedVariantIndex;
+      const targetLabel = `Variant ${String.fromCharCode(64 + newVariantIndex)}`;
+
       // Add messages with variant metadata for sub-thread display
+      const actionDescription = mode === 'add_new'
+        ? `Creating new ${targetLabel} based on your changes...`
+        : 'Applying your changes...';
       addChatMessage('user', iterationPrompt, undefined, { variantIndex: focusedVariantIndex, stage: 'iteration' });
-      addChatMessage('assistant', 'Applying your changes...', 'pending', { variantIndex: focusedVariantIndex, stage: 'iteration' });
+      addChatMessage('assistant', actionDescription, 'pending', { variantIndex: newVariantIndex, stage: 'iteration' });
 
       // Build context about other variants for LLM awareness
       const otherVariantsContext: VariantContext[] = (plan?.plans || [])
@@ -3207,14 +3226,17 @@ export const VibePrototyping: React.FC = () => {
           };
         });
 
-      // Build product context from context files
+      // Build enhanced product context from context files
       const productContext: ProductContextForIteration = {
         productName: screen?.name,
         goals: contextFiles
           .filter(f => f.category === 'goals')
-          .map(f => f.title),
+          .map(f => f.contentPreview || f.title),
+        designPrinciples: contextFiles
+          .filter(f => f.category === 'knowledge')
+          .map(f => f.contentPreview || f.title),
         contextSummary: contextFiles.length > 0
-          ? `${contextFiles.length} context files loaded: ${contextFiles.map(f => f.title).join(', ')}`
+          ? `Product context includes: ${contextFiles.map(f => `${f.title} (${f.category})`).join(', ')}`
           : undefined,
       };
 
@@ -3227,41 +3249,97 @@ export const VibePrototyping: React.FC = () => {
         keyFeatures: currentPlan.key_changes,
       } : undefined;
 
-      const result = await iterateOnVariant(
-        currentSession.id,
-        focusedVariant.id,
-        focusedVariantIndex,
-        fetchedVariantHtml,
-        iterationPrompt,
-        (progress) => {
-          if (progress.stage === 'generating') {
-            // Could show progress in chat
+      if (mode === 'add_new') {
+        // For add_new mode, we need to create a new variant
+        // First, create a new variant record
+        const { data: newVariant, error: createError } = await supabase
+          .from('vibe_variants')
+          .insert({
+            session_id: currentSession.id,
+            variant_index: newVariantIndex,
+            status: 'generating',
+          })
+          .select()
+          .single();
+
+        if (createError || !newVariant) {
+          throw new Error(`Failed to create new variant: ${createError?.message}`);
+        }
+
+        // Now iterate using the new variant
+        const result = await iterateOnVariant(
+          currentSession.id,
+          newVariant.id,
+          newVariantIndex,
+          fetchedVariantHtml,
+          iterationPrompt,
+          undefined,
+          otherVariantsContext,
+          productContext,
+          currentVariantPlan
+        );
+
+        if (result.success && result.htmlUrl) {
+          // Refresh variants to get updated list
+          const updatedVariants = await getVariants(currentSession.id);
+          setVariants(updatedVariants);
+
+          // Add to selected variants
+          const { selectedVariants: currentSelected, setSelectedVariants } = useVibeStore.getState();
+          if (!currentSelected.includes(newVariantIndex)) {
+            setSelectedVariants([...currentSelected, newVariantIndex]);
           }
-        },
-        otherVariantsContext,
-        productContext,
-        currentVariantPlan
-      );
 
-      if (result.success && result.htmlUrl) {
-        // Refresh variants to get updated URL
-        const updatedVariants = await getVariants(currentSession.id);
-        setVariants(updatedVariants);
+          // Focus the new variant
+          setFocusedVariantIndex(newVariantIndex);
 
-        // Fetch the new HTML for the code view
-        const response = await fetch(result.htmlUrl);
-        const newHtml = await response.text();
-        setFetchedVariantHtml(newHtml);
+          // Fetch the new HTML
+          const response = await fetch(result.htmlUrl);
+          const newHtml = await response.text();
+          setFetchedVariantHtml(newHtml);
 
-        // Refresh iteration history
-        const history = await getIterationHistory(focusedVariant.id);
-        setIterationHistory(history);
-
-        addChatMessage('assistant', `Iteration ${result.iterationNumber} complete! The variant has been updated.`, 'complete', { variantIndex: focusedVariantIndex, stage: 'iteration' });
-        showSuccess('Variant updated successfully!');
+          addChatMessage('assistant', `New ${targetLabel} created successfully!`, 'complete', { variantIndex: newVariantIndex, stage: 'iteration' });
+          showSuccess(`${targetLabel} created successfully!`);
+        } else {
+          // Clean up failed variant
+          await supabase.from('vibe_variants').delete().eq('id', newVariant.id);
+          addChatMessage('assistant', `Failed to create new variant: ${result.error}`, 'error', { variantIndex: newVariantIndex, stage: 'iteration' });
+          showError(result.error || 'Failed to create new variant');
+        }
       } else {
-        addChatMessage('assistant', `Iteration failed: ${result.error}`, 'error', { variantIndex: focusedVariantIndex, stage: 'iteration' });
-        showError(result.error || 'Failed to iterate');
+        // Replace mode - original behavior
+        const result = await iterateOnVariant(
+          currentSession.id,
+          focusedVariant.id,
+          focusedVariantIndex,
+          fetchedVariantHtml,
+          iterationPrompt,
+          undefined,
+          otherVariantsContext,
+          productContext,
+          currentVariantPlan
+        );
+
+        if (result.success && result.htmlUrl) {
+          // Refresh variants to get updated URL
+          const updatedVariants = await getVariants(currentSession.id);
+          setVariants(updatedVariants);
+
+          // Fetch the new HTML for the code view
+          const response = await fetch(result.htmlUrl);
+          const newHtml = await response.text();
+          setFetchedVariantHtml(newHtml);
+
+          // Refresh iteration history
+          const history = await getIterationHistory(focusedVariant.id);
+          setIterationHistory(history);
+
+          addChatMessage('assistant', `Iteration ${result.iterationNumber} complete! The variant has been updated.`, 'complete', { variantIndex: focusedVariantIndex, stage: 'iteration' });
+          showSuccess('Variant updated successfully!');
+        } else {
+          addChatMessage('assistant', `Iteration failed: ${result.error}`, 'error', { variantIndex: focusedVariantIndex, stage: 'iteration' });
+          showError(result.error || 'Failed to iterate');
+        }
       }
     } catch (err) {
       console.error('Error iterating variant:', err);
@@ -3270,7 +3348,12 @@ export const VibePrototyping: React.FC = () => {
       setIsIterating(false);
       setIterationPrompt('');
     }
-  }, [currentSession, focusedVariantIndex, fetchedVariantHtml, iterationPrompt, getVariantByIndex, addChatMessage, setVariants, contextFiles, sourceMetadata, screen, plan]);
+  }, [currentSession, focusedVariantIndex, fetchedVariantHtml, iterationPrompt, getVariantByIndex, addChatMessage, setVariants, contextFiles, screen, plan, variants]);
+
+  // Legacy handler for direct iteration (replace mode)
+  const handleIterate = useCallback(async () => {
+    handleIterateWithMode('replace');
+  }, [handleIterateWithMode]);
 
   // Handle revert to previous iteration
   const handleRevertIteration = useCallback(async (iterationId: string) => {
@@ -4564,7 +4647,7 @@ export const VibePrototyping: React.FC = () => {
                   <Button
                     variant="contained"
                     size="small"
-                    onClick={handleIterate}
+                    onClick={handleIterateClick}
                     disabled={!iterationPrompt.trim() || isIterating || !fetchedVariantHtml}
                     startIcon={isIterating ? <CircularProgress size={14} color="inherit" /> : <Lightning size={16} />}
                     sx={{
@@ -6500,6 +6583,78 @@ export const VibePrototyping: React.FC = () => {
               Retry with {selectedModel || PROVIDER_INFO[selectedProvider]?.name || selectedProvider}
             </Button>
           )}
+        </DialogActions>
+      </Dialog>
+
+      {/* Iteration Mode Dialog - Choose between replace or add new variant */}
+      <Dialog
+        open={iterationDialogOpen}
+        onClose={() => setIterationDialogOpen(false)}
+        maxWidth="xs"
+        fullWidth
+        TransitionComponent={Fade}
+      >
+        <DialogTitle sx={{ fontFamily: config.fonts.display }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Lightning size={24} weight="fill" />
+            Apply Changes
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+            How would you like to apply your changes to Variant {focusedVariantIndex ? String.fromCharCode(64 + focusedVariantIndex) : ''}?
+          </Typography>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+            <Button
+              variant="outlined"
+              fullWidth
+              onClick={() => handleIterateWithMode('replace')}
+              disabled={isIterating}
+              sx={{
+                py: 1.5,
+                justifyContent: 'flex-start',
+                textAlign: 'left',
+                borderColor: 'divider',
+                '&:hover': { borderColor: 'primary.main', bgcolor: 'primary.50' },
+              }}
+            >
+              <Box>
+                <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                  Replace Current
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Update Variant {focusedVariantIndex ? String.fromCharCode(64 + focusedVariantIndex) : ''} with your changes
+                </Typography>
+              </Box>
+            </Button>
+            <Button
+              variant="outlined"
+              fullWidth
+              onClick={() => handleIterateWithMode('add_new')}
+              disabled={isIterating}
+              sx={{
+                py: 1.5,
+                justifyContent: 'flex-start',
+                textAlign: 'left',
+                borderColor: 'divider',
+                '&:hover': { borderColor: 'primary.main', bgcolor: 'primary.50' },
+              }}
+            >
+              <Box>
+                <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                  Create New Variant
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Add as Variant {variants.length + 1 <= 26 ? String.fromCharCode(64 + variants.length + 1) : variants.length + 1} (keeping original unchanged)
+                </Typography>
+              </Box>
+            </Button>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setIterationDialogOpen(false)} color="inherit" disabled={isIterating}>
+            Cancel
+          </Button>
         </DialogActions>
       </Dialog>
 
