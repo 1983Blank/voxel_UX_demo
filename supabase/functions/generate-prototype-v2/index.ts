@@ -657,26 +657,48 @@ CRITICAL RULES:
 4. Reference elements using CSS selectors from the source DOM
 5. Create realistic, INTERACTIVE prototypes - not just static HTML!
 
-## INTERACTION RULES (VERY IMPORTANT):
+## INTERACTION RULES (CRITICAL - READ CAREFULLY):
 
-When creating modals, panels, dropdowns, or any overlay UI:
-1. FIRST: Add the modal/panel HTML using add_element (with id attribute for targeting)
-2. SECOND: Call set_initial_hidden to hide it initially
-3. THIRD: Call add_click_toggle to connect the trigger button to the modal/panel
-4. If the modal has a close button, include closeButtonSelector in add_click_toggle
+When creating modals, panels, dropdowns, or any overlay UI, you MUST follow this exact order:
 
-Example for a modal:
+1. FIRST: Create the TRIGGER BUTTON (if it doesn't exist in source DOM) with add_element
+2. SECOND: Add the modal/panel HTML using add_element (with unique id attribute)
+3. THIRD: Call set_initial_hidden to hide the modal/panel initially
+4. FOURTH: Call add_click_toggle to connect trigger to modal/panel
+
+⚠️ IMPORTANT: The triggerSelector in add_click_toggle MUST reference an element that EXISTS in the DOM!
+- If you're adding a new button, add it FIRST with add_element, then use its selector
+- If reusing an existing button from the source, use that selector
+- NEVER use a triggerSelector for an element that doesn't exist!
+
+Example for a modal (CORRECT ORDER):
 \`\`\`
-1. add_element(selector: "body", position: "append", html: "<div id='my-modal' class='modal'>...</div>")
-2. set_initial_hidden(selector: "#my-modal")
-3. add_click_toggle(triggerSelector: ".open-modal-btn", targetSelector: "#my-modal", closeButtonSelector: ".close-btn", closeOnClickOutside: true)
+// Step 1: Add trigger button FIRST (skip if using existing button from source)
+add_element(selector: ".actions", position: "append", html: "<button id='open-modal-btn' class='btn btn-primary'>Open Contact Form</button>")
+
+// Step 2: Add the modal HTML
+add_element(selector: "body", position: "append", html: "<div id='contact-modal' class='modal-overlay'><div class='modal-content'><button class='close-btn'>&times;</button><h2>Contact</h2></div></div>")
+
+// Step 3: Hide modal initially
+set_initial_hidden(selector: "#contact-modal")
+
+// Step 4: Connect trigger to modal (trigger MUST exist from step 1 or source DOM!)
+add_click_toggle(triggerSelector: "#open-modal-btn", targetSelector: "#contact-modal", closeButtonSelector: ".close-btn", closeOnClickOutside: true)
 \`\`\`
 
-For side panels:
+For side panels (CORRECT ORDER):
 \`\`\`
-1. add_element(selector: "body", position: "append", html: "<div id='side-panel' class='side-panel'>...</div>")
-2. set_initial_hidden(selector: "#side-panel")
-3. add_click_toggle(triggerSelector: ".panel-trigger", targetSelector: "#side-panel", closeButtonSelector: ".close-panel")
+// Step 1: Add trigger button FIRST
+add_element(selector: ".toolbar", position: "append", html: "<button id='open-panel-btn' class='btn'>Open Panel</button>")
+
+// Step 2: Add panel HTML
+add_element(selector: "body", position: "append", html: "<div id='side-panel' class='slide-panel'><button class='close-panel'>&times;</button>...</div>")
+
+// Step 3: Hide panel initially
+set_initial_hidden(selector: "#side-panel")
+
+// Step 4: Connect trigger (uses button from step 1)
+add_click_toggle(triggerSelector: "#open-panel-btn", targetSelector: "#side-panel", closeButtonSelector: ".close-panel")
 \`\`\`
 
 For tabs/accordions: Use add_tab_interaction or add_accordion_interaction
@@ -730,28 +752,34 @@ add_element(selector: ".actions", position: "append", html: "<button id='open-mo
 set_style(selector: ".cta-button", styles: { "backgroundColor": "#007bff", "color": "white" })
 \`\`\`
 
-### Create interactive modal
+### Create interactive modal (FOLLOW THIS ORDER!)
 \`\`\`
-// 1. Add the modal HTML with unique ID
+// 1. FIRST add trigger button (skip if reusing existing button)
+add_element(selector: ".header-actions", position: "append", html: "<button id='open-modal-btn' class='btn btn-primary'>Contact Us</button>")
+
+// 2. Add the modal HTML with unique ID
 add_element(selector: "body", position: "append", html: "<div id='contact-modal' class='modal-overlay'><div class='modal-content'><button class='close-modal'>&times;</button><h2>Contact Form</h2><form>...</form></div></div>")
 
-// 2. Hide it initially
+// 3. Hide it initially
 set_initial_hidden(selector: "#contact-modal")
 
-// 3. Connect trigger to modal
+// 4. Connect trigger to modal (trigger from step 1 MUST exist!)
 add_click_toggle(triggerSelector: "#open-modal-btn", targetSelector: "#contact-modal", closeButtonSelector: ".close-modal", closeOnClickOutside: true)
 \`\`\`
 
-### Create slide-out panel
+### Create slide-out panel (FOLLOW THIS ORDER!)
 \`\`\`
-// 1. Add panel HTML
-add_element(selector: "body", position: "append", html: "<div id='detail-panel' class='slide-panel'>...</div>")
+// 1. FIRST add trigger button
+add_element(selector: ".toolbar", position: "append", html: "<button id='view-details-btn' class='btn'>View Details</button>")
 
-// 2. Hide initially
+// 2. Add panel HTML
+add_element(selector: "body", position: "append", html: "<div id='detail-panel' class='slide-panel'><button class='panel-close'>&times;</button>...</div>")
+
+// 3. Hide initially
 set_initial_hidden(selector: "#detail-panel")
 
-// 3. Connect trigger
-add_click_toggle(triggerSelector: ".view-details", targetSelector: "#detail-panel", closeButtonSelector: ".panel-close")
+// 4. Connect trigger (uses button from step 1)
+add_click_toggle(triggerSelector: "#view-details-btn", targetSelector: "#detail-panel", closeButtonSelector: ".panel-close")
 \`\`\`
 
 Now implement the user's request comprehensively. Use 8-20 tool calls to:
@@ -762,6 +790,7 @@ Now implement the user's request comprehensively. Use 8-20 tool calls to:
 5. Make it feel like a real, working prototype
 
 CRITICAL INTERACTIVITY RULES:
+- Trigger buttons MUST EXIST before calling add_click_toggle - add them first with add_element!
 - Modals and panels MUST be HIDDEN initially - always call set_initial_hidden
 - Modals and panels MUST be connected to triggers - always call add_click_toggle
 - For task breakdowns, use accordion or step components with interactivity
@@ -769,6 +798,7 @@ CRITICAL INTERACTIVITY RULES:
 - Use semantic class names: modal-overlay, modal-content, panel-footer, close-btn, step-item
 
 AVOID THESE COMMON MISTAKES:
+- Using a triggerSelector that doesn't exist (trigger must be added FIRST or exist in source!)
 - Adding a modal/panel without set_initial_hidden (it will show immediately!)
 - Adding a trigger button without add_click_toggle (clicking does nothing!)
 - Forgetting close buttons or not connecting them
