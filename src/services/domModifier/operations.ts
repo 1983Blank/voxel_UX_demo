@@ -45,6 +45,144 @@ function parseHTMLFragment(doc: Document, html: string): DocumentFragment {
 }
 
 /**
+ * Safe querySelector that handles non-standard selector syntax
+ * Supports Playwright-style selectors that the LLM might generate:
+ * - :has-text("...") - Find element containing text
+ * - :text("...") - Find element with exact text
+ * - >> (child combinator in Playwright) - Convert to standard >
+ */
+function querySelectorSafe(doc: Document, selector: string): Element | null {
+  // First try the selector as-is
+  try {
+    return doc.querySelector(selector);
+  } catch {
+    // Selector is invalid, try to transform it
+  }
+
+  // Handle :has-text("...") - find element containing text
+  const hasTextMatch = selector.match(/^(.+?):has-text\(["'](.+?)["']\)$/);
+  if (hasTextMatch) {
+    const [, baseSelector, searchText] = hasTextMatch;
+    try {
+      const elements = doc.querySelectorAll(baseSelector.trim() || '*');
+      for (const el of elements) {
+        if (el.textContent?.includes(searchText)) {
+          return el;
+        }
+      }
+    } catch {
+      // Base selector also invalid, fall through
+    }
+    return null;
+  }
+
+  // Handle :text("...") - find element with text (more exact match)
+  const textMatch = selector.match(/^(.+?):text\(["'](.+?)["']\)$/);
+  if (textMatch) {
+    const [, baseSelector, searchText] = textMatch;
+    try {
+      const elements = doc.querySelectorAll(baseSelector.trim() || '*');
+      for (const el of elements) {
+        const text = el.textContent?.trim();
+        if (text === searchText || text?.includes(searchText)) {
+          return el;
+        }
+      }
+    } catch {
+      // Base selector also invalid, fall through
+    }
+    return null;
+  }
+
+  // Handle >> (Playwright child combinator) - convert to >
+  if (selector.includes('>>')) {
+    const standardSelector = selector.replace(/>>/g, '>').trim();
+    try {
+      return doc.querySelector(standardSelector);
+    } catch {
+      // Still invalid
+    }
+  }
+
+  // Handle :nth-match() - Playwright's nth matcher
+  const nthMatch = selector.match(/^(.+?):nth-match\((\d+)\)$/);
+  if (nthMatch) {
+    const [, baseSelector, indexStr] = nthMatch;
+    const index = parseInt(indexStr, 10) - 1; // Playwright uses 1-based indexing
+    try {
+      const elements = doc.querySelectorAll(baseSelector.trim());
+      if (elements[index]) {
+        return elements[index];
+      }
+    } catch {
+      // Base selector invalid
+    }
+    return null;
+  }
+
+  // Handle :visible pseudo-class (just remove it, we can't check visibility in DOM)
+  if (selector.includes(':visible')) {
+    const cleanedSelector = selector.replace(/:visible/g, '').trim();
+    try {
+      return doc.querySelector(cleanedSelector);
+    } catch {
+      // Still invalid
+    }
+  }
+
+  console.warn(`[operations] Could not parse selector: ${selector}`);
+  return null;
+}
+
+/**
+ * Safe querySelectorAll that handles non-standard selector syntax
+ */
+function querySelectorAllSafe(doc: Document, selector: string): Element[] {
+  // First try the selector as-is
+  try {
+    return Array.from(doc.querySelectorAll(selector));
+  } catch {
+    // Selector is invalid, try to transform it
+  }
+
+  // Handle :has-text("...") for querySelectorAll
+  const hasTextMatch = selector.match(/^(.+?):has-text\(["'](.+?)["']\)$/);
+  if (hasTextMatch) {
+    const [, baseSelector, searchText] = hasTextMatch;
+    try {
+      const elements = doc.querySelectorAll(baseSelector.trim() || '*');
+      return Array.from(elements).filter(el => el.textContent?.includes(searchText));
+    } catch {
+      // Base selector also invalid
+    }
+    return [];
+  }
+
+  // Handle >> (Playwright child combinator)
+  if (selector.includes('>>')) {
+    const standardSelector = selector.replace(/>>/g, '>').trim();
+    try {
+      return Array.from(doc.querySelectorAll(standardSelector));
+    } catch {
+      // Still invalid
+    }
+  }
+
+  // Handle :visible pseudo-class
+  if (selector.includes(':visible')) {
+    const cleanedSelector = selector.replace(/:visible/g, '').trim();
+    try {
+      return Array.from(doc.querySelectorAll(cleanedSelector));
+    } catch {
+      // Still invalid
+    }
+  }
+
+  console.warn(`[operations] Could not parse selector for querySelectorAll: ${selector}`);
+  return [];
+}
+
+/**
  * Insert HTML at specified position relative to target element
  */
 export function insertHTML(
@@ -305,7 +443,8 @@ export function updateAll(
   text: string
 ): OperationResult {
   try {
-    const elements = doc.querySelectorAll(selector);
+    // Use safe selector that handles Playwright-style syntax from LLM
+    const elements = querySelectorAllSafe(doc, selector);
     for (const el of elements) {
       el.textContent = text;
     }
@@ -323,7 +462,8 @@ export function removeAll(
   selector: string
 ): OperationResult {
   try {
-    const elements = doc.querySelectorAll(selector);
+    // Use safe selector that handles Playwright-style syntax from LLM
+    const elements = querySelectorAllSafe(doc, selector);
     for (const el of elements) {
       el.remove();
     }
@@ -355,7 +495,8 @@ export function executeOperation(
     return { success: false, error: 'Selector required for this operation' };
   }
 
-  const element = doc.querySelector(selector);
+  // Use safe selector that handles Playwright-style syntax from LLM
+  const element = querySelectorSafe(doc, selector);
   if (!element) {
     return { success: false, error: `Element not found: ${selector}` };
   }
@@ -392,7 +533,7 @@ export function executeOperation(
       return wrapElement(element, params.wrapperHtml as string);
 
     case 'clone_element': {
-      const targetEl = doc.querySelector(params.targetSelector as string);
+      const targetEl = querySelectorSafe(doc, params.targetSelector as string);
       if (!targetEl) {
         return { success: false, error: `Target not found: ${params.targetSelector}` };
       }
