@@ -2534,12 +2534,90 @@ export const VibePrototyping: React.FC = () => {
                 variantIndex: p.variantIndex,
               });
 
-              if (p.variantIndex) {
+              // Update per-variant progress message for UI
+              if (p.variantIndex !== undefined) {
+                const variantIdx = p.variantIndex;
+                const variantPlan = plan.plans.find(pl => pl.variant_index === variantIdx);
+
+                setVariantProgressMessages((prev) => ({
+                  ...prev,
+                  [variantIdx]: p.message,
+                }));
+
                 setVariantStartTimes((prev) => {
-                  if (!prev[p.variantIndex!]) {
-                    return { ...prev, [p.variantIndex!]: Date.now() };
+                  if (!prev[variantIdx]) {
+                    return { ...prev, [variantIdx]: Date.now() };
                   }
                   return prev;
+                });
+
+                // Update agent progress for UI display
+                const stageToStep: Record<string, number> = {
+                  'preparing': 1,
+                  'generating-spec': 2,
+                  'applying-modifications': 3,
+                  'injecting-runtime': 4,
+                  'complete': 5,
+                };
+                const currentStep = stageToStep[p.stage] || 1;
+                const totalSteps = 5;
+
+                setAgentProgress((prev) => {
+                  const existing = prev.find(ap => ap.variantIndex === variantIdx);
+                  const approachMap: Record<number, 'minimal' | 'feature-rich' | 'gamified' | 'accessible'> = {
+                    1: 'minimal',
+                    2: 'feature-rich',
+                    3: 'gamified',
+                    4: 'accessible',
+                  };
+
+                  // Map tool mode stages to AgentPhase values
+                  const phaseMap: Record<string, 'queued' | 'script' | 'files' | 'assembly' | 'complete' | 'failed'> = {
+                    'preparing': 'queued',
+                    'generating-spec': 'script',
+                    'applying-modifications': 'files',
+                    'injecting-runtime': 'assembly',
+                    'complete': 'complete',
+                    'failed': 'failed',
+                  };
+
+                  // Helper to get step status
+                  const getStepStatus = (stepNum: number): 'pending' | 'in_progress' | 'completed' | 'failed' => {
+                    if (currentStep > stepNum) return 'completed';
+                    if (currentStep === stepNum) return 'in_progress';
+                    return 'pending';
+                  };
+
+                  const newProgress: AgentProgress = {
+                    variantIndex: variantIdx,
+                    variantTitle: variantPlan?.title || `Variant ${variantIdx}`,
+                    approach: approachMap[variantIdx] || 'minimal',
+                    phase: phaseMap[p.stage] || 'script',
+                    currentStep: p.message,
+                    completedSteps: currentStep - 1,
+                    totalSteps,
+                    filesCompleted: [],
+                    steps: [
+                      { stepKey: 'preparing', label: 'Preparing', status: getStepStatus(1) },
+                      { stepKey: 'generating-spec', label: 'AI Planning', status: getStepStatus(2) },
+                      { stepKey: 'applying-modifications', label: 'Applying Changes', status: getStepStatus(3) },
+                      { stepKey: 'injecting-runtime', label: 'Building Preview', status: getStepStatus(4) },
+                      { stepKey: 'complete', label: 'Complete', status: currentStep >= 5 ? 'completed' : 'pending' },
+                    ],
+                  };
+
+                  if (existing) {
+                    return prev.map(ap => ap.variantIndex === variantIdx ? newProgress : ap);
+                  }
+                  return [...prev, newProgress];
+                });
+
+                // Update prototype store progress
+                const prototypeStore = usePrototypeStore.getState();
+                prototypeStore.setGenerationProgress({
+                  current: p.percent,
+                  total: 100,
+                  message: p.message,
                 });
               }
             },
