@@ -4337,6 +4337,56 @@ export const VibePrototyping: React.FC = () => {
                 </Tooltip>
               </Box>
 
+              {/* Panel View Toggle - moved to left side (only show when variants are ready) */}
+              {isComplete && focusedVariantIndex && (
+                <Box
+                  sx={{
+                    display: 'flex',
+                    bgcolor: 'action.hover',
+                    borderRadius: 1,
+                    p: 0.25,
+                    ml: 0.5,
+                  }}
+                >
+                  <Tooltip title="Preview">
+                    <IconButton
+                      size="small"
+                      onClick={() => setPanelView('preview')}
+                      sx={{
+                        bgcolor: panelView === 'preview' ? 'background.paper' : 'transparent',
+                        boxShadow: panelView === 'preview' ? 1 : 0,
+                      }}
+                    >
+                      <Eye size={18} weight={panelView === 'preview' ? 'fill' : 'regular'} />
+                    </IconButton>
+                  </Tooltip>
+                  <Tooltip title="Code">
+                    <IconButton
+                      size="small"
+                      onClick={() => setPanelView('code')}
+                      sx={{
+                        bgcolor: panelView === 'code' ? 'background.paper' : 'transparent',
+                        boxShadow: panelView === 'code' ? 1 : 0,
+                      }}
+                    >
+                      <TreeStructure size={18} weight={panelView === 'code' ? 'fill' : 'regular'} />
+                    </IconButton>
+                  </Tooltip>
+                  <Tooltip title="Files">
+                    <IconButton
+                      size="small"
+                      onClick={() => setPanelView('files')}
+                      sx={{
+                        bgcolor: panelView === 'files' ? 'background.paper' : 'transparent',
+                        boxShadow: panelView === 'files' ? 1 : 0,
+                      }}
+                    >
+                      <Folders size={18} weight={panelView === 'files' ? 'fill' : 'regular'} />
+                    </IconButton>
+                  </Tooltip>
+                </Box>
+              )}
+
               <Divider orientation="vertical" flexItem />
 
               {/* Project breadcrumb */}
@@ -4580,60 +4630,8 @@ export const VibePrototyping: React.FC = () => {
               </Menu>
             </Box>
 
-            {/* Right: Panel view toggle + Preview size + Share button */}
+            {/* Right: Preview size + Share button */}
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              {/* Panel View Toggle (only show when variants are ready) */}
-              {isComplete && focusedVariantIndex && (
-                <>
-                  <Box
-                    sx={{
-                      display: 'flex',
-                      bgcolor: 'action.hover',
-                      borderRadius: 1,
-                      p: 0.25,
-                    }}
-                  >
-                    <Tooltip title="Preview">
-                      <IconButton
-                        size="small"
-                        onClick={() => setPanelView('preview')}
-                        sx={{
-                          bgcolor: panelView === 'preview' ? 'background.paper' : 'transparent',
-                          boxShadow: panelView === 'preview' ? 1 : 0,
-                        }}
-                      >
-                        <Eye size={18} weight={panelView === 'preview' ? 'fill' : 'regular'} />
-                      </IconButton>
-                    </Tooltip>
-                    <Tooltip title="Code">
-                      <IconButton
-                        size="small"
-                        onClick={() => setPanelView('code')}
-                        sx={{
-                          bgcolor: panelView === 'code' ? 'background.paper' : 'transparent',
-                          boxShadow: panelView === 'code' ? 1 : 0,
-                        }}
-                      >
-                        <TreeStructure size={18} weight={panelView === 'code' ? 'fill' : 'regular'} />
-                      </IconButton>
-                    </Tooltip>
-                    <Tooltip title="Files">
-                      <IconButton
-                        size="small"
-                        onClick={() => setPanelView('files')}
-                        sx={{
-                          bgcolor: panelView === 'files' ? 'background.paper' : 'transparent',
-                          boxShadow: panelView === 'files' ? 1 : 0,
-                        }}
-                      >
-                        <Folders size={18} weight={panelView === 'files' ? 'fill' : 'regular'} />
-                      </IconButton>
-                    </Tooltip>
-                  </Box>
-                  <Divider orientation="vertical" flexItem />
-                </>
-              )}
-
               {/* Preview Size Selector */}
               <Box
                 sx={{

@@ -194,20 +194,15 @@ export function processInteractionTool(
 export function generateInteractionScript(state: InteractionState): string {
   const parts: string[] = [];
 
-  // Opening IIFE
+  // Opening IIFE - run immediately since srcdoc content is already loaded
   parts.push(`(function() {
   'use strict';
 
-  // Wait for DOM ready
-  function ready(fn) {
-    if (document.readyState !== 'loading') {
-      fn();
-    } else {
-      document.addEventListener('DOMContentLoaded', fn);
-    }
-  }
+  console.log('[VxInteractions] Script loaded, initializing...');
 
-  ready(function() {
+  // For srcdoc iframes, DOM is ready immediately
+  // Use setTimeout(0) to ensure all elements are parsed
+  setTimeout(function() {
     console.log('[VxInteractions] Initializing interactions...');
 `);
 
@@ -483,7 +478,7 @@ export function generateInteractionScript(state: InteractionState): string {
   // Close IIFE
   parts.push(`
     console.log('[VxInteractions] Initialization complete');
-  });
+  }, 0); // setTimeout to ensure DOM is ready
 })();
 `);
 
