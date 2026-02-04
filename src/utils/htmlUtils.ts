@@ -80,8 +80,14 @@ export function escapeScriptClosingTags(html: string): string {
     let escapedCount = 0;
     const scripts = doc.querySelectorAll('script');
 
-    scripts.forEach(script => {
+    scripts.forEach((script, index) => {
       const content = script.textContent || '';
+
+      // Log script info for debugging
+      if (index === 0) {
+        console.log('[htmlUtils] First script preview (first 100 chars):', content.slice(0, 100));
+      }
+
       // Check for </script patterns (case insensitive)
       const matches = content.match(/<\/script/gi);
       if (matches && matches.length > 0) {
@@ -90,15 +96,32 @@ export function escapeScriptClosingTags(html: string): string {
         const escapedContent = content.replace(/<\/script/gi, '<\\/script');
         script.textContent = escapedContent;
         escapedCount += matches.length;
+        console.log(`[htmlUtils] Escaped ${matches.length} </script pattern(s) in script #${index + 1}`);
       }
     });
 
     if (escapedCount > 0) {
-      console.log(`[htmlUtils] Escaped ${escapedCount} </script pattern(s) in script content`);
+      console.log(`[htmlUtils] Total: escaped ${escapedCount} </script pattern(s) in script content`);
     }
 
     // Serialize back to HTML
-    return '<!DOCTYPE html>\n' + doc.documentElement.outerHTML;
+    const result = '<!DOCTYPE html>\n' + doc.documentElement.outerHTML;
+
+    // Verify VxRuntime bundle wasn't corrupted
+    if (html.includes('VxRuntime Bundle') && !result.includes('VxRuntime Bundle')) {
+      console.error('[htmlUtils] CRITICAL: VxRuntime Bundle was corrupted during escaping!');
+      console.error('[htmlUtils] Returning original HTML to preserve bundle');
+      return html;
+    }
+
+    // Verify script count wasn't reduced
+    const originalScriptCount = (html.match(/<script/gi) || []).length;
+    const resultScriptCount = (result.match(/<script/gi) || []).length;
+    if (resultScriptCount < originalScriptCount) {
+      console.error(`[htmlUtils] WARNING: Script count reduced from ${originalScriptCount} to ${resultScriptCount}`);
+    }
+
+    return result;
   } catch (error) {
     console.warn('[htmlUtils] Failed to escape script tags, returning original:', error);
     return html;
