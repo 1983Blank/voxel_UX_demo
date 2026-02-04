@@ -1060,7 +1060,18 @@ export function preparePrototypeHtml(
   console.log('[preparePrototypeHtml:FINAL] Contains "[VxRuntime:DIAG]":', processed.includes('[VxRuntime:DIAG]'));
   console.log('[preparePrototypeHtml:FINAL] Count of <script>:', (processed.match(/<script>/gi) || []).length);
   console.log('[preparePrototypeHtml:FINAL] Count of </script>:', (processed.match(/<\/script>/gi) || []).length);
-  console.log('[preparePrototypeHtml:FINAL] Count of escaped <\\/script>:', (processed.match(/<\\\/script>/gi) || []).length);
+  // For escaped </script, we need to match <\/script (single backslash in the string)
+  // In regex, we need \\ to match a literal backslash
+  console.log('[preparePrototypeHtml:FINAL] Count of escaped <\\/script (actual):', (processed.match(/<\\\/script/gi) || []).length);
+
+  // Find the runtime bundle location and output surrounding content
+  const runtimeMarkerIdx = processed.indexOf('Voxel Runtime Bundle');
+  if (runtimeMarkerIdx !== -1) {
+    console.log('[preparePrototypeHtml:FINAL] Runtime bundle found at index:', runtimeMarkerIdx);
+    console.log('[preparePrototypeHtml:FINAL] Context around runtime:', processed.slice(Math.max(0, runtimeMarkerIdx - 50), runtimeMarkerIdx + 200));
+  } else {
+    console.error('[preparePrototypeHtml:FINAL] ERROR: Runtime bundle NOT FOUND in output!');
+  }
 
   return processed;
 }
