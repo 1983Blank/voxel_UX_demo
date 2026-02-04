@@ -21,13 +21,11 @@ import { VirtualFS } from '@/runtime/virtual-fs';
 import { injectVxRuntimeBundle } from '@/runtime/vx-runtime-bundle';
 import {
   applyModifications,
-  generatePrototypeBundle,
 } from './domModifier';
 import type {
   ModificationSpec,
   ExtractedComponentForTools,
   DesignToken as ToolDesignToken,
-  PrototypeBundle,
 } from '@/types/toolSchema';
 import type { VariantPlan } from './variantPlanService';
 
@@ -97,8 +95,9 @@ function convertComponentForTools(component: ExtractedComponent): ExtractedCompo
     })),
     variants: (component.variants || []).map(v => ({
       name: v.name,
-      description: v.description,
-      styles: v.styles,
+      // Store's ComponentVariant has html/css, tool schema expects description/styles
+      description: undefined,
+      styles: v.css || undefined,
     })),
     approved: component.status === 'approved',
   };

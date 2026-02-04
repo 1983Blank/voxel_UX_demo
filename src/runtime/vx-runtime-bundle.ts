@@ -746,7 +746,7 @@ function escapeScriptInStringLiterals(html: string): string {
 
   // Also handle cases where </script is at a line boundary after a quote
   // Pattern: quote, content, newline, </script
-  result = result.replace(/(["'`][^"'`\n]*)\n\s*<\/script/gi, (match, prefix) => {
+  result = result.replace(/(["'`][^"'`\n]*)\n\s*<\/script/gi, (_match, prefix) => {
     escapedCount++;
     console.log('[escapeScriptInStringLiterals] Found at line boundary');
     return `${prefix}\n<\\/script`;
