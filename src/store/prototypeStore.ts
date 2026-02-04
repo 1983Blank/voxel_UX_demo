@@ -993,10 +993,20 @@ export const usePrototypeStore = create<PrototypeStoreState>()(
       name: 'voxel-prototype-store',
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
-        // Only persist these fields
+        // Only persist lightweight fields - NOT variants with large HTML snapshots
+        // Variants are regenerated per session to avoid localStorage quota issues
         analysisResult: state.analysisResult,
         selectedScript: state.selectedScript,
-        variants: state.variants,
+        // Persist variant metadata without the snapshot (file contents)
+        variants: Object.fromEntries(
+          Object.entries(state.variants).map(([id, variant]) => [
+            id,
+            {
+              ...variant,
+              snapshot: undefined, // Don't persist file contents - too large for localStorage
+            },
+          ])
+        ),
         activeVariantId: state.activeVariantId,
         prototypeState: state.prototypeState,
         showStateInspector: state.showStateInspector,
