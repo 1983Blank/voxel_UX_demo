@@ -312,12 +312,12 @@ const INTERACTION_TOOLS: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'add_click_toggle',
-      description: 'Make an element clickable to toggle visibility of another element (for modals, panels, dropdowns). IMPORTANT: Use this to connect trigger buttons to their modal/panel targets.',
+      description: 'Connect a trigger button to show/hide a target element (modal, panel, dropdown). CRITICAL: triggerSelector MUST be an element that EXISTS - either from source DOM or one you created with add_element. Use SIMPLE selectors: "#my-btn", ".btn-primary", or \'button:has-text("Open")\'. NEVER use :has(svg path...) or complex selectors.',
       parameters: {
         type: 'object',
         properties: {
-          triggerSelector: { type: 'string', description: 'CSS selector for the clickable element (e.g., button that opens modal)' },
-          targetSelector: { type: 'string', description: 'CSS selector for the element to show/hide (e.g., the modal itself)' },
+          triggerSelector: { type: 'string', description: 'SIMPLE CSS selector for trigger. Use: "#id", ".class", or \'button:has-text("text")\'. NEVER use :has(svg...) or complex selectors!' },
+          targetSelector: { type: 'string', description: 'CSS selector for the element to show/hide (use the #id you gave it)' },
           closeOnClickOutside: { type: 'boolean', description: 'Close when clicking outside the target (default: true for modals)' },
           closeButtonSelector: { type: 'string', description: 'Optional: CSS selector for close button inside the target' },
         },
@@ -608,6 +608,38 @@ function summarizeDOM(html: string): string {
     lines.push(`### Elements with IDs:\n${ids.slice(0, 15).join(', ')}\n`)
   }
 
+  // Extract buttons with their text content (for trigger targeting)
+  // Match button tags and extract visible text
+  const buttonMatches = html.matchAll(/<button[^>]*>([\s\S]*?)<\/button>/gi)
+  const buttonTexts: string[] = []
+  for (const match of buttonMatches) {
+    // Extract text, removing nested tags
+    const text = match[1].replace(/<[^>]*>/g, '').trim()
+    if (text && text.length > 0 && text.length < 40 && !buttonTexts.includes(text)) {
+      buttonTexts.push(text)
+    }
+  }
+  if (buttonTexts.length > 0) {
+    lines.push(`### Buttons (USE THESE as triggers with button:has-text()):`)
+    buttonTexts.slice(0, 12).forEach(text => {
+      lines.push(`- button:has-text("${text}")`)
+    })
+    lines.push('')
+  }
+
+  // Extract links with text
+  const linkMatches = html.matchAll(/<a[^>]*>([\s\S]*?)<\/a>/gi)
+  const linkTexts: string[] = []
+  for (const match of linkMatches) {
+    const text = match[1].replace(/<[^>]*>/g, '').trim()
+    if (text && text.length > 1 && text.length < 30 && !linkTexts.includes(text)) {
+      linkTexts.push(text)
+    }
+  }
+  if (linkTexts.length > 0) {
+    lines.push(`### Links:\n${linkTexts.slice(0, 8).map(t => `- a:has-text("${t}")`).join('\n')}\n`)
+  }
+
   // Extract unique classes
   const classMatches = html.matchAll(/class=["']([^"']+)["']/g)
   const classSet = new Set<string>()
@@ -656,6 +688,35 @@ CRITICAL RULES:
 3. Add new UI elements, update text, apply styling to create a complete implementation
 4. Reference elements using CSS selectors from the source DOM
 5. Create realistic, INTERACTIVE prototypes - not just static HTML!
+
+## SELECTOR RULES (CRITICAL - FOLLOW EXACTLY):
+
+### What TO USE for selectors:
+✅ IDs you create: "#my-modal", "#add-contact-btn"
+✅ Simple class names: ".btn-primary", ".modal-overlay"
+✅ Semantic HTML: "button", "form", "header"
+✅ Text-based pseudo: 'button:has-text("Add Contact")' (we support this!)
+✅ Data attributes: "[data-action='submit']"
+
+### What NOT TO USE:
+❌ NEVER use :has() with SVG paths: button:has(svg path[d*='...'])
+❌ NEVER use complex attribute selectors: [class*='css-'][class*='123']
+❌ NEVER reference IDs before creating the element with add_element
+❌ NEVER use nth-child or sibling selectors for interaction triggers
+❌ NEVER use selectors targeting SVG internals
+
+### When targeting existing buttons from source DOM:
+1. Check the "Buttons" list in the DOM summary below
+2. Use text-based matching: 'button:has-text("Add")' or 'button:has-text("Create")'
+3. Or use simple class if available: ".btn-primary", ".action-btn"
+
+### When creating new elements:
+1. ALWAYS add a unique id attribute in the HTML
+2. Use that id for ALL subsequent references to that element
+3. Example:
+   add_element(selector: "body", html: "<div id='my-panel'>...</div>")
+   set_initial_hidden(selector: "#my-panel")  // ← uses the id we just created
+   add_click_toggle(triggerSelector: "#my-btn", targetSelector: "#my-panel")
 
 ## INTERACTION RULES (CRITICAL - READ CAREFULLY):
 
@@ -802,11 +863,15 @@ CRITICAL INTERACTIVITY RULES:
 
 AVOID THESE COMMON MISTAKES:
 - Using a triggerSelector that doesn't exist (trigger must be added FIRST or exist in source!)
+- Using complex selectors like button:has(svg path[d*='...']) - USE SIMPLE SELECTORS!
+- Referencing an #id before creating the element with add_element
 - Adding a modal/panel without set_initial_hidden (it will show immediately!)
 - Adding a trigger button without add_click_toggle (clicking does nothing!)
 - Forgetting close buttons or not connecting them
 - Using static lists when interactive accordions/tabs would be better
-- Creating panels without proper footer styling (buttons will overflow!)`
+- Creating panels without proper footer styling (buttons will overflow!)
+
+REMEMBER: For existing buttons, use 'button:has-text("Button Text")' - check the Buttons list in DOM summary above!`
 
   return prompt
 }

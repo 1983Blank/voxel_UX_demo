@@ -108,32 +108,69 @@ export interface InteractionValidationResult {
  */
 function findAlternativeTrigger(doc: Document, originalSelector: string, targetSelector: string): string | null {
   // Extract any text hint from the original selector (e.g., "open", "add", "create")
-  const textHints = originalSelector.toLowerCase().match(/open|add|create|new|show|toggle|close|cancel|save|submit|delete|remove|edit|view/g) || [];
+  const textHints = originalSelector.toLowerCase().match(/open|add|create|new|show|toggle|close|cancel|save|submit|delete|remove|edit|view|contact|form|modal|panel|detail/g) || [];
+
+  // Extract quoted text from selector (e.g., :has-text("Something"))
+  const quotedText = originalSelector.match(/["']([^"']+)["']/g)?.map(t => t.replace(/["']/g, '').toLowerCase()) || [];
 
   // Also check for button name patterns in the selector
-  const selectorParts = originalSelector.replace(/[#.]/g, ' ').toLowerCase().split(/[-_\s]+/);
-  const hints = [...new Set([...textHints, ...selectorParts])].filter(h => h.length > 2);
+  const selectorParts = originalSelector
+    .replace(/[#.\[\]():=*^$]/g, ' ')
+    .replace(/has-text|has|svg|path|button|div|span/g, ' ')
+    .toLowerCase()
+    .split(/[-_\s]+/)
+    .filter(p => p.length > 2 && !p.match(/^[0-9a-f]{4,}$/));
+
+  const hints = [...new Set([...textHints, ...quotedText, ...selectorParts])].filter(h => h.length > 2);
 
   console.log('[InteractionValidation] Looking for alternative trigger, hints:', hints);
 
-  // Strategy 1: Find buttons/links with matching text content
+  // Strategy 1: If selector has :has(svg), find buttons with icons
+  if (originalSelector.includes(':has(svg') || originalSelector.includes(':has(path')) {
+    const buttonsWithIcons = doc.querySelectorAll('button, [role="button"]');
+    for (const el of buttonsWithIcons) {
+      if (el.querySelector('svg')) {
+        if (el.id) {
+          console.log(`[InteractionValidation] Found SVG button by ID: #${el.id}`);
+          return `#${el.id}`;
+        }
+        const text = el.textContent?.trim();
+        if (text && text.length > 0 && text.length < 30) {
+          console.log(`[InteractionValidation] Found SVG button by text: ${text}`);
+          return `button:has-text("${text}")`;
+        }
+        // Use class if available
+        const classes = Array.from(el.classList).filter(c => !c.startsWith('css-') && c.length > 2);
+        if (classes.length > 0) {
+          const selector = `button.${classes[0]}`;
+          if (doc.querySelectorAll(selector).length === 1) {
+            console.log(`[InteractionValidation] Found SVG button by class: ${selector}`);
+            return selector;
+          }
+        }
+      }
+    }
+  }
+
+  // Strategy 2: Find buttons/links with matching text content
   const clickableElements = doc.querySelectorAll('button, a, [role="button"], input[type="button"], input[type="submit"]');
   for (const el of clickableElements) {
     const text = el.textContent?.toLowerCase().trim() || '';
     const ariaLabel = el.getAttribute('aria-label')?.toLowerCase() || '';
+    const title = el.getAttribute('title')?.toLowerCase() || '';
 
     // Check if element text contains any hints
     for (const hint of hints) {
-      if (text.includes(hint) || ariaLabel.includes(hint)) {
+      if (text.includes(hint) || ariaLabel.includes(hint) || title.includes(hint)) {
         // Found a match - generate a selector for it
         if (el.id) {
           console.log(`[InteractionValidation] Found alternative trigger by ID: #${el.id}`);
           return `#${el.id}`;
         }
         // Try to generate a unique selector
-        const classes = Array.from(el.classList).join('.');
-        if (classes) {
-          const selector = `${el.tagName.toLowerCase()}.${classes}`;
+        const classes = Array.from(el.classList).filter(c => !c.startsWith('css-') && c.length > 2);
+        if (classes.length > 0) {
+          const selector = `${el.tagName.toLowerCase()}.${classes[0]}`;
           // Verify it's unique
           if (doc.querySelectorAll(selector).length === 1) {
             console.log(`[InteractionValidation] Found alternative trigger by class: ${selector}`);
@@ -141,8 +178,9 @@ function findAlternativeTrigger(doc: Document, originalSelector: string, targetS
           }
         }
         // Use text-based pseudo-selector (handled by querySelectorSafe)
-        if (text) {
-          const pseudoSelector = `button:has-text("${text.substring(0, 30)}")`;
+        const displayText = el.textContent?.trim();
+        if (displayText && displayText.length > 0 && displayText.length < 40) {
+          const pseudoSelector = `button:has-text("${displayText.substring(0, 30)}")`;
           console.log(`[InteractionValidation] Found alternative trigger by text: ${pseudoSelector}`);
           return pseudoSelector;
         }
@@ -150,7 +188,7 @@ function findAlternativeTrigger(doc: Document, originalSelector: string, targetS
     }
   }
 
-  // Strategy 2: Find button near the target element (in same parent container)
+  // Strategy 3: Find button near the target element (in same parent container)
   const targetEl = querySelectorSafe(doc, targetSelector);
   if (targetEl && targetEl.parentElement) {
     const sibling = targetEl.parentElement.querySelector('button, a[href="#"], [role="button"]');
@@ -159,6 +197,20 @@ function findAlternativeTrigger(doc: Document, originalSelector: string, targetS
         console.log(`[InteractionValidation] Found sibling trigger: #${(sibling as HTMLElement).id}`);
         return `#${(sibling as HTMLElement).id}`;
       }
+    }
+  }
+
+  // Strategy 4: Try primary/action buttons as last resort
+  const primaryBtn = doc.querySelector('.btn-primary, .primary-btn, button[type="submit"], [data-action]');
+  if (primaryBtn) {
+    if ((primaryBtn as HTMLElement).id) {
+      console.log(`[InteractionValidation] Fallback to primary button: #${(primaryBtn as HTMLElement).id}`);
+      return `#${(primaryBtn as HTMLElement).id}`;
+    }
+    const text = primaryBtn.textContent?.trim();
+    if (text && text.length > 0 && text.length < 30) {
+      console.log(`[InteractionValidation] Fallback to primary button by text: ${text}`);
+      return `button:has-text("${text}")`;
     }
   }
 
@@ -345,7 +397,7 @@ export function generateInteractionScript(
 
   // Helper to find element with fallback strategies
   function findElement(selector) {
-    // Try direct selector first
+    // 1. Try direct selector first
     try {
       var el = document.querySelector(selector);
       if (el) return el;
@@ -353,33 +405,87 @@ export function generateInteractionScript(
       console.log('[VxInteractions] Invalid selector, trying alternatives:', selector);
     }
 
-    // Handle :has-text() pseudo-selector
+    // 2. Handle :has-text() pseudo-selector
     var hasTextMatch = selector.match(/^(.+?):has-text\\(["'](.+?)["']\\)$/);
     if (hasTextMatch) {
       var baseSelector = hasTextMatch[1].trim() || '*';
       var searchText = hasTextMatch[2];
-      var elements = document.querySelectorAll(baseSelector);
-      for (var i = 0; i < elements.length; i++) {
-        if (elements[i].textContent && elements[i].textContent.includes(searchText)) {
-          return elements[i];
+      try {
+        var elements = document.querySelectorAll(baseSelector);
+        for (var i = 0; i < elements.length; i++) {
+          if (elements[i].textContent && elements[i].textContent.includes(searchText)) {
+            console.log('[VxInteractions] Found by :has-text():', searchText);
+            return elements[i];
+          }
+        }
+      } catch (e) { /* ignore selector errors */ }
+    }
+
+    // 3. Handle :has(svg...) patterns - LLM tried to target a button by its icon
+    if (selector.includes(':has(svg') || selector.includes(':has(path')) {
+      console.log('[VxInteractions] Detected SVG selector, finding buttons with icons...');
+      var buttons = document.querySelectorAll('button:not([disabled]), [role="button"]');
+      for (var i = 0; i < buttons.length; i++) {
+        if (buttons[i].querySelector('svg')) {
+          console.log('[VxInteractions] Found button with SVG icon');
+          return buttons[i];
         }
       }
     }
 
-    // Strategy: Extract keywords from selector and find matching buttons
-    var keywords = selector.toLowerCase().replace(/[#.\\[\\]]/g, ' ').split(/[-_\\s]+/).filter(function(k) { return k.length > 2; });
-    if (keywords.length > 0) {
-      var buttons = document.querySelectorAll('button, a, [role="button"]');
-      for (var i = 0; i < buttons.length; i++) {
-        var btn = buttons[i];
-        var text = (btn.textContent || '').toLowerCase().trim();
-        var ariaLabel = (btn.getAttribute('aria-label') || '').toLowerCase();
-        for (var j = 0; j < keywords.length; j++) {
-          if (text.includes(keywords[j]) || ariaLabel.includes(keywords[j])) {
-            console.log('[VxInteractions] Found button by keyword "' + keywords[j] + '":', btn);
-            return btn;
+    // 4. Extract quoted text hints from selector (e.g., text in quotes)
+    var textHints = selector.match(/["']([^"']+)["']/g);
+    if (textHints && textHints.length > 0) {
+      var searchTerms = textHints.map(function(h) { return h.replace(/["']/g, '').toLowerCase(); });
+      var clickables = document.querySelectorAll('button, a, [role="button"]');
+      for (var i = 0; i < clickables.length; i++) {
+        var text = (clickables[i].textContent || '').toLowerCase().trim();
+        for (var j = 0; j < searchTerms.length; j++) {
+          if (text.includes(searchTerms[j])) {
+            console.log('[VxInteractions] Found by text hint:', searchTerms[j]);
+            return clickables[i];
           }
         }
+      }
+    }
+
+    // 5. Extract keywords from selector (remove noise, find meaningful words)
+    var keywords = selector.toLowerCase()
+      .replace(/[#.\\[\\]():=*^$]/g, ' ')
+      .replace(/has-text|has|svg|path|button|div|span|d\\*|class/g, ' ')
+      .split(/[-_\\s]+/)
+      .filter(function(k) { return k.length > 2 && !k.match(/^[0-9a-f]{4,}$/); });
+
+    if (keywords.length > 0) {
+      console.log('[VxInteractions] Trying keyword match:', keywords);
+      var clickables = document.querySelectorAll('button, a, [role="button"], input[type="button"], input[type="submit"]');
+      for (var i = 0; i < clickables.length; i++) {
+        var el = clickables[i];
+        var text = (el.textContent || '').toLowerCase();
+        var ariaLabel = (el.getAttribute('aria-label') || '').toLowerCase();
+        var title = (el.getAttribute('title') || '').toLowerCase();
+
+        for (var j = 0; j < keywords.length; j++) {
+          if (text.includes(keywords[j]) || ariaLabel.includes(keywords[j]) || title.includes(keywords[j])) {
+            console.log('[VxInteractions] Found by keyword:', keywords[j]);
+            return el;
+          }
+        }
+      }
+    }
+
+    // 6. Last resort: if selector looks like a trigger, try common button patterns
+    if (selector.includes('btn') || selector.includes('button') || selector.includes('trigger') || selector.includes('open')) {
+      var primaryBtn = document.querySelector('.btn-primary, .primary-btn, button[type="submit"], button.primary, [data-action]');
+      if (primaryBtn) {
+        console.log('[VxInteractions] Fallback: using primary/action button');
+        return primaryBtn;
+      }
+      // Try first visible button
+      var allButtons = document.querySelectorAll('button:not([disabled])');
+      if (allButtons.length > 0) {
+        console.log('[VxInteractions] Fallback: using first available button');
+        return allButtons[0];
       }
     }
 
