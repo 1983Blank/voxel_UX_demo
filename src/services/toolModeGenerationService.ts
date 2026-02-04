@@ -74,6 +74,8 @@ export interface ToolModeOptions {
   provider?: 'anthropic' | 'openai';
   /** Model to use */
   model?: string;
+  /** Abort signal to cancel generation */
+  abortSignal?: AbortSignal;
 }
 
 type ProgressCallback = (progress: ToolModeProgress) => void;
@@ -378,10 +380,10 @@ function convertTokenForTools(token: DesignToken): ToolDesignToken {
  * Get approved components from store
  */
 export function getApprovedComponents(): ExtractedComponentForTools[] {
-  const { components } = useComponentsStore.getState();
-  return components
-    .filter(c => c.status === 'approved')
-    .map(convertComponentForTools);
+  const { components, isInitialized } = useComponentsStore.getState();
+  const approved = components.filter(c => c.status === 'approved');
+  console.log(`[ToolModeGeneration] getApprovedComponents: ${components.length} total, ${approved.length} approved, initialized=${isInitialized}`);
+  return approved.map(convertComponentForTools);
 }
 
 /**
@@ -432,6 +434,11 @@ async function generateSpec(
   const truncatedHtml = sourceHtml.length > maxSourceHtmlSize
     ? sourceHtml.slice(0, maxSourceHtmlSize)
     : sourceHtml;
+
+  // Check abort before making expensive API call
+  if (options.abortSignal?.aborted) {
+    throw new Error('Generation aborted');
+  }
 
   console.log('[ToolModeGeneration] Calling generate-prototype-v2:', {
     sessionId,
@@ -909,6 +916,12 @@ export async function generateAllVariantsToolMode(
     const plan = plans[i];
     const progressBase = (i / totalPlans) * 100;
 
+    // Check if aborted before starting each variant
+    if (options.abortSignal?.aborted) {
+      console.log(`[ToolModeGeneration] Aborted before variant ${plan.variant_index}`);
+      break;
+    }
+
     try {
       const result = await generateVariantToolMode(
         sessionId,
@@ -925,10 +938,23 @@ export async function generateAllVariantsToolMode(
         options
       );
 
+      // Check if aborted after completing variant
+      if (options.abortSignal?.aborted) {
+        console.log(`[ToolModeGeneration] Aborted after variant ${plan.variant_index}`);
+        results.push(result); // Still include the completed variant
+        break;
+      }
+
       results.push(result);
       onVariantComplete?.(result);
 
     } catch (error) {
+      // If aborted, don't log as error
+      if (options.abortSignal?.aborted) {
+        console.log(`[ToolModeGeneration] Variant ${plan.variant_index} cancelled due to abort`);
+        break;
+      }
+
       console.error(`[ToolModeGeneration] Failed to generate variant ${plan.variant_index}:`, error);
 
       onProgress?.({

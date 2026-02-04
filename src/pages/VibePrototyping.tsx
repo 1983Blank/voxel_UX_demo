@@ -93,6 +93,7 @@ import { useVibeStore, type ChatMessage } from '@/store/vibeStore';
 import { useContextStore } from '@/store/contextStore';
 import { useThemeStore } from '@/store/themeStore';
 import { useDesignTokensStore } from '@/store/designTokensStore';
+import { useComponentsStore } from '@/store/componentsStore';
 import { getContextFiles, type ContextFile } from '@/services/contextFilesService';
 
 import { supabase } from '@/services/supabase';
@@ -1769,7 +1770,7 @@ export const VibePrototyping: React.FC = () => {
   const [selectedModel, setSelectedModel] = useState<string>('');
   const [llmMenuAnchorEl, setLlmMenuAnchorEl] = useState<null | HTMLElement>(null);
 
-  // Load context files and API keys on mount
+  // Load context files, API keys, and components on mount
   useEffect(() => {
     getContextFiles().then(setContextFiles).catch(console.error);
     getApiKeys().then((keys) => {
@@ -1780,6 +1781,13 @@ export const VibePrototyping: React.FC = () => {
         setSelectedProvider(activeKey.provider);
         setSelectedModel(activeKey.model || PROVIDER_INFO[activeKey.provider].defaultModel);
       }
+    }).catch(console.error);
+
+    // Initialize components store so extracted components are available for generation
+    useComponentsStore.getState().initializeComponents().then(() => {
+      const { components } = useComponentsStore.getState();
+      const approved = components.filter(c => c.status === 'approved');
+      console.log(`[VibePrototyping] Components loaded: ${components.length} total, ${approved.length} approved`);
     }).catch(console.error);
   }, []);
 
@@ -2656,6 +2664,10 @@ export const VibePrototyping: React.FC = () => {
         // Reset agent progress
         setAgentProgress([]);
 
+        // Create AbortController for cancellation support
+        const abortController = new AbortController();
+        generationAbortControllerRef.current = abortController;
+
         try {
           const results = await generateAllVariantsToolMode(
             currentSession.id,
@@ -2790,18 +2802,27 @@ export const VibePrototyping: React.FC = () => {
                 htmlLength: result.html.length,
               });
             },
-            // Options
+            // Options with abort signal
             {
               provider: selectedProvider as 'anthropic' | 'openai' | undefined,
               model: selectedModel || undefined,
+              abortSignal: abortController.signal,
             }
           );
 
           console.log('[VibePrototyping] Tool mode generation complete:', results.length, 'variants');
         } catch (error) {
-          console.error('[VibePrototyping] Tool mode generation failed, falling back:', error);
-          // Don't fall back silently - re-throw so user knows what happened
-          throw error;
+          // If aborted, don't log as error
+          if (abortController.signal.aborted) {
+            console.log('[VibePrototyping] Tool mode generation aborted by user');
+          } else {
+            console.error('[VibePrototyping] Tool mode generation failed:', error);
+            // Don't fall back silently - re-throw so user knows what happened
+            throw error;
+          }
+        } finally {
+          // Clear the abort controller when done
+          generationAbortControllerRef.current = null;
         }
       } else if (useServerOrchestration) {
           // Server-orchestrated generation: survives page refresh, streams progress via Realtime

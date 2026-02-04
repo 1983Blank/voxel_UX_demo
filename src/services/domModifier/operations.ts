@@ -46,17 +46,55 @@ function parseHTMLFragment(doc: Document, html: string): DocumentFragment {
 
 /**
  * Safe querySelector that handles non-standard selector syntax
- * Supports Playwright-style selectors that the LLM might generate:
+ * Supports Playwright-style and jQuery-style selectors that the LLM might generate:
  * - :has-text("...") - Find element containing text
  * - :text("...") - Find element with exact text
+ * - :contains("...") - jQuery-style text content selector
+ * - :has(...:contains(...)) - CSS :has() with jQuery :contains() inside
  * - >> (child combinator in Playwright) - Convert to standard >
  */
-function querySelectorSafe(doc: Document, selector: string): Element | null {
+export function querySelectorSafe(doc: Document, selector: string): Element | null {
   // First try the selector as-is
   try {
     return doc.querySelector(selector);
   } catch {
     // Selector is invalid, try to transform it
+  }
+
+  // Handle :contains("...") - jQuery-style text search
+  // Can appear at any level: button:contains("text") or parent:has(child:contains("text"))
+  const containsMatch = selector.match(/:contains\(["']([^"']+)["']\)/);
+  if (containsMatch) {
+    const searchText = containsMatch[1];
+    // Extract the base selector before :contains or :has
+    // e.g., "button:has(span:contains('Appearance'))" -> we want buttons containing "Appearance"
+    const baseMatch = selector.match(/^([a-zA-Z0-9_\-\[\]='"*.\s#]+)/);
+    const baseSelector = baseMatch ? baseMatch[1].trim() : '*';
+
+    try {
+      const elements = doc.querySelectorAll(baseSelector || '*');
+      for (const el of elements) {
+        if (el.textContent?.includes(searchText)) {
+          return el;
+        }
+      }
+    } catch {
+      // Base selector also invalid, try with wildcard
+      const allElements = doc.querySelectorAll('*');
+      for (const el of allElements) {
+        if (el.textContent?.includes(searchText)) {
+          // If we had a tag name, filter by it
+          if (baseSelector && baseSelector !== '*') {
+            const tagMatch = baseSelector.match(/^([a-zA-Z]+)/);
+            if (tagMatch && el.tagName.toLowerCase() !== tagMatch[1].toLowerCase()) {
+              continue;
+            }
+          }
+          return el;
+        }
+      }
+    }
+    return null;
   }
 
   // Handle :has-text("...") - find element containing text
@@ -137,12 +175,38 @@ function querySelectorSafe(doc: Document, selector: string): Element | null {
 /**
  * Safe querySelectorAll that handles non-standard selector syntax
  */
-function querySelectorAllSafe(doc: Document, selector: string): Element[] {
+export function querySelectorAllSafe(doc: Document, selector: string): Element[] {
   // First try the selector as-is
   try {
     return Array.from(doc.querySelectorAll(selector));
   } catch {
     // Selector is invalid, try to transform it
+  }
+
+  // Handle :contains("...") - jQuery-style text search
+  const containsMatch = selector.match(/:contains\(["']([^"']+)["']\)/);
+  if (containsMatch) {
+    const searchText = containsMatch[1];
+    const baseMatch = selector.match(/^([a-zA-Z0-9_\-\[\]='"*.\s#]+)/);
+    const baseSelector = baseMatch ? baseMatch[1].trim() : '*';
+
+    try {
+      const elements = doc.querySelectorAll(baseSelector || '*');
+      return Array.from(elements).filter(el => el.textContent?.includes(searchText));
+    } catch {
+      // Base selector also invalid, try with wildcard
+      const allElements = doc.querySelectorAll('*');
+      return Array.from(allElements).filter(el => {
+        if (!el.textContent?.includes(searchText)) return false;
+        if (baseSelector && baseSelector !== '*') {
+          const tagMatch = baseSelector.match(/^([a-zA-Z]+)/);
+          if (tagMatch && el.tagName.toLowerCase() !== tagMatch[1].toLowerCase()) {
+            return false;
+          }
+        }
+        return true;
+      });
+    }
   }
 
   // Handle :has-text("...") for querySelectorAll

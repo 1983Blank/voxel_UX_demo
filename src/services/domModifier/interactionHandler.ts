@@ -10,6 +10,7 @@
  */
 
 import type { Modification } from '@/types/toolSchema';
+import { querySelectorSafe } from './operations';
 
 export interface InteractionResult {
   success: boolean;
@@ -150,7 +151,7 @@ function findAlternativeTrigger(doc: Document, originalSelector: string, targetS
   }
 
   // Strategy 2: Find button near the target element (in same parent container)
-  const targetEl = doc.querySelector(targetSelector);
+  const targetEl = querySelectorSafe(doc, targetSelector);
   if (targetEl && targetEl.parentElement) {
     const sibling = targetEl.parentElement.querySelector('button, a[href="#"], [role="button"]');
     if (sibling && sibling !== targetEl) {
@@ -181,8 +182,9 @@ export function validateAndFixInteractions(
 
   // Validate click toggles - but be lenient
   for (const config of state.clickToggles) {
-    const trigger = doc.querySelector(config.triggerSelector);
-    const target = doc.querySelector(config.targetSelector);
+    // Use safe selectors that handle non-standard syntax from LLM
+    const trigger = querySelectorSafe(doc, config.triggerSelector);
+    const target = querySelectorSafe(doc, config.targetSelector);
 
     let updatedConfig = { ...config };
 
@@ -393,13 +395,20 @@ export function generateInteractionScript(
   // Hide initially hidden elements
   if (state.hiddenSelectors.length > 0) {
     parts.push(`
-    // Hide initially hidden elements
+    // Hide initially hidden elements (with transition support)
     var hiddenSelectors = ${JSON.stringify(state.hiddenSelectors)};
     hiddenSelectors.forEach(function(selector) {
       var el = document.querySelector(selector);
       if (el) {
-        el.style.display = 'none';
+        // Set up for CSS transitions
+        if (!el.style.transition) {
+          el.style.transition = 'opacity 0.25s ease-out, visibility 0.25s ease-out, transform 0.3s ease-out';
+        }
+        // Hide using visibility/opacity instead of display for animation support
         el.setAttribute('data-vx-hidden', 'true');
+        el.style.visibility = 'hidden';
+        el.style.opacity = '0';
+        el.style.pointerEvents = 'none';
         console.log('[VxInteractions] Hidden:', selector);
       } else {
         console.warn('[VxInteractions] Element not found for hiding:', selector);
@@ -429,26 +438,46 @@ export function generateInteractionScript(
 
       console.log('[VxInteractions] Binding trigger:', config.triggerSelector, 'to target:', config.targetSelector);
 
-      // Show/hide function
+      // Ensure target has transition styles for animation
+      if (!target.style.transition) {
+        target.style.transition = 'opacity 0.25s ease-out, visibility 0.25s ease-out, transform 0.3s ease-out';
+      }
+
+      // Show/hide function with CSS transitions
       function toggleTarget() {
-        var isHidden = target.style.display === 'none' || target.getAttribute('data-vx-hidden') === 'true';
+        var isHidden = target.getAttribute('data-vx-hidden') === 'true' ||
+                       target.style.visibility === 'hidden' ||
+                       target.style.display === 'none';
         if (isHidden) {
-          target.style.display = '';
-          target.removeAttribute('data-vx-hidden');
-          target.classList.add('vx-visible');
-          console.log('[VxInteractions] Showing:', config.targetSelector);
+          showTarget();
         } else {
-          target.style.display = 'none';
-          target.setAttribute('data-vx-hidden', 'true');
-          target.classList.remove('vx-visible');
-          console.log('[VxInteractions] Hiding:', config.targetSelector);
+          hideTarget();
         }
       }
 
+      function showTarget() {
+        // First ensure element can be seen (remove display:none if present)
+        if (target.style.display === 'none') {
+          target.style.display = '';
+        }
+        // Force reflow to ensure transition works
+        void target.offsetHeight;
+        // Add visible class and remove hidden state
+        target.classList.add('vx-visible');
+        target.removeAttribute('data-vx-hidden');
+        target.style.visibility = 'visible';
+        target.style.opacity = '1';
+        target.style.pointerEvents = 'auto';
+        console.log('[VxInteractions] Showing:', config.targetSelector);
+      }
+
       function hideTarget() {
-        target.style.display = 'none';
-        target.setAttribute('data-vx-hidden', 'true');
         target.classList.remove('vx-visible');
+        target.setAttribute('data-vx-hidden', 'true');
+        target.style.visibility = 'hidden';
+        target.style.opacity = '0';
+        target.style.pointerEvents = 'none';
+        console.log('[VxInteractions] Hiding:', config.targetSelector);
       }
 
       // Trigger click
@@ -490,7 +519,7 @@ export function generateInteractionScript(
   // Hover effects
   if (state.hoverEffects.length > 0) {
     parts.push(`
-    // Hover effects
+    // Hover effects with transitions
     var hoverEffects = ${JSON.stringify(state.hoverEffects)};
     hoverEffects.forEach(function(config) {
       var trigger = document.querySelector(config.triggerSelector);
@@ -504,19 +533,30 @@ export function generateInteractionScript(
         return;
       }
 
+      // Set up transition
+      if (!target.style.transition) {
+        target.style.transition = 'opacity 0.2s ease-out, visibility 0.2s ease-out';
+      }
+
       trigger.addEventListener('mouseenter', function() {
         clearTimeout(hideTimer);
         showTimer = setTimeout(function() {
-          target.style.display = '';
+          target.classList.add('vx-visible');
           target.removeAttribute('data-vx-hidden');
+          target.style.visibility = 'visible';
+          target.style.opacity = '1';
+          target.style.pointerEvents = 'auto';
         }, showDelay);
       });
 
       trigger.addEventListener('mouseleave', function() {
         clearTimeout(showTimer);
         hideTimer = setTimeout(function() {
-          target.style.display = 'none';
+          target.classList.remove('vx-visible');
           target.setAttribute('data-vx-hidden', 'true');
+          target.style.visibility = 'hidden';
+          target.style.opacity = '0';
+          target.style.pointerEvents = 'none';
         }, hideDelay);
       });
 
@@ -528,7 +568,7 @@ export function generateInteractionScript(
   // Tab interactions
   if (state.tabInteractions.length > 0) {
     parts.push(`
-    // Tab interactions
+    // Tab interactions with fade transitions
     var tabInteractions = ${JSON.stringify(state.tabInteractions)};
     tabInteractions.forEach(function(config) {
       var tabsContainer = document.querySelector(config.tabsSelector);
@@ -543,19 +583,32 @@ export function generateInteractionScript(
       var tabs = tabsContainer.children;
       var panels = panelsContainer.children;
 
+      // Set up transitions on all panels
+      Array.from(panels).forEach(function(p) {
+        if (!p.style.transition) {
+          p.style.transition = 'opacity 0.15s ease-out';
+        }
+      });
+
       Array.from(tabs).forEach(function(tab, index) {
         tab.addEventListener('click', function(e) {
           e.preventDefault();
 
           // Remove active from all tabs
           Array.from(tabs).forEach(function(t) { t.classList.remove(activeClass); });
-          // Hide all panels
-          Array.from(panels).forEach(function(p) { p.style.display = 'none'; });
+          // Hide all panels with fade
+          Array.from(panels).forEach(function(p) {
+            p.style.opacity = '0';
+            p.style.position = 'absolute';
+            p.style.visibility = 'hidden';
+          });
 
           // Activate clicked tab
           tab.classList.add(activeClass);
           if (panels[index]) {
-            panels[index].style.display = '';
+            panels[index].style.position = '';
+            panels[index].style.visibility = 'visible';
+            panels[index].style.opacity = '1';
           }
         });
       });
@@ -564,7 +617,14 @@ export function generateInteractionScript(
       if (tabs[0] && panels[0]) {
         tabs[0].classList.add(activeClass);
         Array.from(panels).forEach(function(p, i) {
-          p.style.display = i === 0 ? '' : 'none';
+          if (i === 0) {
+            p.style.opacity = '1';
+            p.style.visibility = 'visible';
+          } else {
+            p.style.opacity = '0';
+            p.style.position = 'absolute';
+            p.style.visibility = 'hidden';
+          }
         });
       }
 
@@ -576,7 +636,7 @@ export function generateInteractionScript(
   // Accordions
   if (state.accordions.length > 0) {
     parts.push(`
-    // Accordion interactions
+    // Accordion interactions with height animation
     var accordions = ${JSON.stringify(state.accordions)};
     accordions.forEach(function(config) {
       var container = document.querySelector(config.containerSelector);
@@ -589,8 +649,27 @@ export function generateInteractionScript(
       var contents = container.querySelectorAll(config.contentSelector);
       var allowMultiple = config.allowMultiple || false;
 
-      // Initially hide all content
-      contents.forEach(function(c) { c.style.display = 'none'; });
+      // Set up for height animation
+      contents.forEach(function(c) {
+        c.style.overflow = 'hidden';
+        c.style.transition = 'max-height 0.3s ease-out, opacity 0.3s ease-out';
+        // Initially collapsed
+        c.style.maxHeight = '0';
+        c.style.opacity = '0';
+        c.setAttribute('data-vx-collapsed', 'true');
+      });
+
+      function openContent(content) {
+        content.style.maxHeight = content.scrollHeight + 'px';
+        content.style.opacity = '1';
+        content.removeAttribute('data-vx-collapsed');
+      }
+
+      function closeContent(content) {
+        content.style.maxHeight = '0';
+        content.style.opacity = '0';
+        content.setAttribute('data-vx-collapsed', 'true');
+      }
 
       headers.forEach(function(header, index) {
         header.addEventListener('click', function(e) {
@@ -598,19 +677,19 @@ export function generateInteractionScript(
           var content = contents[index];
           if (!content) return;
 
-          var isOpen = content.style.display !== 'none';
+          var isOpen = !content.hasAttribute('data-vx-collapsed');
 
           if (!allowMultiple) {
             // Close all others
-            contents.forEach(function(c) { c.style.display = 'none'; });
+            contents.forEach(function(c) { closeContent(c); });
             headers.forEach(function(h) { h.classList.remove('active'); });
           }
 
           if (isOpen) {
-            content.style.display = 'none';
+            closeContent(content);
             header.classList.remove('active');
           } else {
-            content.style.display = '';
+            openContent(content);
             header.classList.add('active');
           }
         });
@@ -732,8 +811,24 @@ export function injectInteractionScript(doc: Document, state: InteractionState):
 export function injectInteractionStyles(doc: Document): void {
   const styleContent = `
 /* VxInteractions - Styles for interactive prototypes */
+
+/* Generic animated show/hide - using visibility/opacity for transition support */
+[data-vx-hidden="true"] {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* When vx-visible class is added, make visible with transition */
 .vx-visible {
-  display: block !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
+}
+
+/* Elements that need immediate display control (non-animated) */
+.vx-display-none {
+  display: none !important;
 }
 
 /* Modal overlay styles */
@@ -748,6 +843,16 @@ export function injectInteractionStyles(doc: Document): void {
   display: flex;
   align-items: center;
   justify-content: center;
+  /* Animation: fade in */
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.25s ease-out, visibility 0.25s ease-out;
+}
+
+/* Modal visible state */
+.modal-overlay.vx-visible, [data-vx-modal].vx-visible, .modal.vx-visible, .dialog-overlay.vx-visible {
+  opacity: 1;
+  visibility: visible;
 }
 
 /* Modal content - prevent overflow */
@@ -777,6 +882,17 @@ export function injectInteractionStyles(doc: Document): void {
   overflow-x: hidden;
   display: flex;
   flex-direction: column;
+  /* Animation: slide in from right */
+  transform: translateX(100%);
+  transition: transform 0.3s ease-out, opacity 0.3s ease-out;
+  opacity: 0;
+}
+
+/* Side panel visible state */
+.slide-panel.vx-visible, .side-panel.vx-visible, [data-vx-panel].vx-visible,
+.panel.vx-visible, .drawer.vx-visible {
+  transform: translateX(0);
+  opacity: 1;
 }
 
 /* Panel content area - scrollable */

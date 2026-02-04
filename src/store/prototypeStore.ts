@@ -7,7 +7,6 @@
  */
 
 import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
 import { VirtualFS, type FileSystemSnapshot } from '../runtime/virtual-fs';
 import type {
   ImplementationScript,
@@ -270,11 +269,28 @@ function createInitialPreviewHtml(sourceHtml: string): string {
 </html>`;
 }
 
+// Clear any existing prototype store data on module load (legacy cleanup)
+// This store no longer uses localStorage - all data is in Supabase
+try {
+  localStorage.removeItem('voxel-prototype-store');
+  // Also clear any other potential problem keys
+  const keysToRemove = Object.keys(localStorage).filter(k =>
+    k.includes('prototype') || k.includes('voxel') || k.includes('variant')
+  );
+  keysToRemove.forEach(k => {
+    try { localStorage.removeItem(k); } catch {}
+  });
+  if (keysToRemove.length > 0) {
+    console.log('[prototypeStore] Cleared legacy localStorage keys:', keysToRemove);
+  }
+} catch {
+  // Ignore errors during cleanup
+}
+
 // ============ Store ============
 
 export const usePrototypeStore = create<PrototypeStoreState>()(
-  persist(
-    (set, get) => ({
+  (set, get) => ({
       // Initial state
       analysisResult: null,
       selectedScript: null,
@@ -915,13 +931,14 @@ export const usePrototypeStore = create<PrototypeStoreState>()(
       },
 
       // ============ Persistence Actions ============
+      // NOTE: This store no longer persists to localStorage. Variant data is in Supabase.
 
       saveToStorage: () => {
-        // Handled by zustand persist middleware
+        // No-op: persistence removed to avoid localStorage quota issues
       },
 
       loadFromStorage: () => {
-        // Handled by zustand persist middleware
+        // No-op: data loads from Supabase, not localStorage
         // Recreate VirtualFS instances from snapshots
         const variants = get().variants;
         Object.entries(variants).forEach(([id, variant]) => {
@@ -988,32 +1005,7 @@ export const usePrototypeStore = create<PrototypeStoreState>()(
       getCompletedVariantsCount: () => {
         return Object.values(get().variants).filter((v) => v.status === 'ready').length;
       },
-    }),
-    {
-      name: 'voxel-prototype-store',
-      storage: createJSONStorage(() => localStorage),
-      partialize: (state) => ({
-        // Only persist lightweight fields - NOT variants with large HTML snapshots
-        // Variants are regenerated per session to avoid localStorage quota issues
-        analysisResult: state.analysisResult,
-        selectedScript: state.selectedScript,
-        // Persist variant metadata without the snapshot (file contents)
-        variants: Object.fromEntries(
-          Object.entries(state.variants).map(([id, variant]) => [
-            id,
-            {
-              ...variant,
-              snapshot: undefined, // Don't persist file contents - too large for localStorage
-            },
-          ])
-        ),
-        activeVariantId: state.activeVariantId,
-        prototypeState: state.prototypeState,
-        showStateInspector: state.showStateInspector,
-        showFlowDebugger: state.showFlowDebugger,
-      }),
-    }
-  )
+    })
 );
 
 export default usePrototypeStore;

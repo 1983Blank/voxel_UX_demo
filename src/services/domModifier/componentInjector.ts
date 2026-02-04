@@ -12,7 +12,7 @@ import type {
   ComponentVariant,
   Modification,
 } from '@/types/toolSchema';
-import { insertHTML, type OperationResult } from './operations';
+import { insertHTML, querySelectorSafe, type OperationResult } from './operations';
 
 /**
  * Escape HTML special characters in a string
@@ -177,7 +177,8 @@ export function injectComponent(
     return { success: false, error: 'Selector required for component insertion' };
   }
 
-  const target = doc.querySelector(selector);
+  // Use safe selector that handles non-standard syntax from LLM
+  const target = querySelectorSafe(doc, selector);
   if (!target) {
     return { success: false, error: `Target element not found: ${selector}` };
   }
@@ -293,7 +294,8 @@ export function injectGenericComponent(
     return { success: false, error: 'Selector required for component insertion' };
   }
 
-  const target = doc.querySelector(selector);
+  // Use safe selector that handles non-standard syntax from LLM
+  const target = querySelectorSafe(doc, selector);
   if (!target) {
     return { success: false, error: `Target element not found: ${selector}` };
   }

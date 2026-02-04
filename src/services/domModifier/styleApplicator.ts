@@ -5,7 +5,7 @@
  */
 
 import type { DesignToken, Modification } from '@/types/toolSchema';
-import type { OperationResult } from './operations';
+import { querySelectorSafe, type OperationResult } from './operations';
 
 /**
  * Style property mapping from tool params to CSS properties
@@ -366,7 +366,8 @@ export function executeStyleOperation(
     return { success: false, error: 'Selector required for style operation' };
   }
 
-  const element = doc.querySelector(selector);
+  // Use safe selector that handles non-standard syntax (jQuery :contains, Playwright :has-text, etc.)
+  const element = querySelectorSafe(doc, selector);
   if (!element) {
     return { success: false, error: `Element not found: ${selector}` };
   }

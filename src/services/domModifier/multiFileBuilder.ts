@@ -16,6 +16,7 @@ import type {
   Route,
   Modification,
 } from '@/types/toolSchema';
+import { querySelectorSafe } from './operations';
 
 /**
  * Navigation script template for multi-screen prototypes
@@ -241,7 +242,8 @@ export function addNavigationToElement(
   transition?: string,
   params?: Record<string, unknown>
 ): boolean {
-  const element = doc.querySelector(selector);
+  // Use safe selector that handles non-standard syntax from LLM
+  const element = querySelectorSafe(doc, selector);
   if (!element) return false;
 
   element.setAttribute('data-vx-nav', targetScreen);
@@ -270,7 +272,8 @@ export function addBackNavigation(
   selector: string,
   transition?: string
 ): boolean {
-  const element = doc.querySelector(selector);
+  // Use safe selector that handles non-standard syntax from LLM
+  const element = querySelectorSafe(doc, selector);
   if (!element) return false;
 
   element.setAttribute('data-vx-back', 'true');
@@ -455,7 +458,8 @@ export function executeScreenOperation(
       if (!selector) {
         return { success: false, error: 'Selector required for add_nav_menu' };
       }
-      const target = doc.querySelector(selector);
+      // Use safe selector that handles non-standard syntax from LLM
+      const target = querySelectorSafe(doc, selector);
       if (!target) {
         return { success: false, error: `Element not found: ${selector}` };
       }
@@ -473,7 +477,8 @@ export function executeScreenOperation(
       if (!selector) {
         return { success: false, error: 'Selector required for add_breadcrumb' };
       }
-      const target = doc.querySelector(selector);
+      // Use safe selector that handles non-standard syntax from LLM
+      const target = querySelectorSafe(doc, selector);
       if (!target) {
         return { success: false, error: `Element not found: ${selector}` };
       }
