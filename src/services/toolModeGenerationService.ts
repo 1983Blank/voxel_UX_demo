@@ -365,6 +365,11 @@ async function buildHtmlFromSpec(
   const cleanedHtml = stripScripts(sourceHtml);
   console.log('[ToolModeGeneration] Source HTML reduced from', sourceHtml.length, 'to', cleanedHtml.length, 'bytes');
 
+  // Debug: Check script tag balance after stripping
+  const countTags = (s: string, tag: string) => (s.match(new RegExp(tag, 'gi')) || []).length;
+  console.log('[ToolModeGeneration:DEBUG] After strip - <script>:', countTags(cleanedHtml, '<script'));
+  console.log('[ToolModeGeneration:DEBUG] After strip - </script>:', countTags(cleanedHtml, '</script>'));
+
   console.log('[ToolModeGeneration] Applying modifications to cleaned HTML...');
 
   // Apply modifications using domModifier
@@ -382,10 +387,26 @@ async function buildHtmlFromSpec(
     throw new Error('No HTML generated from modifications');
   }
 
+  // Debug: Check script tag balance after modifications
+  console.log('[ToolModeGeneration:DEBUG] After mods - <script>:', countTags(html, '<script'));
+  console.log('[ToolModeGeneration:DEBUG] After mods - </script>:', countTags(html, '</script>'));
+  console.log('[ToolModeGeneration:DEBUG] After mods - </head> index:', html.indexOf('</head>'));
+
   console.log('[ToolModeGeneration] Modifications applied, injecting runtime...');
 
   // Inject VxRuntime bundle - this is now clean because we control the HTML
   html = injectVxRuntimeBundle(html);
+
+  // Debug: Check script tag balance after injection
+  console.log('[ToolModeGeneration:DEBUG] After inject - <script>:', countTags(html, '<script'));
+  console.log('[ToolModeGeneration:DEBUG] After inject - </script>:', countTags(html, '</script>'));
+
+  // Debug: Check for VxRuntime content
+  const runtimeIndex = html.indexOf('VxRuntime:DIAG');
+  console.log('[ToolModeGeneration:DEBUG] VxRuntime:DIAG found at index:', runtimeIndex);
+  if (runtimeIndex > 0) {
+    console.log('[ToolModeGeneration:DEBUG] 200 chars before DIAG:', html.slice(Math.max(0, runtimeIndex - 200), runtimeIndex));
+  }
 
   console.log('[ToolModeGeneration] Runtime injected, HTML ready');
 
