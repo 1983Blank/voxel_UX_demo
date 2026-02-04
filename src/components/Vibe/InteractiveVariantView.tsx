@@ -25,7 +25,7 @@ import type { VibeVariant } from '../../services/variantCodeService';
 
 // ============ Types ============
 
-type PanelView = 'preview' | 'code' | 'files';
+type PanelView = 'preview' | 'code' | 'files' | 'flow';
 
 interface InteractiveVariantViewProps {
   plans: VariantPlan[];

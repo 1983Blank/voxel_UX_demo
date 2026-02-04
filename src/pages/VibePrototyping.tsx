@@ -85,6 +85,7 @@ import {
   Stop,
   Eye,
   Folders,
+  FlowArrow,
 } from '@phosphor-icons/react';
 
 import { useSnackbar } from '@/components/SnackbarProvider';
@@ -170,6 +171,7 @@ import {
 import DualModeEditor from '@/components/DualModeEditor';
 import WYSIWYGEditor from '@/components/WYSIWYGEditor';
 import { InteractiveVariantView } from '@/components/Vibe/InteractiveVariantView';
+import { UserFlowDiagram } from '@/components/Vibe/UserFlowDiagram';
 import { captureHtmlScreenshot, compressScreenshot } from '@/services/screenshotService';
 import { quickEnhance, enhancePrototype, type EnhanceResult } from '@/services/injectionService';
 import { prepareHtmlForIframe } from '@/utils/htmlUtils';
@@ -1500,7 +1502,7 @@ export const VibePrototyping: React.FC = () => {
   const [promptValue, setPromptValue] = useState('');
   const [focusedVariantIndex, setFocusedVariantIndex] = useState<number | null>(null);
   const [editMode, setEditMode] = useState<EditMode>('cursor');
-  const [panelView, setPanelView] = useState<'preview' | 'code' | 'files'>('preview');
+  const [panelView, setPanelView] = useState<'preview' | 'code' | 'files' | 'flow'>('preview');
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [shareLink, setShareLink] = useState('');
@@ -1588,6 +1590,30 @@ export const VibePrototyping: React.FC = () => {
   // Fetched HTML content for code view (variants store only URLs)
   const [fetchedVariantHtml, setFetchedVariantHtml] = useState<string | null>(null);
   const [isFetchingHtml, setIsFetchingHtml] = useState(false);
+
+  // Interaction state for flow diagram (extracted from variant spec)
+  const [variantInteractionState, setVariantInteractionState] = useState<{
+    hiddenSelectors: string[];
+    clickToggles: Array<{
+      triggerSelector: string;
+      targetSelector: string;
+      closeOnClickOutside?: boolean;
+      closeButtonSelector?: string;
+    }>;
+    hoverEffects: Array<{
+      triggerSelector: string;
+      targetSelector: string;
+    }>;
+    tabInteractions?: Array<{
+      tabsSelector: string;
+      panelsSelector: string;
+    }>;
+    accordions?: Array<{
+      containerSelector: string;
+      headerSelector: string;
+      contentSelector: string;
+    }>;
+  } | null>(null);
   const [isSavingVariantEdit, setIsSavingVariantEdit] = useState(false);
   const [hasUnsavedVariantChanges, setHasUnsavedVariantChanges] = useState(false);
 
@@ -3571,6 +3597,99 @@ export const VibePrototyping: React.FC = () => {
     fetchVariantHtml();
   }, [editMode, focusedVariantIndex, getVariantByIndex]);
 
+  // Fetch interaction state when switching to flow view
+  useEffect(() => {
+    const fetchInteractionState = async () => {
+      if (panelView !== 'flow' || !focusedVariantIndex || !currentSession) {
+        setVariantInteractionState(null);
+        return;
+      }
+
+      // Try to get the spec from storage
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          setVariantInteractionState(null);
+          return;
+        }
+
+        const specPath = `${user.id}/${currentSession.id}/variant_${focusedVariantIndex}_spec.json`;
+        const { data, error } = await supabase.storage
+          .from('vibe-files')
+          .download(specPath);
+
+        if (error || !data) {
+          console.log('No spec found for variant, flow diagram will show empty state');
+          setVariantInteractionState(null);
+          return;
+        }
+
+        const specText = await data.text();
+        const spec = JSON.parse(specText);
+
+        // Extract interactions from spec modifications
+        const interactions = {
+          hiddenSelectors: [] as string[],
+          clickToggles: [] as Array<{
+            triggerSelector: string;
+            targetSelector: string;
+            closeOnClickOutside?: boolean;
+            closeButtonSelector?: string;
+          }>,
+          hoverEffects: [] as Array<{
+            triggerSelector: string;
+            targetSelector: string;
+          }>,
+          tabInteractions: [] as Array<{
+            tabsSelector: string;
+            panelsSelector: string;
+          }>,
+          accordions: [] as Array<{
+            containerSelector: string;
+            headerSelector: string;
+            contentSelector: string;
+          }>,
+        };
+
+        // Parse modifications to extract interaction tools
+        if (spec.screens) {
+          for (const screen of spec.screens) {
+            for (const mod of screen.modifications || []) {
+              const { tool, params } = mod;
+
+              if (tool === 'set_initial_hidden' && params?.selector) {
+                interactions.hiddenSelectors.push(params.selector as string);
+              }
+
+              if (tool === 'add_click_toggle' && params) {
+                interactions.clickToggles.push({
+                  triggerSelector: params.triggerSelector as string,
+                  targetSelector: params.targetSelector as string,
+                  closeOnClickOutside: params.closeOnClickOutside as boolean,
+                  closeButtonSelector: params.closeButtonSelector as string,
+                });
+              }
+
+              if (tool === 'add_hover_show' && params) {
+                interactions.hoverEffects.push({
+                  triggerSelector: params.triggerSelector as string,
+                  targetSelector: params.targetSelector as string,
+                });
+              }
+            }
+          }
+        }
+
+        setVariantInteractionState(interactions);
+      } catch (error) {
+        console.error('Error fetching interaction state:', error);
+        setVariantInteractionState(null);
+      }
+    };
+
+    fetchInteractionState();
+  }, [panelView, focusedVariantIndex, currentSession]);
+
   // Computed values
   const isAnalyzing = status === 'analyzing';
   const isUnderstanding = status === 'understanding';
@@ -4581,6 +4700,20 @@ export const VibePrototyping: React.FC = () => {
                     </IconButton>
                   </Tooltip>
                 )}
+                {isComplete && focusedVariantIndex && (
+                  <Tooltip title="User Flow Diagram">
+                    <IconButton
+                      size="small"
+                      onClick={() => { setEditMode('cursor'); setPanelView('flow'); }}
+                      sx={{
+                        bgcolor: panelView === 'flow' ? 'background.paper' : 'transparent',
+                        boxShadow: panelView === 'flow' ? 1 : 0,
+                      }}
+                    >
+                      <FlowArrow size={18} weight={panelView === 'flow' ? 'fill' : 'regular'} />
+                    </IconButton>
+                  </Tooltip>
+                )}
               </Box>
 
               <Divider orientation="vertical" flexItem />
@@ -5083,10 +5216,22 @@ export const VibePrototyping: React.FC = () => {
             </Box>
           )}
 
+          {/* User Flow Diagram view */}
+          {focusedVariantIndex && panelView === 'flow' && (isComplete || focusedVariant?.status === 'complete') && (
+            <Box sx={{ flex: 1, overflow: 'auto', p: 2 }}>
+              <Card sx={{ height: '100%', overflow: 'auto' }}>
+                <UserFlowDiagram
+                  interactionState={variantInteractionState || undefined}
+                  variantTitle={focusedPlan?.title || `Variant ${String.fromCharCode(64 + focusedVariantIndex)}`}
+                />
+              </Card>
+            </Box>
+          )}
+
           {/* Complete or Generating state with focus - inline expansion view (preview mode) */}
           {/* Allow exploring completed variants while others are still generating */}
           {/* Also handles interactive mode where variants may be in streamingHtml but not vibe_variants */}
-          {(isComplete || (isGenerating && (focusedVariant?.status === 'complete' || completedVariantIndices.has(focusedVariantIndex || 0)))) && focusedVariantIndex && editMode === 'cursor' && (
+          {(isComplete || (isGenerating && (focusedVariant?.status === 'complete' || completedVariantIndices.has(focusedVariantIndex || 0)))) && focusedVariantIndex && editMode === 'cursor' && panelView !== 'flow' && (
             <InlineExpansionGrid
               wireframes={wireframes}
               focusedIndex={focusedVariantIndex}
