@@ -543,7 +543,7 @@ export function injectInteractionStyles(doc: Document): void {
 }
 
 /* Modal overlay styles */
-.modal-overlay, [data-vx-modal] {
+.modal-overlay, [data-vx-modal], .modal, .dialog-overlay {
   position: fixed;
   top: 0;
   left: 0;
@@ -556,8 +556,20 @@ export function injectInteractionStyles(doc: Document): void {
   justify-content: center;
 }
 
-/* Side panel styles */
-.slide-panel, .side-panel, [data-vx-panel] {
+/* Modal content - prevent overflow */
+.modal-content, .modal-dialog, .dialog-content, [data-vx-modal-content] {
+  background: white;
+  border-radius: 8px;
+  max-height: 90vh;
+  max-width: 90vw;
+  overflow-y: auto;
+  overflow-x: hidden;
+  position: relative;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+}
+
+/* Side panel styles - fixed overflow issues */
+.slide-panel, .side-panel, [data-vx-panel], .panel, .drawer {
   position: fixed;
   top: 0;
   right: 0;
@@ -568,6 +580,53 @@ export function injectInteractionStyles(doc: Document): void {
   z-index: 9998;
   box-shadow: -2px 0 10px rgba(0,0,0,0.2);
   overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Panel content area - scrollable */
+.panel-content, .side-panel-content, .drawer-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+/* Panel footer with buttons - fixed at bottom, no overflow */
+.panel-footer, .side-panel-footer, .drawer-footer, .panel-actions {
+  flex-shrink: 0;
+  padding: 16px;
+  border-top: 1px solid #e0e0e0;
+  background: white;
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+/* Ensure buttons don't overflow */
+.panel-footer button, .side-panel-footer button, .drawer-footer button,
+.modal-footer button, .dialog-footer button {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* Close button positioning */
+.close-btn, .close-button, .modal-close, .panel-close, [data-close] {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: transparent;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  padding: 4px 8px;
+  line-height: 1;
+  z-index: 1;
+}
+
+.close-btn:hover, .close-button:hover, .modal-close:hover, .panel-close:hover {
+  background: rgba(0,0,0,0.1);
+  border-radius: 4px;
 }
 
 /* Form error styles */
@@ -576,10 +635,124 @@ input.error, select.error, textarea.error {
   background-color: #fff5f5 !important;
 }
 
-/* Accordion active state */
-.accordion-header.active,
-[data-vx-accordion-header].active {
-  background-color: #f0f0f0;
+/* Accordion styles */
+.accordion-header, [data-vx-accordion-header] {
+  cursor: pointer;
+  padding: 12px 16px;
+  background: #f5f5f5;
+  border: 1px solid #e0e0e0;
+  margin-bottom: -1px;
+}
+
+.accordion-header.active, [data-vx-accordion-header].active {
+  background-color: #e8e8e8;
+}
+
+.accordion-content, [data-vx-accordion-content] {
+  padding: 16px;
+  border: 1px solid #e0e0e0;
+  border-top: none;
+}
+
+/* Tab styles */
+.tab-list, .tabs {
+  display: flex;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.tab, .tab-button {
+  padding: 12px 24px;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.tab.active, .tab-button.active {
+  border-bottom-color: #007bff;
+  color: #007bff;
+}
+
+.tab-panel, .tab-content {
+  padding: 16px;
+}
+
+/* Step/Progress indicator styles for task breakdowns */
+.steps, .stepper, .progress-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.step, .step-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+  background: #f9f9f9;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.step:hover, .step-item:hover {
+  background: #f0f0f0;
+}
+
+.step.active, .step-item.active {
+  background: #e3f2fd;
+  border-left: 3px solid #2196f3;
+}
+
+.step.completed, .step-item.completed {
+  background: #e8f5e9;
+}
+
+.step-number, .step-indicator {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #e0e0e0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  flex-shrink: 0;
+}
+
+.step.active .step-number, .step-item.active .step-indicator {
+  background: #2196f3;
+  color: white;
+}
+
+.step.completed .step-number, .step-item.completed .step-indicator {
+  background: #4caf50;
+  color: white;
+}
+
+.step-content {
+  flex: 1;
+}
+
+.step-title {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.step-description {
+  color: #666;
+  font-size: 14px;
+}
+
+/* Expandable/collapsible content */
+.expandable-content, .collapsible-content {
+  overflow: hidden;
+  transition: max-height 0.3s ease;
+}
+
+.expandable-content.collapsed, .collapsible-content.collapsed {
+  max-height: 0;
 }
 `;
 

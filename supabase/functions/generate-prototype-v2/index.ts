@@ -681,6 +681,13 @@ For side panels:
 
 For tabs/accordions: Use add_tab_interaction or add_accordion_interaction
 
+For step-by-step breakdowns/progress indicators:
+\`\`\`
+// Create interactive steps that expand/collapse on click
+add_element(selector: ".content", position: "append", html: "<div class='steps' id='task-steps'><div class='step-item' data-step='1'><div class='step-indicator'>1</div><div class='step-content'><div class='step-title'>Step Title</div><div class='step-description'>Description...</div></div></div>...</div>")
+add_accordion_interaction(containerSelector: "#task-steps", headerSelector: ".step-item", contentSelector: ".step-description", allowMultiple: true)
+\`\`\`
+
 IMPORTANT: A good interactive prototype requires:
 - Add new buttons, forms, modals, or panels as needed
 - UPDATE existing text and labels to match the feature
@@ -754,7 +761,19 @@ Now implement the user's request comprehensively. Use 8-20 tool calls to:
 4. SET UP INTERACTIVITY - use set_initial_hidden + add_click_toggle for ANY overlay UI
 5. Make it feel like a real, working prototype
 
-REMEMBER: Modals and panels must be HIDDEN initially and shown on click. Always call set_initial_hidden and add_click_toggle for overlay UI.`
+CRITICAL INTERACTIVITY RULES:
+- Modals and panels MUST be HIDDEN initially - always call set_initial_hidden
+- Modals and panels MUST be connected to triggers - always call add_click_toggle
+- For task breakdowns, use accordion or step components with interactivity
+- Include close buttons in modals/panels and reference them in closeButtonSelector
+- Use semantic class names: modal-overlay, modal-content, panel-footer, close-btn, step-item
+
+AVOID THESE COMMON MISTAKES:
+- Adding a modal/panel without set_initial_hidden (it will show immediately!)
+- Adding a trigger button without add_click_toggle (clicking does nothing!)
+- Forgetting close buttons or not connecting them
+- Using static lists when interactive accordions/tabs would be better
+- Creating panels without proper footer styling (buttons will overflow!)`
 
   return prompt
 }
