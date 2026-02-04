@@ -871,6 +871,7 @@ function isOverloadError(errorMessage: string): boolean {
 const FALLBACK_MODELS: Record<string, string[]> = {
   anthropic: ['claude-3-5-haiku-20241022', 'claude-3-haiku-20240307'],
   openai: ['gpt-4o-mini', 'gpt-3.5-turbo'],
+  google: ['gemini-1.5-flash', 'gemini-1.0-pro'],
 }
 
 // Sleep helper for retry backoff
@@ -989,6 +990,93 @@ async function callOpenAIWithTools(
   return toolCalls
 }
 
+async function callGoogleWithTools(
+  apiKey: string,
+  model: string,
+  systemPrompt: string,
+  userPrompt: string,
+  tools: ToolDefinition[]
+): Promise<ToolCall[]> {
+  console.log('[generate-prototype-v2] Calling Google Gemini with', tools.length, 'tools')
+
+  // Convert tools to Google/Gemini format
+  const googleTools = [{
+    functionDeclarations: tools.map(t => ({
+      name: t.function.name,
+      description: t.function.description,
+      parameters: {
+        type: 'OBJECT',
+        properties: Object.fromEntries(
+          Object.entries(t.function.parameters.properties).map(([key, value]) => [
+            key,
+            {
+              type: (value as { type?: string }).type?.toUpperCase() || 'STRING',
+              description: (value as { description?: string }).description || '',
+              enum: (value as { enum?: string[] }).enum,
+            }
+          ])
+        ),
+        required: t.function.parameters.required,
+      },
+    })),
+  }]
+
+  const modelId = model || 'gemini-1.5-pro'
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      systemInstruction: {
+        parts: [{ text: systemPrompt }],
+      },
+      contents: [{
+        role: 'user',
+        parts: [{ text: userPrompt }],
+      }],
+      tools: googleTools,
+      toolConfig: {
+        functionCallingConfig: {
+          mode: 'ANY',
+        },
+      },
+      generationConfig: {
+        maxOutputTokens: 8192,
+      },
+    }),
+  })
+
+  if (!response.ok) {
+    const error = await response.json()
+    throw new Error(error.error?.message || `Google API error: ${response.status}`)
+  }
+
+  const data = await response.json()
+
+  // Extract tool calls from response
+  const toolCalls: ToolCall[] = []
+  const candidates = data.candidates || []
+
+  for (const candidate of candidates) {
+    const content = candidate.content
+    if (content?.parts) {
+      for (const part of content.parts) {
+        if (part.functionCall) {
+          toolCalls.push({
+            id: `google-${Date.now()}-${toolCalls.length}`,
+            name: part.functionCall.name,
+            arguments: part.functionCall.args || {},
+          })
+        }
+      }
+    }
+  }
+
+  console.log('[generate-prototype-v2] Received', toolCalls.length, 'tool calls from Google')
+  return toolCalls
+}
+
 // =============================================================================
 // Main Handler
 // =============================================================================
@@ -1096,6 +1184,8 @@ Deno.serve(async (req) => {
         return await callAnthropicWithTools(apiKey, model, systemPrompt, userPrompt, tools)
       } else if (keyConfig.provider === 'openai') {
         return await callOpenAIWithTools(apiKey, model, systemPrompt, userPrompt, tools)
+      } else if (keyConfig.provider === 'google') {
+        return await callGoogleWithTools(apiKey, model, systemPrompt, userPrompt, tools)
       } else {
         throw new Error(`Unsupported provider: ${keyConfig.provider}`)
       }
