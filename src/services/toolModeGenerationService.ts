@@ -21,6 +21,7 @@ import { VirtualFS } from '@/runtime/virtual-fs';
 import { injectVxRuntimeBundle } from '@/runtime/vx-runtime-bundle';
 import {
   applyModifications,
+  stripScripts,
 } from './domModifier';
 import type {
   ModificationSpec,
@@ -244,10 +245,16 @@ async function buildHtmlFromSpec(
   components: ExtractedComponentForTools[],
   tokens: ToolDesignToken[]
 ): Promise<string> {
-  console.log('[ToolModeGeneration] Applying modifications to source HTML...');
+  console.log('[ToolModeGeneration] Stripping scripts from source HTML...');
+
+  // Strip scripts from source HTML to prevent errors from original page's JavaScript
+  const cleanedHtml = stripScripts(sourceHtml);
+  console.log('[ToolModeGeneration] Source HTML reduced from', sourceHtml.length, 'to', cleanedHtml.length, 'bytes');
+
+  console.log('[ToolModeGeneration] Applying modifications to cleaned HTML...');
 
   // Apply modifications using domModifier
-  const result = await applyModifications(sourceHtml, spec, components, tokens);
+  const result = await applyModifications(cleanedHtml, spec, components, tokens);
 
   if (result.errors.length > 0) {
     console.warn('[ToolModeGeneration] Some modifications had errors:', result.errors);

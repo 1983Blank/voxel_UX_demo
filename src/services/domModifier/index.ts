@@ -66,6 +66,39 @@ function serializeDOM(doc: Document): string {
 }
 
 /**
+ * Strip all script tags from HTML to prevent errors from source page scripts
+ * Preserves the visual structure while removing JavaScript
+ */
+export function stripScripts(html: string): string {
+  const doc = parseHTML(html);
+
+  // Remove all script tags
+  const scripts = doc.querySelectorAll('script');
+  scripts.forEach(script => script.remove());
+
+  // Remove inline event handlers (onclick, onload, etc.)
+  const allElements = doc.querySelectorAll('*');
+  allElements.forEach(el => {
+    // Get all attributes
+    const attrs = Array.from(el.attributes);
+    attrs.forEach(attr => {
+      // Remove event handler attributes
+      if (attr.name.startsWith('on')) {
+        el.removeAttribute(attr.name);
+      }
+    });
+  });
+
+  // Remove noscript tags (they often contain fallback content we don't need)
+  const noscripts = doc.querySelectorAll('noscript');
+  noscripts.forEach(ns => ns.remove());
+
+  console.log(`[domModifier] Stripped ${scripts.length} scripts, ${noscripts.length} noscripts`);
+
+  return serializeDOM(doc);
+}
+
+/**
  * Apply a single modification to a document
  */
 function applySingleModification(
