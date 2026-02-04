@@ -207,8 +207,17 @@ export async function getActiveGeneration(
       // No rows found
       return null;
     }
-    // Silently handle 406 errors (table not accessible)
-    if (error.message?.includes('406') || error.code === '406') {
+    // Silently handle 406/404 errors (table not accessible or doesn't exist)
+    // PostgREST returns 406 when relation doesn't exist or schema issues
+    if (
+      error.message?.includes('406') ||
+      error.message?.includes('404') ||
+      error.message?.includes('relation') ||
+      error.message?.includes('does not exist') ||
+      error.code === '406' ||
+      error.code === '42P01' // PostgreSQL: undefined_table
+    ) {
+      console.log('[ServerGeneration] Table not accessible, skipping server orchestration');
       return null;
     }
     console.error('[ServerGeneration] Error getting active session:', error);

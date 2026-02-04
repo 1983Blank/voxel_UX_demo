@@ -2939,13 +2939,33 @@ export const VibePrototyping: React.FC = () => {
   }, [currentSession, plan, sourceMetadata, screenScreenshot, wireframes, contextFiles, selectedProvider, selectedModel, addChatMessage, setVariants, setStatus, setProgress, setError, debouncedSavePartialHtml, showError, showSuccess, screen]);
 
   // Handle Stop Generation - abort ongoing generation to save LLM costs
-  const handleStopGeneration = useCallback(() => {
+  const handleStopGeneration = useCallback(async () => {
+    console.log('[VibePrototyping] Stopping generation...');
+
+    // Abort the fetch requests
     if (generationAbortControllerRef.current) {
-      console.log('[VibePrototyping] Stopping generation...');
       generationAbortControllerRef.current.abort();
       generationAbortControllerRef.current = null;
     }
-  }, []);
+
+    // Update session status to indicate it was stopped
+    if (currentSession?.id) {
+      try {
+        await supabase.from('vibe_sessions').update({
+          status: 'wireframe_ready', // Go back to wireframe ready state
+          error_message: 'Generation stopped by user'
+        }).eq('id', currentSession.id);
+
+        // Reset local state
+        setStatus('wireframe_ready');
+        setProgress(null); // Clear progress since we're stopping
+        showSuccess('Generation stopped');
+        addChatMessage('assistant', 'Generation stopped. You can restart by clicking "Build Prototypes" when ready.');
+      } catch (err) {
+        console.error('[VibePrototyping] Error updating session after stop:', err);
+      }
+    }
+  }, [currentSession?.id, setStatus, showSuccess, addChatMessage]);
 
   // Handle Rebuild - re-run V2 generation for projects that already have wireframes/plans
   const [isRebuilding, setIsRebuilding] = useState(false);
@@ -3301,7 +3321,11 @@ export const VibePrototyping: React.FC = () => {
   // Handle variant selection
   const handleVariantClick = useCallback((index: number) => {
     setFocusedVariantIndex(index);
-  }, []);
+    // When clicking a variant from complete state, ensure we're viewing prototypes
+    if (status === 'complete') {
+      setViewMode('prototypes');
+    }
+  }, [status]);
 
   const handleBackToGrid = useCallback(() => {
     setFocusedVariantIndex(null);
