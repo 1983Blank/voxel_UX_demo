@@ -3532,9 +3532,10 @@ export const VibePrototyping: React.FC = () => {
     if (hasWireframe && !hasPrototype && (status === 'wireframe_ready' || status === 'complete')) {
       // Focus the variant and then build it
       setFocusedVariantIndex(index);
-      // Add to selected variants and trigger build
-      const { setSelectedVariants } = useVibeStore.getState();
-      setSelectedVariants([index]);
+      // Add to selected variants (additive, not replacing) and trigger build
+      const { selectedVariants: currentSelected, setSelectedVariants } = useVibeStore.getState();
+      const newSelected = currentSelected.includes(index) ? currentSelected : [...currentSelected, index];
+      setSelectedVariants(newSelected);
       addChatMessage('assistant', `Building high-fidelity prototype for Variant ${String.fromCharCode(64 + index)}...`);
       // Trigger build after a short delay to let UI update
       setTimeout(() => handleBuildHighFidelity(), 100);
@@ -3543,9 +3544,10 @@ export const VibePrototyping: React.FC = () => {
 
     // If only planned (no wireframe), offer to wireframe it
     if (!hasWireframe && (status === 'plan_ready' || status === 'complete' || status === 'wireframe_ready')) {
-      // Add to selected variants and trigger wireframe
-      const { setSelectedVariants } = useVibeStore.getState();
-      setSelectedVariants([index]);
+      // Add to selected variants (additive, not replacing) and trigger wireframe
+      const { selectedVariants: currentSelected, setSelectedVariants } = useVibeStore.getState();
+      const newSelected = currentSelected.includes(index) ? currentSelected : [...currentSelected, index];
+      setSelectedVariants(newSelected);
       addChatMessage('assistant', `Creating wireframe for Variant ${String.fromCharCode(64 + index)}...`);
       // Trigger wireframe creation
       setTimeout(() => handleCreateWireframes(), 100);
