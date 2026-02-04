@@ -3018,24 +3018,57 @@ export const VibePrototyping: React.FC = () => {
       generationAbortControllerRef.current = null;
     }
 
+    // Get currently completed variants BEFORE we abort
+    // These are the variants that were fully generated before user clicked stop
+    const fullyCompletedIndices = new Set<number>(completedVariantIndices);
+
     // Update session status to indicate it was stopped
     if (currentSession?.id) {
       try {
+        // Determine new status based on what we have
+        const hasAnyCompleted = fullyCompletedIndices.size > 0;
+        const newStatus = hasAnyCompleted ? 'complete' : 'wireframe_ready';
+
         await supabase.from('vibe_sessions').update({
-          status: 'wireframe_ready', // Go back to wireframe ready state
-          error_message: 'Generation stopped by user'
+          status: newStatus,
+          error_message: hasAnyCompleted
+            ? `Generation stopped. ${fullyCompletedIndices.size} variant(s) completed.`
+            : 'Generation stopped by user'
         }).eq('id', currentSession.id);
 
-        // Reset local state
-        setStatus('wireframe_ready');
-        setProgress(null); // Clear progress since we're stopping
-        showSuccess('Generation stopped');
-        addChatMessage('assistant', 'Generation stopped. You can restart by clicking "Build Prototypes" when ready.');
+        // Reset generation tracking state (but keep completed variants)
+        setProgress(null);
+        setVariantStartTimes({});
+        setVariantProgressMessages({});
+        setElapsedTimes({});
+        setAgentProgress([]);
+
+        // Keep only the streaming HTML for fully completed variants
+        setStreamingHtml(prev => {
+          const filtered: Record<number, string> = {};
+          fullyCompletedIndices.forEach(idx => {
+            if (prev[idx]) {
+              filtered[idx] = prev[idx];
+            }
+          });
+          return filtered;
+        });
+
+        // Update status - show complete view if we have completed variants
+        setStatus(newStatus);
+
+        if (hasAnyCompleted) {
+          showSuccess(`Generation stopped. ${fullyCompletedIndices.size} variant(s) are ready to preview.`);
+          addChatMessage('assistant', `Generation stopped. ${fullyCompletedIndices.size} variant(s) completed successfully. You can preview them now or rebuild to generate more variants.`);
+        } else {
+          showSuccess('Generation stopped');
+          addChatMessage('assistant', 'Generation stopped. You can restart by clicking "Build Prototypes" when ready.');
+        }
       } catch (err) {
         console.error('[VibePrototyping] Error updating session after stop:', err);
       }
     }
-  }, [currentSession?.id, setStatus, showSuccess, addChatMessage]);
+  }, [currentSession?.id, completedVariantIndices, setStatus, showSuccess, addChatMessage]);
 
   // Handle Rebuild - re-run V2 generation for projects that already have wireframes/plans
   const [isRebuilding, setIsRebuilding] = useState(false);
