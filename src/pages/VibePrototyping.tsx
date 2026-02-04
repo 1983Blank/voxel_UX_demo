@@ -156,7 +156,7 @@ import {
   type StartServerGenerationParams,
 } from '@/services/serverGenerationService';
 import { useServerGeneration } from '@/hooks/useServerGeneration';
-import type { AgentProgress } from '@/types/agentTypes';
+import type { AgentProgress, AgentStepProgress } from '@/types/agentTypes';
 import { usePrototypeStore } from '@/store/prototypeStore';
 import {
   generateUnderstanding,
@@ -2665,12 +2665,28 @@ export const VibePrototyping: React.FC = () => {
                     'failed': 'failed',
                   };
 
-                  // Helper to get step status
+                  // Helper to get step status (fallback for when custom steps aren't available)
                   const getStepStatus = (stepNum: number): 'pending' | 'in_progress' | 'completed' | 'failed' => {
                     if (currentStep > stepNum) return 'completed';
                     if (currentStep === stepNum) return 'in_progress';
                     return 'pending';
                   };
+
+                  // Use custom steps from the progress callback if available,
+                  // otherwise fall back to generic steps
+                  const progressSteps: AgentStepProgress[] = p.steps && p.steps.length > 0
+                    ? p.steps.map(s => ({
+                        stepKey: s.stepKey,
+                        label: s.label,
+                        status: s.status as 'pending' | 'in_progress' | 'completed' | 'failed',
+                      }))
+                    : [
+                        { stepKey: 'preparing', label: 'Preparing', status: getStepStatus(1) },
+                        { stepKey: 'generating-spec', label: 'AI Planning', status: getStepStatus(2) },
+                        { stepKey: 'applying-modifications', label: 'Applying Changes', status: getStepStatus(3) },
+                        { stepKey: 'injecting-runtime', label: 'Building Preview', status: getStepStatus(4) },
+                        { stepKey: 'complete', label: 'Complete', status: currentStep >= 5 ? 'completed' : 'pending' },
+                      ];
 
                   const newProgress: AgentProgress = {
                     variantIndex: variantIdx,
@@ -2678,16 +2694,10 @@ export const VibePrototyping: React.FC = () => {
                     approach: approachMap[variantIdx] || 'minimal',
                     phase: phaseMap[p.stage] || 'script',
                     currentStep: p.message,
-                    completedSteps: currentStep - 1,
-                    totalSteps,
+                    completedSteps: p.completedSteps ?? (currentStep - 1),
+                    totalSteps: p.totalSteps ?? totalSteps,
                     filesCompleted: [],
-                    steps: [
-                      { stepKey: 'preparing', label: 'Preparing', status: getStepStatus(1) },
-                      { stepKey: 'generating-spec', label: 'AI Planning', status: getStepStatus(2) },
-                      { stepKey: 'applying-modifications', label: 'Applying Changes', status: getStepStatus(3) },
-                      { stepKey: 'injecting-runtime', label: 'Building Preview', status: getStepStatus(4) },
-                      { stepKey: 'complete', label: 'Complete', status: currentStep >= 5 ? 'completed' : 'pending' },
-                    ],
+                    steps: progressSteps,
                   };
 
                   if (existing) {

@@ -34,12 +34,24 @@ import type { VariantPlan } from './variantPlanService';
 // Types
 // =============================================================================
 
+export interface ToolModeStepProgress {
+  stepKey: string;
+  label: string;
+  status: 'pending' | 'in_progress' | 'completed' | 'failed';
+}
+
 export interface ToolModeProgress {
   stage: 'preparing' | 'generating-spec' | 'applying-modifications' | 'injecting-runtime' | 'complete' | 'failed';
   message: string;
   percent: number;
   variantIndex?: number;
   variantTitle?: string;
+  /** Custom steps extracted from the modification spec */
+  steps?: ToolModeStepProgress[];
+  /** Total number of steps */
+  totalSteps?: number;
+  /** Completed step count */
+  completedSteps?: number;
 }
 
 export interface ToolModeResult {
@@ -73,6 +85,108 @@ const INDEX_TO_APPROACH_NAME: Record<number, string> = {
   3: 'Gamified',
   4: 'Accessible',
 };
+
+// =============================================================================
+// Step Label Generation
+// =============================================================================
+
+/**
+ * Convert a tool name to a human-readable label
+ * e.g., "insert_modal_form" → "Add Modal Form"
+ * e.g., "update_text" → "Update Text"
+ * e.g., "apply_style" → "Apply Styling"
+ */
+function toolToLabel(toolName: string, params?: Record<string, unknown>): string {
+  // Handle insert_* tools (component insertions)
+  if (toolName.startsWith('insert_')) {
+    const componentPart = toolName.replace('insert_', '').replace(/_/g, ' ');
+    // Capitalize each word
+    const label = componentPart.split(' ').map(w =>
+      w.charAt(0).toUpperCase() + w.slice(1)
+    ).join(' ');
+    return `Add ${label}`;
+  }
+
+  // Handle common DOM tools
+  const toolLabels: Record<string, string> = {
+    'update_text': params?.text
+      ? `Update text "${String(params.text).slice(0, 30)}${String(params.text).length > 30 ? '...' : ''}"`
+      : 'Update Text',
+    'update_attribute': `Set ${params?.attribute || 'attribute'}`,
+    'remove_element': 'Remove Element',
+    'add_element': 'Add HTML Element',
+    'add_class': `Add class "${params?.className || ''}"`,
+    'remove_class': `Remove class "${params?.className || ''}"`,
+    'wrap_element': 'Wrap Element',
+    'apply_style': 'Apply Styling',
+    'create_screen': `Create Screen "${params?.screenId || ''}"`,
+    'add_navigation': 'Add Navigation',
+    'define_route': `Define Route "${params?.path || ''}"`,
+    'add_click_handler': 'Add Click Handler',
+    'add_form_handler': 'Add Form Handler',
+    'bind_state': 'Bind State',
+  };
+
+  if (toolLabels[toolName]) {
+    return toolLabels[toolName];
+  }
+
+  // Fallback: convert tool_name to "Tool Name"
+  return toolName
+    .replace(/_/g, ' ')
+    .split(' ')
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
+/**
+ * Extract step progress items from a ModificationSpec
+ * Creates custom labels for each modification
+ */
+function extractStepsFromSpec(spec: ModificationSpec): ToolModeStepProgress[] {
+  const steps: ToolModeStepProgress[] = [];
+
+  // Add base steps
+  steps.push({
+    stepKey: 'preparing',
+    label: 'Preparing',
+    status: 'completed',
+  });
+
+  steps.push({
+    stepKey: 'ai-planning',
+    label: 'AI Planning',
+    status: 'completed',
+  });
+
+  // Add a step for each modification
+  let modIndex = 0;
+  for (const screen of spec.screens) {
+    for (const mod of screen.modifications) {
+      steps.push({
+        stepKey: `mod-${modIndex}`,
+        label: toolToLabel(mod.tool, mod.params),
+        status: 'pending',
+      });
+      modIndex++;
+    }
+  }
+
+  // Add final steps
+  steps.push({
+    stepKey: 'building-preview',
+    label: 'Building Preview',
+    status: 'pending',
+  });
+
+  steps.push({
+    stepKey: 'complete',
+    label: 'Complete',
+    status: 'pending',
+  });
+
+  return steps;
+}
 
 // =============================================================================
 // Component/Token Conversion
@@ -336,13 +450,60 @@ export async function generateVariantToolMode(
     options
   );
 
-  // Step 2: Apply modifications to source HTML
+  // Extract custom steps from the spec
+  const customSteps = extractStepsFromSpec(specResult.spec);
+  const totalSteps = customSteps.length;
+
+  // Update AI Planning step to completed
+  customSteps[1].status = 'completed'; // AI Planning step
+
+  // Step 2: Apply modifications to source HTML - show each modification as a step
+  const modificationCount = specResult.spec.screens.reduce(
+    (sum, s) => sum + s.modifications.length, 0
+  );
+
+  // Simulate progress through modification steps
+  let completedMods = 0;
+  for (const screen of specResult.spec.screens) {
+    for (let i = 0; i < screen.modifications.length; i++) {
+      const mod = screen.modifications[i];
+      const stepIndex = 2 + completedMods; // Skip "Preparing" and "AI Planning"
+
+      // Mark current step as in_progress
+      if (customSteps[stepIndex]) {
+        customSteps[stepIndex].status = 'in_progress';
+      }
+
+      onProgress?.({
+        stage: 'applying-modifications',
+        message: toolToLabel(mod.tool, mod.params),
+        percent: 30 + Math.round((completedMods / modificationCount) * 50),
+        variantIndex,
+        variantTitle: plan.title,
+        steps: [...customSteps], // Send a copy
+        totalSteps,
+        completedSteps: 2 + completedMods,
+      });
+
+      // Mark step as completed (in practice, all mods are applied at once,
+      // but we show progress for better UX)
+      if (customSteps[stepIndex]) {
+        customSteps[stepIndex].status = 'completed';
+      }
+      completedMods++;
+    }
+  }
+
+  // Now show the final "applying modifications" progress
   onProgress?.({
     stage: 'applying-modifications',
-    message: `Applying ${specResult.toolCallCount} modifications...`,
-    percent: 60,
+    message: `Applied ${specResult.toolCallCount} modifications`,
+    percent: 80,
     variantIndex,
     variantTitle: plan.title,
+    steps: customSteps,
+    totalSteps,
+    completedSteps: 2 + modificationCount,
   });
 
   const html = await buildHtmlFromSpec(
@@ -353,12 +514,21 @@ export async function generateVariantToolMode(
   );
 
   // Step 3: Create VirtualFS and update store
+  // Mark Building Preview step as in_progress
+  const buildingPreviewIndex = customSteps.length - 2;
+  if (customSteps[buildingPreviewIndex]) {
+    customSteps[buildingPreviewIndex].status = 'in_progress';
+  }
+
   onProgress?.({
     stage: 'injecting-runtime',
-    message: 'Preparing preview...',
+    message: 'Building Preview',
     percent: 90,
     variantIndex,
     variantTitle: plan.title,
+    steps: customSteps,
+    totalSteps,
+    completedSteps: totalSteps - 2,
   });
 
   // Create file list for the store
@@ -395,12 +565,18 @@ export async function generateVariantToolMode(
     previewUrl = virtualFS.createPreviewUrl();
   }
 
+  // Mark all steps as completed
+  customSteps.forEach(step => { step.status = 'completed'; });
+
   onProgress?.({
     stage: 'complete',
     message: `${approachName} variant complete!`,
     percent: 100,
     variantIndex,
     variantTitle: plan.title,
+    steps: customSteps,
+    totalSteps,
+    completedSteps: totalSteps,
   });
 
   return {
