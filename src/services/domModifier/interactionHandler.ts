@@ -168,6 +168,9 @@ function findAlternativeTrigger(doc: Document, originalSelector: string, targetS
 /**
  * Validate and fix interaction selectors in the DOM
  * Call this after all DOM modifications but before injecting scripts
+ *
+ * NOTE: This is now less strict - it will include interactions even if
+ * elements aren't found, letting the runtime script try to find them.
  */
 export function validateAndFixInteractions(
   doc: Document,
@@ -176,7 +179,7 @@ export function validateAndFixInteractions(
   const warnings: string[] = [];
   const fixedClickToggles: ClickToggleConfig[] = [];
 
-  // Validate click toggles
+  // Validate click toggles - but be lenient
   for (const config of state.clickToggles) {
     const trigger = doc.querySelector(config.triggerSelector);
     const target = doc.querySelector(config.targetSelector);
@@ -184,25 +187,24 @@ export function validateAndFixInteractions(
     let updatedConfig = { ...config };
 
     if (!target) {
-      warnings.push(`Target element not found: ${config.targetSelector}`);
-      // Skip this interaction entirely if target doesn't exist
-      continue;
+      warnings.push(`Target element not found at build time: ${config.targetSelector} (will try at runtime)`);
+      // Still include - runtime might find it
     }
 
     if (!trigger) {
-      warnings.push(`Trigger element not found: ${config.triggerSelector}`);
+      warnings.push(`Trigger element not found at build time: ${config.triggerSelector}`);
       // Try to find an alternative
       const alternative = findAlternativeTrigger(doc, config.triggerSelector, config.targetSelector);
       if (alternative) {
-        warnings.push(`  -> Using alternative trigger: ${alternative}`);
+        warnings.push(`  -> Found alternative trigger: ${alternative}`);
         updatedConfig.triggerSelector = alternative;
       } else {
-        // Can't find alternative, skip this interaction
-        warnings.push(`  -> No alternative found, interaction will be skipped`);
-        continue;
+        warnings.push(`  -> No alternative found, will try original selector at runtime`);
+        // Still include the original - runtime findElement() might handle it
       }
     }
 
+    // Always include the interaction - let runtime try
     fixedClickToggles.push(updatedConfig);
   }
 
@@ -342,8 +344,12 @@ export function generateInteractionScript(
   // Helper to find element with fallback strategies
   function findElement(selector) {
     // Try direct selector first
-    var el = document.querySelector(selector);
-    if (el) return el;
+    try {
+      var el = document.querySelector(selector);
+      if (el) return el;
+    } catch (e) {
+      console.log('[VxInteractions] Invalid selector, trying alternatives:', selector);
+    }
 
     // Handle :has-text() pseudo-selector
     var hasTextMatch = selector.match(/^(.+?):has-text\\(["'](.+?)["']\\)$/);
@@ -354,6 +360,23 @@ export function generateInteractionScript(
       for (var i = 0; i < elements.length; i++) {
         if (elements[i].textContent && elements[i].textContent.includes(searchText)) {
           return elements[i];
+        }
+      }
+    }
+
+    // Strategy: Extract keywords from selector and find matching buttons
+    var keywords = selector.toLowerCase().replace(/[#.\\[\\]]/g, ' ').split(/[-_\\s]+/).filter(function(k) { return k.length > 2; });
+    if (keywords.length > 0) {
+      var buttons = document.querySelectorAll('button, a, [role="button"]');
+      for (var i = 0; i < buttons.length; i++) {
+        var btn = buttons[i];
+        var text = (btn.textContent || '').toLowerCase().trim();
+        var ariaLabel = (btn.getAttribute('aria-label') || '').toLowerCase();
+        for (var j = 0; j < keywords.length; j++) {
+          if (text.includes(keywords[j]) || ariaLabel.includes(keywords[j])) {
+            console.log('[VxInteractions] Found button by keyword "' + keywords[j] + '":', btn);
+            return btn;
+          }
         }
       }
     }

@@ -2112,20 +2112,6 @@ export const VibePrototyping: React.FC = () => {
     }
   }, [status]);
 
-  // Auto-select first completed variant when status becomes complete and no variant is focused
-  // This ensures users always see the main+thumbnails layout instead of the legacy grid view
-  useEffect(() => {
-    if (status === 'complete' && !focusedVariantIndex && variants.length > 0) {
-      const firstCompleted = variants.find(v => v.status === 'complete');
-      if (firstCompleted) {
-        setFocusedVariantIndex(firstCompleted.variant_index);
-      } else if (variants.length > 0) {
-        // Fallback to first variant
-        setFocusedVariantIndex(variants[0].variant_index);
-      }
-    }
-  }, [status, focusedVariantIndex, variants]);
-
   // Add chat message helper
   const addChatMessage = useCallback(
     (
@@ -3444,16 +3430,9 @@ export const VibePrototyping: React.FC = () => {
     }
   }, [status]);
 
-  // When clicking "All Variants" or back button, default to showing Variant A
-  // in the main+thumbnails layout rather than a separate grid view
   const handleBackToGrid = useCallback(() => {
-    // Find the first completed variant, default to 1
-    const firstCompleted = variants.find(v => v.status === 'complete');
-    const defaultIndex = firstCompleted?.variant_index || 1;
-    setFocusedVariantIndex(defaultIndex);
-    // Ensure we're in cursor/preview mode
-    setEditMode('cursor');
-  }, [variants]);
+    setFocusedVariantIndex(null);
+  }, []);
 
   // Handle screen name edit
   const handleStartEditName = useCallback(() => {
