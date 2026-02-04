@@ -207,3 +207,109 @@ npx supabase functions deploy function-name --no-verify-jwt
 5. ❌ Changing function parameter names without updating client code
 6. ✅ Always test migrations with `--dry-run` first
 7. ✅ Check client code parameter names match function parameter names
+
+## Development Workflow Rules
+
+### 1. Plan Before Coding
+**Before writing any code, describe the approach and wait for approval.**
+
+- For non-trivial changes, explain WHAT will change, WHERE (which files), and WHY this approach
+- Ask clarifying questions if requirements are ambiguous - don't assume
+- This is especially critical for:
+  - Database schema changes (migrations can't be easily undone)
+  - Auth-related code (see Auth guidelines above)
+  - Edge function changes (deployed to production immediately)
+  - Changes touching shared services or types
+
+**Example of good planning:**
+```
+To fix the share link thumbnail issue, I'll:
+1. Check what columns actually exist in vibe_variants table
+2. Update get_share_data function to use correct column name
+3. Create a new migration (not modify existing ones)
+4. Update base migration for future deployments
+
+Should I proceed?
+```
+
+### 2. Keep Changes Small
+**If a task requires changes to more than 3 files, stop and break it into smaller tasks first.**
+
+- Large changes are harder to review, test, and debug
+- If something breaks, smaller changes make it easier to identify the cause
+- Each task should have a single, clear purpose
+- Commit after each logical unit of work
+
+**How to break down large tasks:**
+1. Identify the dependencies between changes
+2. Find the smallest change that provides value or unblocks other work
+3. Implement and verify each piece before moving on
+
+### 3. Anticipate Failure Points
+**After writing code, list what could break and suggest tests to cover it.**
+
+For every change, consider:
+- **Database changes**: What if the column doesn't exist? What if types don't match?
+- **API changes**: What if the endpoint returns an error? What about auth failures?
+- **UI changes**: What if data is loading? Empty? Malformed?
+- **Edge functions**: What if the external API (Anthropic, OpenAI) is overloaded?
+
+**Example post-implementation checklist:**
+```
+Changes made: Updated get_share_data to use screenshot_url
+
+What could break:
+- Old deployments might still reference thumbnail_url
+- Variants without screenshot_url will return null
+- Share links created before this migration
+
+Suggested tests:
+- Test share link with variant that has screenshot_url
+- Test share link with variant that has no screenshot (should fallback to screen.thumbnail)
+- Test share link with expired token
+```
+
+### 4. Test-Driven Bug Fixing
+**When there's a bug, start by writing a test that reproduces it, then fix it until the test passes.**
+
+This approach:
+- Proves you understand the bug before attempting to fix it
+- Prevents the same bug from reappearing (regression)
+- Documents the expected behavior
+
+**Bug fix workflow:**
+1. Reproduce the bug manually, note the exact steps
+2. Write a test that fails in the same way
+3. Fix the code until the test passes
+4. Verify the manual reproduction no longer occurs
+5. Commit both the test and the fix together
+
+### 5. Learn From Corrections
+**Every time a correction is made, add a new rule to this file so it never happens again.**
+
+When something goes wrong:
+1. Understand the root cause (not just the symptom)
+2. Document it in the appropriate section of this file
+3. Include both the ❌ pitfall and ✅ correct approach
+
+**Recent additions from corrections:**
+- Column name mismatches: Always verify actual schema before referencing columns in SQL
+- Migration idempotency: Use DROP IF EXISTS patterns (see Migration guidelines)
+- Function permissions: GRANT EXECUTE to anon for public-facing RPC functions
+
+---
+
+## Schema Reference - Common Column Name Gotchas
+
+These column names have caused bugs due to inconsistent naming:
+
+| Table | Column | NOT This |
+|-------|--------|----------|
+| `screens` | `thumbnail` | ~~thumbnail_url~~ |
+| `vibe_variants` | `screenshot_url` | ~~thumbnail_url~~ |
+| `vibe_sessions` | (no thumbnail) | ~~thumbnail_url~~ - join with `screens` |
+
+**Always verify column names** by checking the migration files or running:
+```sql
+SELECT column_name FROM information_schema.columns WHERE table_name = 'table_name';
+```
