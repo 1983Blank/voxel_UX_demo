@@ -1184,6 +1184,9 @@ function InlineExpansionGrid({
   enableInteractivity = false,
   useLLMEnhancement = true,
   streamingHtml,
+  allVariantIndices,
+  onSwitchVariant,
+  variantPlans,
 }: {
   wireframes: Array<{ variantIndex: number; wireframeUrl: string; wireframeHtml?: string }>;
   focusedIndex: number;
@@ -1192,6 +1195,12 @@ function InlineExpansionGrid({
   enableInteractivity?: boolean;
   useLLMEnhancement?: boolean;
   streamingHtml?: string | null;
+  /** All variant indices to show in the sidebar */
+  allVariantIndices?: number[];
+  /** Callback to switch focused variant */
+  onSwitchVariant?: (index: number) => void;
+  /** Plan data for variant titles */
+  variantPlans?: Array<{ variant_index: number; title: string }>;
 }) {
   const { config } = useThemeStore();
   const labels = ['Variant A', 'Variant B', 'Variant C', 'Variant D'];
@@ -1280,141 +1289,241 @@ function InlineExpansionGrid({
   );
   const effectiveHtml = shouldEnhance ? enhancedHtml : rawHtml;
 
-  return (
-    <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', p: 2, minHeight: 0 }}>
-      {/* Header toolbar with status and actions */}
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
-        {/* Status chips */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          {isWireframe && (
-            <Chip
-              size="small"
-              label="Wireframe"
-              sx={{
-                bgcolor: 'rgba(255, 193, 7, 0.2)',
-                color: '#f57c00',
-                fontSize: 11,
-                height: 22,
-              }}
-            />
-          )}
-          {!isWireframe && isComplete && (
-            <Chip
-              size="small"
-              label="Prototype"
-              sx={{
-                bgcolor: 'rgba(102, 126, 234, 0.2)',
-                color: '#667eea',
-                fontSize: 11,
-                height: 22,
-              }}
-            />
-          )}
-          {focusedVariant?.iteration_count && focusedVariant.iteration_count > 0 && (
-            <Chip
-              size="small"
-              label={`${focusedVariant.iteration_count} iteration${focusedVariant.iteration_count > 1 ? 's' : ''}`}
-              sx={{ fontSize: 11, height: 22 }}
-            />
-          )}
-        </Box>
-      </Box>
+  // Get other variants for sidebar (exclude focused one)
+  const otherVariants = (allVariantIndices || []).filter(idx => idx !== focusedIndex);
+  const showSidebar = otherVariants.length > 0 && onSwitchVariant;
 
-      {/* Full screen preview */}
-      <Card
-        variant="outlined"
-        sx={{
-          flex: 1,
-          minHeight: 0,
-          overflow: 'hidden',
-          borderRadius: 2,
-          border: `2px solid ${config.colors.primary}`,
-          boxShadow: '0 8px 32px rgba(0,0,0,0.12)',
-        }}
-      >
-        {effectiveHtml ? (
-          <Box sx={{ position: 'relative', width: '100%', height: '100%' }}>
-            <iframe
-              key={`html-${focusedIndex}-${effectiveHtml.length}`}
-              srcDoc={prepareHtmlForIframe(effectiveHtml)}
-              title={labels[focusedIndex - 1]}
-              style={{
+  return (
+    <Box sx={{ flex: 1, display: 'flex', gap: 2, p: 2, minHeight: 0 }}>
+      {/* Main content area */}
+      <Box sx={{ flex: showSidebar ? 3 : 1, display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0 }}>
+        {/* Header toolbar with status and actions */}
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+          {/* Status chips */}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            {isWireframe && (
+              <Chip
+                size="small"
+                label="Wireframe"
+                sx={{
+                  bgcolor: 'rgba(255, 193, 7, 0.2)',
+                  color: '#f57c00',
+                  fontSize: 11,
+                  height: 22,
+                }}
+              />
+            )}
+            {!isWireframe && isComplete && (
+              <Chip
+                size="small"
+                label="Prototype"
+                sx={{
+                  bgcolor: 'rgba(102, 126, 234, 0.2)',
+                  color: '#667eea',
+                  fontSize: 11,
+                  height: 22,
+                }}
+              />
+            )}
+            {focusedVariant?.iteration_count && focusedVariant.iteration_count > 0 && (
+              <Chip
+                size="small"
+                label={`${focusedVariant.iteration_count} iteration${focusedVariant.iteration_count > 1 ? 's' : ''}`}
+                sx={{ fontSize: 11, height: 22 }}
+              />
+            )}
+          </Box>
+        </Box>
+
+        {/* Full screen preview */}
+        <Card
+          variant="outlined"
+          sx={{
+            flex: 1,
+            minHeight: 0,
+            overflow: 'hidden',
+            borderRadius: 2,
+            border: `2px solid ${config.colors.primary}`,
+            boxShadow: '0 8px 32px rgba(0,0,0,0.12)',
+          }}
+        >
+          {effectiveHtml ? (
+            <Box sx={{ position: 'relative', width: '100%', height: '100%' }}>
+              <iframe
+                key={`html-${focusedIndex}-${effectiveHtml.length}`}
+                srcDoc={prepareHtmlForIframe(effectiveHtml)}
+                title={labels[focusedIndex - 1]}
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  border: 'none',
+                }}
+              />
+              {isEnhancing && (
+                <Box
+                  sx={{
+                    position: 'absolute',
+                    top: 8,
+                    right: 8,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1,
+                    bgcolor: 'rgba(0,0,0,0.7)',
+                    color: 'white',
+                    px: 1.5,
+                    py: 0.75,
+                    borderRadius: 2,
+                    fontSize: 12,
+                  }}
+                >
+                  <CircularProgress size={14} sx={{ color: 'white' }} />
+                  Adding interactivity...
+                </Box>
+              )}
+              {enhanceResult && !isEnhancing && shouldEnhance && (
+                <Box
+                  sx={{
+                    position: 'absolute',
+                    bottom: 8,
+                    right: 8,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 0.5,
+                    bgcolor: 'rgba(16, 185, 129, 0.9)',
+                    color: 'white',
+                    px: 1,
+                    py: 0.5,
+                    borderRadius: 1,
+                    fontSize: 11,
+                  }}
+                >
+                  <Lightning size={12} weight="fill" />
+                  {enhanceResult.injections.length} interactions
+                </Box>
+              )}
+            </Box>
+          ) : isFetching || isEnhancing ? (
+            <Box
+              sx={{
                 width: '100%',
                 height: '100%',
-                border: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                bgcolor: '#fafafa',
               }}
-            />
-            {isEnhancing && (
-              <Box
+            >
+              <CircularProgress size={32} />
+            </Box>
+          ) : (
+            <Box
+              sx={{
+                width: '100%',
+                height: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                bgcolor: '#fafafa',
+              }}
+            >
+              <Typography color="text.secondary">No preview available</Typography>
+            </Box>
+          )}
+        </Card>
+      </Box>
+
+      {/* Sidebar with other variant thumbnails */}
+      {showSidebar && (
+        <Box sx={{
+          flex: 1,
+          minWidth: 180,
+          maxWidth: 240,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 1.5,
+          overflow: 'auto',
+        }}>
+          <Typography variant="caption" color="text.secondary" sx={{ px: 0.5 }}>
+            Other Variants
+          </Typography>
+          {otherVariants.map((variantIdx) => {
+            const variant = getVariantByIndex(variantIdx);
+            const wireframe = wireframes.find(w => w.variantIndex === variantIdx);
+            const variantPlan = variantPlans?.find(p => p.variant_index === variantIdx);
+            const variantLabel = `Variant ${String.fromCharCode(64 + variantIdx)}`;
+            const hasContent = variant?.html_url || wireframe?.wireframeUrl || wireframe?.wireframeHtml;
+
+            return (
+              <Card
+                key={variantIdx}
+                variant="outlined"
+                onClick={() => onSwitchVariant?.(variantIdx)}
                 sx={{
-                  position: 'absolute',
-                  top: 8,
-                  right: 8,
+                  cursor: 'pointer',
+                  minHeight: 100,
                   display: 'flex',
-                  alignItems: 'center',
-                  gap: 1,
-                  bgcolor: 'rgba(0,0,0,0.7)',
-                  color: 'white',
-                  px: 1.5,
-                  py: 0.75,
-                  borderRadius: 2,
-                  fontSize: 12,
+                  flexDirection: 'column',
+                  transition: 'all 0.2s ease',
+                  '&:hover': {
+                    borderColor: config.colors.primary,
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                    transform: 'translateY(-2px)',
+                  },
                 }}
               >
-                <CircularProgress size={14} sx={{ color: 'white' }} />
-                Adding interactivity...
-              </Box>
-            )}
-            {enhanceResult && !isEnhancing && shouldEnhance && (
-              <Box
-                sx={{
-                  position: 'absolute',
-                  bottom: 8,
-                  right: 8,
+                {/* Thumbnail preview */}
+                <Box sx={{
+                  flex: 1,
+                  minHeight: 60,
+                  bgcolor: '#fafafa',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: 0.5,
-                  bgcolor: 'rgba(16, 185, 129, 0.9)',
-                  color: 'white',
-                  px: 1,
-                  py: 0.5,
-                  borderRadius: 1,
-                  fontSize: 11,
-                }}
-              >
-                <Lightning size={12} weight="fill" />
-                {enhanceResult.injections.length} interactions
-              </Box>
-            )}
-          </Box>
-        ) : isFetching || isEnhancing ? (
-          <Box
-            sx={{
-              width: '100%',
-              height: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              bgcolor: '#fafafa',
-            }}
-          >
-            <CircularProgress size={32} />
-          </Box>
-        ) : (
-          <Box
-            sx={{
-              width: '100%',
-              height: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              bgcolor: '#fafafa',
-            }}
-          >
-            <Typography color="text.secondary">No preview available</Typography>
-          </Box>
-        )}
-      </Card>
+                  justifyContent: 'center',
+                  overflow: 'hidden',
+                }}>
+                  {hasContent ? (
+                    <Box sx={{
+                      width: '100%',
+                      height: '100%',
+                      position: 'relative',
+                      overflow: 'hidden',
+                    }}>
+                      <iframe
+                        src={variant?.html_url || wireframe?.wireframeUrl}
+                        srcDoc={!variant?.html_url && !wireframe?.wireframeUrl ? wireframe?.wireframeHtml : undefined}
+                        title={variantLabel}
+                        style={{
+                          width: '200%',
+                          height: '200%',
+                          border: 'none',
+                          transform: 'scale(0.5)',
+                          transformOrigin: 'top left',
+                          pointerEvents: 'none',
+                        }}
+                      />
+                    </Box>
+                  ) : (
+                    <Typography variant="caption" color="text.secondary">
+                      No preview
+                    </Typography>
+                  )}
+                </Box>
+                {/* Label */}
+                <Box sx={{ px: 1, py: 0.75, borderTop: 1, borderColor: 'divider' }}>
+                  <Typography variant="caption" fontWeight={600} noWrap>
+                    {variantPlan?.title || variantLabel}
+                  </Typography>
+                  {variantPlan?.title && (
+                    <Typography variant="caption" color="text.secondary" display="block" noWrap>
+                      {variantLabel}
+                    </Typography>
+                  )}
+                </Box>
+              </Card>
+            );
+          })}
+        </Box>
+      )}
     </Box>
   );
 }
@@ -5302,6 +5411,9 @@ export const VibePrototyping: React.FC = () => {
                   enableInteractivity={interactivityEnabled}
                   useLLMEnhancement={useLLMEnhancement}
                   streamingHtml={streamingHtml[focusedVariantIndex]}
+                  allVariantIndices={selectedVariants}
+                  onSwitchVariant={setFocusedVariantIndex}
+                  variantPlans={plan?.plans?.map(p => ({ variant_index: p.variant_index, title: p.title }))}
                 />
               )}
             </Box>
@@ -5451,6 +5563,12 @@ export const VibePrototyping: React.FC = () => {
                   enableInteractivity={interactivityEnabled}
                   useLLMEnhancement={useLLMEnhancement}
                   streamingHtml={streamingHtml[focusedVariantIndex]}
+                  allVariantIndices={selectedVariants.filter(idx => {
+                    const v = variants.find(vr => vr.variant_index === idx);
+                    return v?.status === 'complete' || completedVariantIndices.has(idx);
+                  })}
+                  onSwitchVariant={setFocusedVariantIndex}
+                  variantPlans={plan?.plans?.map(p => ({ variant_index: p.variant_index, title: p.title }))}
                 />
               )}
             </Box>
