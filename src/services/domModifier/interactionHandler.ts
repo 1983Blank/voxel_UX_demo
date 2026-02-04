@@ -91,6 +91,136 @@ export function createInteractionState(): InteractionState {
 }
 
 /**
+ * Validation result for interaction selectors
+ */
+export interface InteractionValidationResult {
+  valid: boolean;
+  warnings: string[];
+  fixedConfigs: {
+    clickToggles: ClickToggleConfig[];
+  };
+}
+
+/**
+ * Try to find a button element that could serve as a trigger
+ * Looks for buttons with similar text or in similar position
+ */
+function findAlternativeTrigger(doc: Document, originalSelector: string, targetSelector: string): string | null {
+  // Extract any text hint from the original selector (e.g., "open", "add", "create")
+  const textHints = originalSelector.toLowerCase().match(/open|add|create|new|show|toggle|close|cancel|save|submit|delete|remove|edit|view/g) || [];
+
+  // Also check for button name patterns in the selector
+  const selectorParts = originalSelector.replace(/[#.]/g, ' ').toLowerCase().split(/[-_\s]+/);
+  const hints = [...new Set([...textHints, ...selectorParts])].filter(h => h.length > 2);
+
+  console.log('[InteractionValidation] Looking for alternative trigger, hints:', hints);
+
+  // Strategy 1: Find buttons/links with matching text content
+  const clickableElements = doc.querySelectorAll('button, a, [role="button"], input[type="button"], input[type="submit"]');
+  for (const el of clickableElements) {
+    const text = el.textContent?.toLowerCase().trim() || '';
+    const ariaLabel = el.getAttribute('aria-label')?.toLowerCase() || '';
+
+    // Check if element text contains any hints
+    for (const hint of hints) {
+      if (text.includes(hint) || ariaLabel.includes(hint)) {
+        // Found a match - generate a selector for it
+        if (el.id) {
+          console.log(`[InteractionValidation] Found alternative trigger by ID: #${el.id}`);
+          return `#${el.id}`;
+        }
+        // Try to generate a unique selector
+        const classes = Array.from(el.classList).join('.');
+        if (classes) {
+          const selector = `${el.tagName.toLowerCase()}.${classes}`;
+          // Verify it's unique
+          if (doc.querySelectorAll(selector).length === 1) {
+            console.log(`[InteractionValidation] Found alternative trigger by class: ${selector}`);
+            return selector;
+          }
+        }
+        // Use text-based pseudo-selector (handled by querySelectorSafe)
+        if (text) {
+          const pseudoSelector = `button:has-text("${text.substring(0, 30)}")`;
+          console.log(`[InteractionValidation] Found alternative trigger by text: ${pseudoSelector}`);
+          return pseudoSelector;
+        }
+      }
+    }
+  }
+
+  // Strategy 2: Find button near the target element (in same parent container)
+  const targetEl = doc.querySelector(targetSelector);
+  if (targetEl && targetEl.parentElement) {
+    const sibling = targetEl.parentElement.querySelector('button, a[href="#"], [role="button"]');
+    if (sibling && sibling !== targetEl) {
+      if ((sibling as HTMLElement).id) {
+        console.log(`[InteractionValidation] Found sibling trigger: #${(sibling as HTMLElement).id}`);
+        return `#${(sibling as HTMLElement).id}`;
+      }
+    }
+  }
+
+  console.log('[InteractionValidation] No alternative trigger found');
+  return null;
+}
+
+/**
+ * Validate and fix interaction selectors in the DOM
+ * Call this after all DOM modifications but before injecting scripts
+ */
+export function validateAndFixInteractions(
+  doc: Document,
+  state: InteractionState
+): InteractionValidationResult {
+  const warnings: string[] = [];
+  const fixedClickToggles: ClickToggleConfig[] = [];
+
+  // Validate click toggles
+  for (const config of state.clickToggles) {
+    const trigger = doc.querySelector(config.triggerSelector);
+    const target = doc.querySelector(config.targetSelector);
+
+    let updatedConfig = { ...config };
+
+    if (!target) {
+      warnings.push(`Target element not found: ${config.targetSelector}`);
+      // Skip this interaction entirely if target doesn't exist
+      continue;
+    }
+
+    if (!trigger) {
+      warnings.push(`Trigger element not found: ${config.triggerSelector}`);
+      // Try to find an alternative
+      const alternative = findAlternativeTrigger(doc, config.triggerSelector, config.targetSelector);
+      if (alternative) {
+        warnings.push(`  -> Using alternative trigger: ${alternative}`);
+        updatedConfig.triggerSelector = alternative;
+      } else {
+        // Can't find alternative, skip this interaction
+        warnings.push(`  -> No alternative found, interaction will be skipped`);
+        continue;
+      }
+    }
+
+    fixedClickToggles.push(updatedConfig);
+  }
+
+  // Log validation results
+  if (warnings.length > 0) {
+    console.warn('[InteractionValidation] Validation warnings:', warnings);
+  }
+
+  return {
+    valid: warnings.length === 0,
+    warnings,
+    fixedConfigs: {
+      clickToggles: fixedClickToggles,
+    },
+  };
+}
+
+/**
  * Process an interaction tool call and update the state
  */
 export function processInteractionTool(
@@ -190,15 +320,46 @@ export function processInteractionTool(
 /**
  * Generate JavaScript code from interaction state
  * This script will be injected into the HTML
+ *
+ * @param state - The interaction state (may contain unfixed selectors)
+ * @param fixedClickToggles - Optional fixed/validated click toggle configs
  */
-export function generateInteractionScript(state: InteractionState): string {
+export function generateInteractionScript(
+  state: InteractionState,
+  fixedClickToggles?: ClickToggleConfig[]
+): string {
   const parts: string[] = [];
+
+  // Use fixed configs if provided, otherwise use original state
+  const clickToggles = fixedClickToggles || state.clickToggles;
 
   // Opening IIFE - run immediately since srcdoc content is already loaded
   parts.push(`(function() {
   'use strict';
 
   console.log('[VxInteractions] Script loaded, initializing...');
+
+  // Helper to find element with fallback strategies
+  function findElement(selector) {
+    // Try direct selector first
+    var el = document.querySelector(selector);
+    if (el) return el;
+
+    // Handle :has-text() pseudo-selector
+    var hasTextMatch = selector.match(/^(.+?):has-text\\(["'](.+?)["']\\)$/);
+    if (hasTextMatch) {
+      var baseSelector = hasTextMatch[1].trim() || '*';
+      var searchText = hasTextMatch[2];
+      var elements = document.querySelectorAll(baseSelector);
+      for (var i = 0; i < elements.length; i++) {
+        if (elements[i].textContent && elements[i].textContent.includes(searchText)) {
+          return elements[i];
+        }
+      }
+    }
+
+    return null;
+  }
 
   // For srcdoc iframes, DOM is ready immediately
   // Use setTimeout(0) to ensure all elements are parsed
@@ -225,22 +386,25 @@ export function generateInteractionScript(state: InteractionState): string {
   }
 
   // Click toggles
-  if (state.clickToggles.length > 0) {
+  if (clickToggles.length > 0) {
     parts.push(`
     // Click toggle interactions
-    var clickToggles = ${JSON.stringify(state.clickToggles)};
+    var clickToggles = ${JSON.stringify(clickToggles)};
     clickToggles.forEach(function(config) {
-      var trigger = document.querySelector(config.triggerSelector);
-      var target = document.querySelector(config.targetSelector);
+      var trigger = findElement(config.triggerSelector);
+      var target = findElement(config.targetSelector);
 
       if (!trigger) {
         console.warn('[VxInteractions] Trigger not found:', config.triggerSelector);
+        console.log('[VxInteractions] Available buttons:', Array.from(document.querySelectorAll('button')).map(function(b) { return b.textContent?.trim().substring(0,30) + ' (' + (b.id || b.className || 'no-id') + ')'; }));
         return;
       }
       if (!target) {
         console.warn('[VxInteractions] Target not found:', config.targetSelector);
         return;
       }
+
+      console.log('[VxInteractions] Binding trigger:', config.triggerSelector, 'to target:', config.targetSelector);
 
       // Show/hide function
       function toggleTarget() {
@@ -487,8 +651,9 @@ export function generateInteractionScript(state: InteractionState): string {
 
 /**
  * Inject interaction script into HTML document
+ * Validates selectors and attempts to fix broken references
  */
-export function injectInteractionScript(doc: Document, state: InteractionState): void {
+export function injectInteractionScript(doc: Document, state: InteractionState): string[] {
   // Only inject if there are interactions
   const hasInteractions =
     state.hiddenSelectors.length > 0 ||
@@ -500,10 +665,18 @@ export function injectInteractionScript(doc: Document, state: InteractionState):
 
   if (!hasInteractions) {
     console.log('[interactionHandler] No interactions to inject');
-    return;
+    return [];
   }
 
-  const scriptContent = generateInteractionScript(state);
+  // Validate and fix interaction selectors
+  const validation = validateAndFixInteractions(doc, state);
+
+  if (validation.warnings.length > 0) {
+    console.warn('[interactionHandler] Interaction validation warnings:', validation.warnings);
+  }
+
+  // Generate script with fixed configs
+  const scriptContent = generateInteractionScript(state, validation.fixedConfigs.clickToggles);
 
   // Create script element
   const script = doc.createElement('script');
@@ -516,7 +689,8 @@ export function injectInteractionScript(doc: Document, state: InteractionState):
     doc.body.appendChild(script);
     console.log('[interactionHandler] Injected interaction script with', {
       hiddenCount: state.hiddenSelectors.length,
-      clickToggles: state.clickToggles.length,
+      clickToggles: validation.fixedConfigs.clickToggles.length,
+      originalClickToggles: state.clickToggles.length,
       hoverEffects: state.hoverEffects.length,
       tabs: state.tabInteractions.length,
       accordions: state.accordions.length,
@@ -525,6 +699,8 @@ export function injectInteractionScript(doc: Document, state: InteractionState):
   } else {
     console.warn('[interactionHandler] No body element found to inject script');
   }
+
+  return validation.warnings;
 }
 
 /**

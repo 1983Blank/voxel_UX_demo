@@ -213,12 +213,24 @@ function applyScreenModifications(
 
   // Inject interaction script if there are any interactions
   injectInteractionStyles(doc);
-  injectInteractionScript(doc, interactionState);
+  const interactionWarnings = injectInteractionScript(doc, interactionState);
+
+  // Add interaction validation warnings as recoverable errors
+  for (const warning of interactionWarnings) {
+    errors.push({
+      screenId: '', // Will be filled in by caller
+      modificationIndex: -1,
+      tool: 'interaction_validation',
+      message: warning,
+      recoverable: true,
+    });
+  }
 
   console.log('[domModifier] Applied modifications with interactions:', {
     hiddenCount: interactionState.hiddenSelectors.length,
     clickToggles: interactionState.clickToggles.length,
     hoverEffects: interactionState.hoverEffects.length,
+    interactionWarnings: interactionWarnings.length,
   });
 
   return {
