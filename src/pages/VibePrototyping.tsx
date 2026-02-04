@@ -18,7 +18,6 @@ import IconButton from '@mui/material/IconButton';
 import CardActionArea from '@mui/material/CardActionArea';
 import CircularProgress from '@mui/material/CircularProgress';
 import LinearProgress from '@mui/material/LinearProgress';
-import Grid from '@mui/material/Grid';
 import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
 import Tooltip from '@mui/material/Tooltip';
@@ -462,10 +461,11 @@ function PipelineStepper({
         alignItems: 'center',
         justifyContent: 'center',
         gap: 0.5,
-        py: 1,
+        height: 48,
         px: 1,
-        bgcolor: 'rgba(0,0,0,0.02)',
+        bgcolor: 'grey.100',
         borderBottom: `1px solid ${config.colors.border}`,
+        flexShrink: 0,
       }}
     >
       {PIPELINE_STEPS.map((step, index) => {
@@ -3672,7 +3672,7 @@ export const VibePrototyping: React.FC = () => {
     }
 
     // If wireframe exists but no prototype, offer to build it
-    if (hasWireframe && !hasPrototype && status === 'wireframe_ready') {
+    if (hasWireframe && !hasPrototype && (status === 'wireframe_ready' || status === 'complete')) {
       // Focus the variant and then build it
       setFocusedVariantIndex(index);
       // Add to selected variants and trigger build
@@ -3685,7 +3685,7 @@ export const VibePrototyping: React.FC = () => {
     }
 
     // If only planned (no wireframe), offer to wireframe it
-    if (!hasWireframe && status === 'plan_ready') {
+    if (!hasWireframe && (status === 'plan_ready' || status === 'complete' || status === 'wireframe_ready')) {
       // Add to selected variants and trigger wireframe
       const { setSelectedVariants } = useVibeStore.getState();
       setSelectedVariants([index]);
@@ -3756,17 +3756,21 @@ export const VibePrototyping: React.FC = () => {
     }
   }, [feedbackPanelOpen, focusedVariantIndex, variantFeedback, fetchVariantFeedback]);
 
-  // Fetch HTML content when switching to code mode for a focused variant
+  // Fetch HTML content when focusing a variant (needed for both code editing and iteration)
   // Prefers edited_html (user's changes) over original html_url
   useEffect(() => {
     const fetchVariantHtml = async () => {
-      if (editMode !== 'code' || !focusedVariantIndex) {
+      // Fetch HTML when in code mode OR when a completed variant is focused (for iteration)
+      const variant = focusedVariantIndex ? getVariantByIndex(focusedVariantIndex) : null;
+      const variantIsComplete = variant?.status === 'complete' || (focusedVariantIndex && completedVariantIndices.has(focusedVariantIndex));
+      const needsHtml = editMode === 'code' || variantIsComplete;
+
+      if (!needsHtml || !focusedVariantIndex) {
         setFetchedVariantHtml(null);
         setHasUnsavedVariantChanges(false);
         return;
       }
 
-      const variant = getVariantByIndex(focusedVariantIndex);
       if (!variant) {
         setFetchedVariantHtml(null);
         setHasUnsavedVariantChanges(false);
@@ -3805,7 +3809,7 @@ export const VibePrototyping: React.FC = () => {
     };
 
     fetchVariantHtml();
-  }, [editMode, focusedVariantIndex, getVariantByIndex]);
+  }, [editMode, focusedVariantIndex, getVariantByIndex, completedVariantIndices]);
 
   // Fetch interaction state when switching to flow view
   useEffect(() => {
@@ -4813,7 +4817,7 @@ export const VibePrototyping: React.FC = () => {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              bgcolor: 'background.paper',
+              bgcolor: 'grey.100',
               flexShrink: 0,
             }}
           >
@@ -5321,7 +5325,7 @@ export const VibePrototyping: React.FC = () => {
                 const focusedVar = plannedVariants[0];
                 const otherVars = plannedVariants.slice(1);
 
-                const renderVariantCard = (v: typeof focusedVar, isLarge: boolean) => {
+                const renderVariantCard = (v: typeof focusedVar) => {
                   const variantLabel = `Variant ${String.fromCharCode(64 + v.index)}`;
                   const variantProgress = getVariantProgress(v.index);
                   const variantStreamingHtml = streamingHtml[v.index];
@@ -5332,7 +5336,8 @@ export const VibePrototyping: React.FC = () => {
                   const canClick = isVariantComplete ||
                     (isWireframeReady && hasWireframe) ||
                     (isPlanReady && hasPlan && !isCreatingWireframes) ||
-                    (isWireframeReady && hasPlan && !hasWireframe && !isCreatingWireframes);
+                    (isWireframeReady && hasPlan && !hasWireframe && !isCreatingWireframes) ||
+                    (isComplete && hasPlan && !isVariantComplete && !isGenerating); // Allow building unbuilt variants even after complete
 
                   return (
                     <CanvasVariantCard
@@ -5357,7 +5362,7 @@ export const VibePrototyping: React.FC = () => {
                 if (plannedVariants.length === 1) {
                   return (
                     <Box sx={{ flex: 1, minHeight: 0 }}>
-                      {renderVariantCard(focusedVar, true)}
+                      {renderVariantCard(focusedVar)}
                     </Box>
                   );
                 }
@@ -5367,7 +5372,7 @@ export const VibePrototyping: React.FC = () => {
                   <>
                     {/* Large focused variant on the left */}
                     <Box sx={{ flex: 3, minHeight: 0, minWidth: 0 }}>
-                      {renderVariantCard(focusedVar, true)}
+                      {renderVariantCard(focusedVar)}
                     </Box>
 
                     {/* Thumbnails stacked vertically on the right */}
@@ -5389,7 +5394,7 @@ export const VibePrototyping: React.FC = () => {
                             opacity: selectedVariants.includes(v.index) || v.variant?.status === 'complete' ? 1 : 0.7,
                           }}
                         >
-                          {renderVariantCard(v, false)}
+                          {renderVariantCard(v)}
                         </Box>
                       ))}
                     </Box>
