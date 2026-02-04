@@ -96,28 +96,61 @@ const INDEX_TO_APPROACH_NAME: Record<number, string> = {
  * Uses context-aware descriptions that make sense to users
  */
 function toolToLabel(toolName: string, params?: Record<string, unknown>): string {
-  // Counter for unique step descriptions
+  /**
+   * Extract a meaningful element description from selector or HTML content
+   */
   const getElementDescription = (selector?: string, html?: string): string => {
-    // Try to infer what kind of element from selector or HTML
+    // Try to infer what kind of element from HTML content first
     if (html) {
       const htmlStr = String(html).toLowerCase();
+      // Specific UI patterns
       if (htmlStr.includes('modal') || htmlStr.includes('dialog')) return 'modal dialog';
+      if (htmlStr.includes('sheet') || htmlStr.includes('slide-panel')) return 'slide-out panel';
       if (htmlStr.includes('panel') || htmlStr.includes('drawer')) return 'side panel';
-      if (htmlStr.includes('form')) return 'form';
-      if (htmlStr.includes('button')) return 'button';
-      if (htmlStr.includes('input')) return 'input field';
-      if (htmlStr.includes('<label')) return 'form label';
+      if (htmlStr.includes('form') && htmlStr.includes('contact')) return 'contact form';
+      if (htmlStr.includes('form') && htmlStr.includes('input')) return 'form';
       if (htmlStr.includes('overlay')) return 'overlay';
+      if (htmlStr.includes('close') && htmlStr.includes('button')) return 'close button';
+      if (htmlStr.includes('submit')) return 'submit button';
+      if (htmlStr.includes('button')) return 'button';
+      if (htmlStr.includes('<input') && htmlStr.includes('email')) return 'email field';
+      if (htmlStr.includes('<input') && htmlStr.includes('phone')) return 'phone field';
+      if (htmlStr.includes('<input') && htmlStr.includes('name')) return 'name field';
+      if (htmlStr.includes('<input')) return 'form field';
+      if (htmlStr.includes('<label')) return 'label';
+      if (htmlStr.includes('header')) return 'header';
+      if (htmlStr.includes('<h1') || htmlStr.includes('<h2') || htmlStr.includes('<h3')) return 'heading';
     }
+    // Try to infer from selector
     if (selector) {
       const sel = String(selector).toLowerCase();
       if (sel.includes('modal')) return 'modal';
+      if (sel.includes('sheet')) return 'panel';
       if (sel.includes('panel')) return 'panel';
       if (sel.includes('form')) return 'form';
       if (sel.includes('btn') || sel.includes('button')) return 'button';
       if (sel.includes('input')) return 'input';
+      if (sel.includes('header')) return 'header';
+      if (sel.includes('footer')) return 'footer';
+      if (sel.includes('nav')) return 'navigation';
     }
-    return 'component';
+    return 'element';
+  };
+
+  /**
+   * Get a specific description for interactive elements based on target
+   */
+  const getInteractionDescription = (targetSelector?: string): string => {
+    if (!targetSelector) return 'element';
+    const sel = String(targetSelector).toLowerCase();
+    if (sel.includes('modal') || sel.includes('dialog')) return 'modal';
+    if (sel.includes('sheet') || sel.includes('slide')) return 'slide panel';
+    if (sel.includes('panel') || sel.includes('drawer')) return 'side panel';
+    if (sel.includes('menu') || sel.includes('dropdown')) return 'dropdown menu';
+    if (sel.includes('tooltip')) return 'tooltip';
+    if (sel.includes('form')) return 'form';
+    if (sel.includes('accordion')) return 'accordion';
+    return 'panel';
   };
 
   // Handle insert_* tools (component insertions)
@@ -125,9 +158,12 @@ function toolToLabel(toolName: string, params?: Record<string, unknown>): string
     const componentPart = toolName.replace('insert_', '').replace(/_/g, ' ');
     if (componentPart.includes('generic')) {
       // More specific labels for generic components
-      if (componentPart.includes('button')) return 'Adding action button';
-      if (componentPart.includes('input')) return 'Adding form field';
+      if (componentPart.includes('button')) return 'Adding trigger button';
+      if (componentPart.includes('input')) return 'Adding form input';
       if (componentPart.includes('card')) return 'Adding content card';
+      if (componentPart.includes('modal')) return 'Creating modal dialog';
+      if (componentPart.includes('panel')) return 'Creating slide panel';
+      if (componentPart.includes('form')) return 'Building form';
     }
     const label = componentPart.split(' ').map(w =>
       w.charAt(0).toUpperCase() + w.slice(1)
@@ -138,53 +174,94 @@ function toolToLabel(toolName: string, params?: Record<string, unknown>): string
   // User-friendly labels for all tools
   const html = params?.html as string | undefined;
   const selector = params?.selector as string | undefined;
+  const targetSelector = params?.targetSelector as string | undefined;
   const elementDesc = getElementDescription(selector, html);
 
-  const toolLabels: Record<string, string> = {
-    // DOM modification tools - user-friendly
-    'update_text': params?.text
-      ? `Updating "${String(params.text).slice(0, 25)}${String(params.text).length > 25 ? '...' : ''}"`
-      : 'Updating text content',
-    'update_html': `Updating ${elementDesc} content`,
-    'update_attribute': params?.attribute === 'class'
-      ? 'Applying styles'
-      : `Setting ${params?.attribute || 'property'}`,
-    'remove_element': `Removing ${elementDesc}`,
-    'add_element': html
-      ? `Adding ${getElementDescription(undefined, html)}`
-      : 'Adding UI element',
-    'add_class': params?.classes
-      ? 'Applying visual styles'
-      : 'Styling element',
-    'remove_class': 'Adjusting styles',
+  // Build dynamic labels based on tool and params
+  const toolLabels: Record<string, string | (() => string)> = {
+    // DOM modification tools - context-aware
+    'update_text': () => {
+      const text = params?.text as string;
+      if (text) {
+        const trimmed = text.slice(0, 30);
+        return `Setting text: "${trimmed}${text.length > 30 ? '...' : ''}"`;
+      }
+      return 'Updating text';
+    },
+    'update_html': () => `Building ${elementDesc}`,
+    'update_attribute': () => {
+      const attr = params?.attribute as string;
+      if (attr === 'class') return 'Applying CSS classes';
+      if (attr === 'id') return 'Setting element ID';
+      if (attr === 'href') return 'Setting link URL';
+      if (attr === 'src') return 'Setting image source';
+      if (attr === 'placeholder') return 'Setting placeholder text';
+      return `Setting ${attr || 'attribute'}`;
+    },
+    'remove_element': () => `Removing ${elementDesc}`,
+    'add_element': () => {
+      const desc = getElementDescription(undefined, html);
+      // Make it more specific based on content
+      if (html?.toLowerCase().includes('close')) return 'Adding close button';
+      if (html?.toLowerCase().includes('submit')) return 'Adding submit button';
+      if (desc === 'modal dialog') return 'Building contact form modal';
+      if (desc === 'slide-out panel') return 'Creating slide-out panel';
+      if (desc === 'form') return 'Building form structure';
+      if (desc === 'form field') return 'Adding form input field';
+      return `Adding ${desc}`;
+    },
+    'add_class': () => {
+      const classes = params?.classes as string;
+      if (classes?.includes('hidden')) return 'Hiding element initially';
+      if (classes?.includes('active')) return 'Setting active state';
+      return 'Applying styles';
+    },
+    'remove_class': 'Removing styles',
     'wrap_element': 'Restructuring layout',
-    'set_style': 'Applying custom styles',
-    'hide_element': `Hiding ${elementDesc}`,
-    'show_element': `Showing ${elementDesc}`,
+    'set_style': () => {
+      const styles = params?.styles as Record<string, unknown>;
+      if (styles?.display === 'none') return 'Hiding element';
+      if (styles?.display === 'flex') return 'Setting flex layout';
+      return 'Applying inline styles';
+    },
+    'hide_element': () => `Hiding ${elementDesc}`,
+    'show_element': () => `Revealing ${elementDesc}`,
 
     // Style tools
-    'apply_style': 'Applying design tokens',
+    'apply_style': 'Applying design system styles',
 
     // Screen tools
-    'create_screen': params?.screenId
-      ? `Creating "${params.screenId}" screen`
-      : 'Creating new screen',
-    'add_navigation': 'Setting up navigation',
-    'define_route': params?.path
-      ? `Defining route "${params.path}"`
-      : 'Configuring routing',
+    'create_screen': () => {
+      const screenId = params?.screenId as string;
+      return screenId ? `Creating "${screenId}" screen` : 'Creating new screen';
+    },
+    'add_navigation': 'Wiring up navigation',
+    'define_route': () => {
+      const path = params?.path as string;
+      return path ? `Setting route: ${path}` : 'Configuring route';
+    },
 
-    // Interaction tools - user-friendly
-    'add_click_toggle': 'Connecting button to modal',
-    'set_initial_hidden': 'Setting initial hidden state',
-    'add_hover_effect': 'Adding hover interaction',
-    'add_tab_interaction': 'Setting up tab navigation',
+    // Interaction tools - context-aware
+    'add_click_toggle': () => {
+      const targetDesc = getInteractionDescription(targetSelector);
+      return `Wiring button to open ${targetDesc}`;
+    },
+    'set_initial_hidden': () => {
+      const targetDesc = getInteractionDescription(selector);
+      return `Hiding ${targetDesc} initially`;
+    },
+    'add_hover_effect': () => {
+      const targetDesc = getInteractionDescription(targetSelector);
+      return `Adding hover reveal for ${targetDesc}`;
+    },
+    'add_tab_interaction': 'Configuring tab switching',
     'add_accordion_interaction': 'Setting up expandable sections',
-    'add_form_validation': 'Adding form validation',
+    'add_form_validation': 'Adding input validation',
   };
 
-  if (toolLabels[toolName]) {
-    return toolLabels[toolName];
+  const labelOrFn = toolLabels[toolName];
+  if (labelOrFn) {
+    return typeof labelOrFn === 'function' ? labelOrFn() : labelOrFn;
   }
 
   // Fallback: make tool name readable
