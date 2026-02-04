@@ -138,7 +138,6 @@ import {
 import {
   generateInteractivePrototypesWithAgent,
   shouldUseServerOrchestration,
-  restoreFromCheckpoint,
 } from '@/services/interactivePrototypeService';
 import {
   generateAllVariantsToolMode,
@@ -1954,18 +1953,35 @@ export const VibePrototyping: React.FC = () => {
 
               // Load variants and sync status if variants are complete
               const existingVariants = await getVariants(sessionId);
+              const completeVariants = existingVariants.filter(v => v.status === 'complete');
+              const hasAnyCompleteVariants = completeVariants.length > 0;
+              const allVariantsComplete = existingVariants.length === 4 &&
+                existingVariants.every(v => v.status === 'complete');
+
               if (existingVariants.length > 0) {
                 setVariants(existingVariants, true); // skipStatusUpdate initially
 
-                // If all variants are complete but status isn't 'complete', sync it
-                const allComplete = existingVariants.length === 4 &&
-                  existingVariants.every(v => v.status === 'complete');
-                if (allComplete && session.status !== 'complete') {
-                  console.log('[VibePrototyping] Syncing status to complete (variants are ready)');
+                // If all variants are complete, sync status
+                if (allVariantsComplete && session.status !== 'complete') {
+                  console.log('[VibePrototyping] Syncing status to complete (all variants ready)');
                   setStatus('complete');
-                  // Also update the database
                   supabase.from('vibe_sessions').update({ status: 'complete' }).eq('id', sessionId);
                 }
+                // If we have SOME complete variants but not all, still show them
+                else if (hasAnyCompleteVariants && !allVariantsComplete) {
+                  console.log('[VibePrototyping] Partial variants complete:', completeVariants.length, 'of 4');
+                  // Set status to show the variants view (generating or complete based on what we have)
+                  if (session.status === 'generating' || session.status === 'wireframe_ready') {
+                    setStatus('complete'); // Show what we have
+                  }
+                }
+              }
+
+              // Restore VirtualFS for any variants with html_url (including partial completions)
+              if (hasAnyCompleteVariants) {
+                const prototypeStore = usePrototypeStore.getState();
+                console.log('[VibePrototyping] Restoring', completeVariants.length, 'complete variants from html_url...');
+                await restoreFromHtmlUrls(completeVariants, prototypeStore);
               }
 
               // Load wireframes if they exist
@@ -1981,17 +1997,16 @@ export const VibePrototyping: React.FC = () => {
                 console.log('[VibePrototyping] Restored partial HTML for variants:', Object.keys(partialHtml));
               }
 
-              // Detect failed/interrupted generation: has plans + wireframes but variants not complete
-              // This handles cases where generation was interrupted or failed
+              // Detect failed/interrupted generation: has plans + wireframes but NO variants complete
+              // This handles cases where generation was interrupted or failed before any variant completed
               const hasPlans = plans.length > 0;
               const hasWireframes = existingWireframes.length > 0;
-              const allVariantsComplete = existingVariants.length === 4 &&
-                existingVariants.every(v => v.status === 'complete');
-              const isStuckInGenerating = session.status === 'generating' ||
-                (hasPlans && hasWireframes && !allVariantsComplete && session.status !== 'wireframe_ready' && session.status !== 'complete');
+              const isStuckWithNoProgress = session.status === 'generating' &&
+                !hasAnyCompleteVariants &&
+                hasPlans && hasWireframes;
 
-              if (isStuckInGenerating) {
-                console.log('[VibePrototyping] Detected failed/interrupted generation, setting to wireframe_ready');
+              if (isStuckWithNoProgress) {
+                console.log('[VibePrototyping] Detected failed/interrupted generation with no progress, setting to wireframe_ready');
                 setStatus('wireframe_ready');
                 if (session.error_message) {
                   setError(session.error_message);
@@ -2023,33 +2038,8 @@ export const VibePrototyping: React.FC = () => {
                 }
               }
 
-              // If variants are complete but VirtualFS previews are missing (lost after refresh),
-              // try to restore from the most recent checkpoint (including completed sessions)
-              if (allVariantsComplete || session.status === 'complete') {
-                const prototypeStore = usePrototypeStore.getState();
-                const prototypeVariants = Object.values(prototypeStore.variants);
-                const hasPreviewsLost = prototypeVariants.some(
-                  v => v.status === 'ready' && (!v.files || v.files.length === 0 || !v.previewUrl)
-                );
-
-                if (hasPreviewsLost) {
-                  console.log('[VibePrototyping] Detected completed variants with lost previews, attempting restoration...');
-                  try {
-                    const restoration = await restoreFromCheckpoint(sessionId);
-                    if (restoration.restored) {
-                      console.log('[VibePrototyping] Successfully restored', restoration.results?.length, 'variants from checkpoint');
-                    } else {
-                      console.log('[VibePrototyping] No checkpoint data available, trying to restore from html_url...');
-                      // Fallback: restore from html_url for tool mode variants
-                      await restoreFromHtmlUrls(existingVariants, prototypeStore);
-                    }
-                  } catch (err) {
-                    console.warn('[VibePrototyping] Failed to restore from checkpoint:', err);
-                    // Fallback: restore from html_url for tool mode variants
-                    await restoreFromHtmlUrls(existingVariants, prototypeStore);
-                  }
-                }
-              }
+              // Note: VirtualFS restoration from html_url is already handled above
+              // when we detect hasAnyCompleteVariants
 
               // Also generate phase content for loaded sessions
               if (session.prompt && s.name) {
