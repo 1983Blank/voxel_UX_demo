@@ -1175,46 +1175,7 @@ function CanvasVariantCard({
   );
 }
 
-// Thumbnail preview that fetches HTML to bypass CSP issues
-function ThumbnailPreview({ url, fallbackHtml, title }: { url?: string; fallbackHtml?: string; title: string }) {
-  const [fetchedHtml, setFetchedHtml] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (url) {
-      fetch(url)
-        .then(res => res.ok ? res.text() : null)
-        .then(html => setFetchedHtml(html))
-        .catch(() => setFetchedHtml(null));
-    } else if (fallbackHtml) {
-      setFetchedHtml(fallbackHtml);
-    }
-  }, [url, fallbackHtml]);
-
-  if (!fetchedHtml) {
-    return (
-      <Box sx={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <CircularProgress size={16} />
-      </Box>
-    );
-  }
-
-  return (
-    <iframe
-      srcDoc={prepareHtmlForIframe(fetchedHtml)}
-      title={title}
-      style={{
-        width: '400%',
-        height: '400%',
-        border: 'none',
-        transform: 'scale(0.25)',
-        transformOrigin: 'top left',
-        pointerEvents: 'none',
-      }}
-    />
-  );
-}
-
-// Inline Expansion Grid - shows focused variant large with thumbnails on side
+// Inline Expansion Grid - shows focused variant in full screen
 function InlineExpansionGrid({
   wireframes,
   focusedIndex,
@@ -1223,9 +1184,6 @@ function InlineExpansionGrid({
   enableInteractivity = false,
   useLLMEnhancement = true,
   streamingHtml,
-  allVariantIndices,
-  onSwitchVariant,
-  variantPlans,
 }: {
   wireframes: Array<{ variantIndex: number; wireframeUrl: string; wireframeHtml?: string }>;
   focusedIndex: number;
@@ -1234,12 +1192,6 @@ function InlineExpansionGrid({
   enableInteractivity?: boolean;
   useLLMEnhancement?: boolean;
   streamingHtml?: string | null;
-  /** All variant indices to show in the sidebar */
-  allVariantIndices?: number[];
-  /** Callback to switch focused variant */
-  onSwitchVariant?: (index: number) => void;
-  /** Plan data for variant titles */
-  variantPlans?: Array<{ variant_index: number; title: string }>;
 }) {
   const { config } = useThemeStore();
   const labels = ['Variant A', 'Variant B', 'Variant C', 'Variant D'];
@@ -5403,9 +5355,6 @@ export const VibePrototyping: React.FC = () => {
                   enableInteractivity={interactivityEnabled}
                   useLLMEnhancement={useLLMEnhancement}
                   streamingHtml={streamingHtml[focusedVariantIndex]}
-                  allVariantIndices={selectedVariants}
-                  onSwitchVariant={setFocusedVariantIndex}
-                  variantPlans={plan?.plans?.map(p => ({ variant_index: p.variant_index, title: p.title }))}
                 />
               )}
             </Box>
@@ -5555,12 +5504,6 @@ export const VibePrototyping: React.FC = () => {
                   enableInteractivity={interactivityEnabled}
                   useLLMEnhancement={useLLMEnhancement}
                   streamingHtml={streamingHtml[focusedVariantIndex]}
-                  allVariantIndices={selectedVariants.filter(idx => {
-                    const v = variants.find(vr => vr.variant_index === idx);
-                    return v?.status === 'complete' || completedVariantIndices.has(idx);
-                  })}
-                  onSwitchVariant={setFocusedVariantIndex}
-                  variantPlans={plan?.plans?.map(p => ({ variant_index: p.variant_index, title: p.title }))}
                 />
               )}
             </Box>
