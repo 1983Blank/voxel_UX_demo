@@ -58,3 +58,6 @@ verify_jwt = false
 
 [functions.generate-prototype-files]
 verify_jwt = false
+
+[functions.generate-prototype-v2]
+verify_jwt = false
