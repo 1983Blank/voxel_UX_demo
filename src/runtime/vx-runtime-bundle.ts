@@ -640,28 +640,45 @@ export function injectVxRuntimeBundle(html: string): string {
   let processed = ensureProperHtmlStructure(html);
 
   console.log('[VxRuntime] Injecting runtime bundle into HTML...');
-  console.log('[VxRuntime:DEBUG] Bundle length:', bundle.length);
-  console.log('[VxRuntime:DEBUG] Bundle starts with:', bundle.slice(0, 100));
-  console.log('[VxRuntime:DEBUG] Bundle ends with:', bundle.slice(-100));
 
-  // Now we're guaranteed to have a <head> tag - inject there
-  if (processed.includes('</head>')) {
-    console.log('[VxRuntime] Injecting bundle in <head>');
-    const result = processed.replace('</head>', `${bundle}\n</head>`);
-    // CRITICAL DEBUG: Check the result contains the runtime script
-    const hasRuntimeComment = result.includes('Voxel Runtime Bundle');
-    const hasRuntimeDiag = result.includes('[VxRuntime:DIAG]');
-    const headEndIndex = result.indexOf('</head>');
-    console.log('[VxRuntime:DEBUG] Result has runtime comment:', hasRuntimeComment);
-    console.log('[VxRuntime:DEBUG] Result has DIAG log:', hasRuntimeDiag);
-    console.log('[VxRuntime:DEBUG] </head> at index:', headEndIndex);
-    console.log('[VxRuntime:DEBUG] Content before </head>:', result.slice(Math.max(0, headEndIndex - 200), headEndIndex));
+  // Find the </head> position - but make sure it's not inside a string or comment
+  const headEndIndex = processed.indexOf('</head>');
+  if (headEndIndex !== -1) {
+    // Check context around </head> to make sure it's valid
+    const beforeHead = processed.slice(Math.max(0, headEndIndex - 500), headEndIndex);
+
+    // Check for unclosed tags that might contain </head> as text
+    const unclosedStyle = (beforeHead.match(/<style[^>]*>/gi) || []).length >
+                          (beforeHead.match(/<\/style>/gi) || []).length;
+    const unclosedScript = (beforeHead.match(/<script[^>]*>/gi) || []).length >
+                           (beforeHead.match(/<\/script>/gi) || []).length;
+
+    if (unclosedStyle || unclosedScript) {
+      console.warn('[VxRuntime] WARNING: </head> appears to be inside unclosed style/script tag!');
+      console.log('[VxRuntime] Context before </head>:', beforeHead.slice(-200));
+    }
+
+    // Inject the bundle before </head>
+    const result = processed.slice(0, headEndIndex) + bundle + '\n' + processed.slice(headEndIndex);
+    console.log('[VxRuntime] Injected bundle, result length:', result.length);
+
+    // Verify injection was successful
+    if (!result.includes('VxRuntime Bundle')) {
+      console.error('[VxRuntime] ERROR: Bundle not found in result!');
+    }
+
     return result;
   }
 
-  // Should never reach here after ensureProperHtmlStructure, but just in case
-  console.log('[VxRuntime] Fallback: prepending bundle to HTML');
-  return `${bundle}\n${processed}`;
+  // Fallback: inject before </html> or append
+  const htmlEndIndex = processed.indexOf('</html>');
+  if (htmlEndIndex !== -1) {
+    console.log('[VxRuntime] Fallback: injecting before </html>');
+    return processed.slice(0, htmlEndIndex) + bundle + '\n' + processed.slice(htmlEndIndex);
+  }
+
+  console.log('[VxRuntime] Fallback: appending bundle to HTML');
+  return processed + '\n' + bundle;
 }
 
 /**
