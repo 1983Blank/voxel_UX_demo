@@ -13,12 +13,20 @@ export function generateVxRuntimeBundle(): string {
   return `
 <!-- Voxel Runtime Bundle - Auto-generated -->
 <script>
+// DIAGNOSTIC: Runtime script started
+console.log('[VxRuntime:DIAG] Script tag opened, executing...');
+console.log('[VxRuntime:DIAG] document.readyState:', document.readyState);
+console.log('[VxRuntime:DIAG] window location:', window.location.href);
 (function() {
   'use strict';
 
+  console.log('[VxRuntime:DIAG] IIFE started');
+
   try {
+  console.log('[VxRuntime:DIAG] Inside try block');
   // Flag to track initialization progress
   window.__VX_RUNTIME_LOADING__ = true;
+  console.log('[VxRuntime:DIAG] __VX_RUNTIME_LOADING__ set to true');
 
   // ============================================================================
   // VxStore - Global state manager
@@ -381,12 +389,16 @@ export function generateVxRuntimeBundle(): string {
   // Initialize Runtime
   // ============================================================================
 
+  console.log('[VxRuntime:DIAG] Classes defined, about to set loaded flag...');
+
   // Mark the runtime as loaded (for verification)
   window.__VX_RUNTIME_LOADED__ = true;
+  console.log('[VxRuntime:DIAG] __VX_RUNTIME_LOADED__ = true (SUCCESS!)');
 
   window.VxStoreClass = VxStore;
   window.VxComponentClass = VxComponent;
   window.VxFlowEngineClass = VxFlowEngine;
+  console.log('[VxRuntime:DIAG] Classes exposed on window');
 
   // Dispatch event to notify components that runtime is ready (Approach B)
   // This allows components to use event-based synchronization instead of polling
@@ -541,13 +553,23 @@ export function generateVxRuntimeBundle(): string {
 
   } catch (e) {
     // Critical: if runtime fails to load, log detailed error
+    console.error('[VxRuntime:DIAG] !!! CAUGHT EXCEPTION IN RUNTIME !!!');
     console.error('[VxRuntime] CRITICAL: Bundle failed to initialize!', e);
     console.error('[VxRuntime] Error details:', e.message, e.stack);
+    console.error('[VxRuntime:DIAG] __VX_RUNTIME_LOADED__ will NOT be set!');
     window.__VX_RUNTIME_ERROR__ = e.message;
   } finally {
+    console.log('[VxRuntime:DIAG] Finally block reached');
+    console.log('[VxRuntime:DIAG] Final state:', JSON.stringify({
+      loaded: window.__VX_RUNTIME_LOADED__,
+      loading: window.__VX_RUNTIME_LOADING__,
+      error: window.__VX_RUNTIME_ERROR__,
+      hasVxComponentClass: typeof window.VxComponentClass !== 'undefined'
+    }));
     window.__VX_RUNTIME_LOADING__ = false;
   }
 })();
+console.log('[VxRuntime:DIAG] IIFE completed, outside function scope now');
 </script>
 `.trim();
 }
@@ -976,6 +998,16 @@ export function preparePrototypeHtml(
     console.error('[preparePrototypeHtml] First 500 chars:', html.slice(0, 500));
   }
 
+  // DIAGNOSTIC: Count script tags before processing
+  const countScriptTags = (s: string) => ({
+    open: (s.match(/<script/gi) || []).length,
+    close: (s.match(/<\/script>/gi) || []).length,
+    escapedClose: (s.match(/<\\\/script/gi) || []).length,
+  });
+
+  console.log('[preparePrototypeHtml:DIAG] Input script tag counts:', countScriptTags(html));
+  console.log('[preparePrototypeHtml:DIAG] Input first 200 chars:', html.slice(0, 200));
+
   // CRITICAL: Escape ALL </script patterns in the LLM-generated HTML
   // Using <\/script which is valid JS (backslash escapes the slash)
   // but NOT a valid HTML closing tag
@@ -983,6 +1015,7 @@ export function preparePrototypeHtml(
   let processed = html.replace(/<\/script/gi, '<\\/script');
 
   console.log('[preparePrototypeHtml] After script escaping, length:', processed.length);
+  console.log('[preparePrototypeHtml:DIAG] After escape script tag counts:', countScriptTags(processed));
 
   // Sanitize LLM code artifacts (smart quotes, etc.)
   processed = sanitizeScriptsInHtml(processed);
@@ -993,6 +1026,7 @@ export function preparePrototypeHtml(
   processed = injectVxRuntimeBundle(processed);
   console.log('[preparePrototypeHtml] After runtime injection, length:', processed.length);
   console.log('[preparePrototypeHtml] Has VxRuntime Bundle:', processed.includes('VxRuntime Bundle'));
+  console.log('[preparePrototypeHtml:DIAG] After runtime injection script tag counts:', countScriptTags(processed));
 
   // Inject component scripts (also with real </script> tags)
   processed = injectComponentScripts(processed, components);
