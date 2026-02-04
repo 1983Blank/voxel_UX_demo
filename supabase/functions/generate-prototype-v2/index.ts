@@ -681,6 +681,28 @@ function parseToolCallsToSpec(toolCalls: ToolCall[]): ModificationSpec {
 // LLM Calls
 // =============================================================================
 
+// Check if error is an overload/rate limit error
+function isOverloadError(errorMessage: string): boolean {
+  const msg = errorMessage.toLowerCase()
+  return msg.includes('overload') ||
+    msg.includes('capacity') ||
+    msg.includes('rate limit') ||
+    msg.includes('too many requests') ||
+    msg.includes('529') ||
+    msg.includes('503')
+}
+
+// Fallback models for each provider when primary model is overloaded
+const FALLBACK_MODELS: Record<string, string[]> = {
+  anthropic: ['claude-3-5-haiku-20241022', 'claude-3-haiku-20240307'],
+  openai: ['gpt-4o-mini', 'gpt-3.5-turbo'],
+}
+
+// Sleep helper for retry backoff
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
 async function callAnthropicWithTools(
   apiKey: string,
   model: string,
@@ -886,15 +908,63 @@ Deno.serve(async (req) => {
     const systemPrompt = buildSystemPrompt(domSummary, components, tokens)
     const userPrompt = `Source DOM (modify this):\n\`\`\`html\n${body.sourceHtml.slice(0, 50000)}\n\`\`\`\n\nUser Request: ${body.prompt}`
 
-    // Call LLM with tools
+    // Call LLM with tools (with retry and fallback logic for overload errors)
     let toolCalls: ToolCall[]
-    if (keyConfig.provider === 'anthropic') {
-      toolCalls = await callAnthropicWithTools(apiKey, modelToUse, systemPrompt, userPrompt, tools)
-    } else if (keyConfig.provider === 'openai') {
-      toolCalls = await callOpenAIWithTools(apiKey, modelToUse, systemPrompt, userPrompt, tools)
-    } else {
-      throw new Error(`Unsupported provider: ${keyConfig.provider}`)
+    let actualModelUsed = modelToUse
+    const maxRetries = 3
+    const fallbackModels = FALLBACK_MODELS[keyConfig.provider] || []
+
+    // Helper function to call the appropriate provider
+    const callProvider = async (model: string): Promise<ToolCall[]> => {
+      if (keyConfig.provider === 'anthropic') {
+        return await callAnthropicWithTools(apiKey, model, systemPrompt, userPrompt, tools)
+      } else if (keyConfig.provider === 'openai') {
+        return await callOpenAIWithTools(apiKey, model, systemPrompt, userPrompt, tools)
+      } else {
+        throw new Error(`Unsupported provider: ${keyConfig.provider}`)
+      }
     }
+
+    // Try with primary model first, then fallbacks on overload
+    let lastError: Error | null = null
+    let modelIndex = -1 // -1 = primary model, 0+ = fallback models
+
+    for (let attempt = 0; attempt < maxRetries + fallbackModels.length; attempt++) {
+      const currentModel = modelIndex === -1 ? modelToUse : fallbackModels[modelIndex]
+
+      try {
+        console.log(`[generate-prototype-v2] Attempt ${attempt + 1}: trying model ${currentModel}`)
+        toolCalls = await callProvider(currentModel)
+        actualModelUsed = currentModel
+        break // Success!
+      } catch (err) {
+        lastError = err as Error
+        console.warn(`[generate-prototype-v2] Attempt ${attempt + 1} failed:`, lastError.message)
+
+        if (isOverloadError(lastError.message)) {
+          // If we haven't tried fallback models yet and there are some available
+          if (modelIndex < fallbackModels.length - 1) {
+            modelIndex++
+            console.log(`[generate-prototype-v2] Overload detected, trying fallback model: ${fallbackModels[modelIndex]}`)
+          } else if (attempt < maxRetries + fallbackModels.length - 1) {
+            // Exponential backoff before retry
+            const backoffMs = Math.min(1000 * Math.pow(2, attempt), 10000)
+            console.log(`[generate-prototype-v2] Waiting ${backoffMs}ms before retry...`)
+            await sleep(backoffMs)
+          }
+        } else {
+          // Non-overload error, don't retry
+          throw lastError
+        }
+      }
+    }
+
+    // If we exhausted all retries
+    if (!toolCalls!) {
+      throw lastError || new Error('All retry attempts failed')
+    }
+
+    console.log(`[generate-prototype-v2] Success with model: ${actualModelUsed}`)
 
     // Parse tool calls into modification spec
     const spec = parseToolCallsToSpec(toolCalls)
@@ -919,8 +989,9 @@ Deno.serve(async (req) => {
         toolCallCount: toolCalls.length,
         screensGenerated: spec.screens.length,
         durationMs: duration,
-        model: modelToUse,
+        model: actualModelUsed,
         provider: keyConfig.provider,
+        fallbackUsed: actualModelUsed !== modelToUse,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )

@@ -438,6 +438,29 @@ function parseVariantPlans(response: string): VariantPlan[] {
   return normalizedVariants
 }
 
+// Check if error is an overload/rate limit error
+function isOverloadError(errorMessage: string): boolean {
+  const msg = errorMessage.toLowerCase()
+  return msg.includes('overload') ||
+    msg.includes('capacity') ||
+    msg.includes('rate limit') ||
+    msg.includes('too many requests') ||
+    msg.includes('529') ||
+    msg.includes('503')
+}
+
+// Fallback models for each provider when primary model is overloaded
+const FALLBACK_MODELS: Record<string, string[]> = {
+  anthropic: ['claude-3-5-haiku-20241022', 'claude-3-haiku-20240307'],
+  openai: ['gpt-4o-mini', 'gpt-3.5-turbo'],
+  google: ['gemini-1.5-flash', 'gemini-1.0-pro'],
+}
+
+// Sleep helper for retry backoff
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
 // Generate with Anthropic (with optional vision support)
 async function generateWithAnthropic(apiKey: string, model: string, prompt: string, screenshotBase64?: string): Promise<string> {
   console.log('[generate-variant-plan] Calling Anthropic API', screenshotBase64 ? 'with screenshot' : 'text only')
@@ -724,21 +747,66 @@ Deno.serve(async (req) => {
     }
 
     // Generate plan based on provider (with optional screenshot for vision)
+    // Includes retry logic with fallback models for overload errors
     let rawResponse: string
+    let actualModelUsed = modelToUse
+    const maxRetries = 3
+    const fallbackModels = FALLBACK_MODELS[keyConfig.provider] || []
 
-    switch (keyConfig.provider) {
-      case 'anthropic':
-        rawResponse = await generateWithAnthropic(apiKey, modelToUse, prompt, validatedScreenshot)
-        break
-      case 'openai':
-        rawResponse = await generateWithOpenAI(apiKey, modelToUse, prompt, validatedScreenshot)
-        break
-      case 'google':
-        rawResponse = await generateWithGoogle(apiKey, modelToUse, prompt, validatedScreenshot)
-        break
-      default:
-        throw new Error(`Unsupported provider: ${keyConfig.provider}`)
+    // Helper function to call the appropriate provider
+    const callProvider = async (model: string): Promise<string> => {
+      switch (keyConfig.provider) {
+        case 'anthropic':
+          return await generateWithAnthropic(apiKey, model, prompt, validatedScreenshot)
+        case 'openai':
+          return await generateWithOpenAI(apiKey, model, prompt, validatedScreenshot)
+        case 'google':
+          return await generateWithGoogle(apiKey, model, prompt, validatedScreenshot)
+        default:
+          throw new Error(`Unsupported provider: ${keyConfig.provider}`)
+      }
     }
+
+    // Try with primary model first, then fallbacks on overload
+    let lastError: Error | null = null
+    let modelIndex = -1 // -1 = primary model, 0+ = fallback models
+
+    for (let attempt = 0; attempt < maxRetries + fallbackModels.length; attempt++) {
+      const currentModel = modelIndex === -1 ? modelToUse : fallbackModels[modelIndex]
+
+      try {
+        console.log(`[generate-variant-plan] Attempt ${attempt + 1}: trying model ${currentModel}`)
+        rawResponse = await callProvider(currentModel)
+        actualModelUsed = currentModel
+        break // Success!
+      } catch (err) {
+        lastError = err as Error
+        console.warn(`[generate-variant-plan] Attempt ${attempt + 1} failed:`, lastError.message)
+
+        if (isOverloadError(lastError.message)) {
+          // If we haven't tried fallback models yet and there are some available
+          if (modelIndex < fallbackModels.length - 1) {
+            modelIndex++
+            console.log(`[generate-variant-plan] Overload detected, trying fallback model: ${fallbackModels[modelIndex]}`)
+          } else if (attempt < maxRetries + fallbackModels.length - 1) {
+            // Exponential backoff before retry
+            const backoffMs = Math.min(1000 * Math.pow(2, attempt), 10000)
+            console.log(`[generate-variant-plan] Waiting ${backoffMs}ms before retry...`)
+            await sleep(backoffMs)
+          }
+        } else {
+          // Non-overload error, don't retry
+          throw lastError
+        }
+      }
+    }
+
+    // If we exhausted all retries
+    if (!rawResponse!) {
+      throw lastError || new Error('All retry attempts failed')
+    }
+
+    console.log(`[generate-variant-plan] Success with model: ${actualModelUsed}`)
 
     console.log('[generate-variant-plan] Raw response length:', rawResponse.length)
 
@@ -786,8 +854,9 @@ Deno.serve(async (req) => {
       JSON.stringify({
         success: true,
         plans: savedPlans,
-        model: modelToUse,
+        model: actualModelUsed,
         provider: keyConfig.provider,
+        fallbackUsed: actualModelUsed !== modelToUse,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
