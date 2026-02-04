@@ -5372,8 +5372,8 @@ export const VibePrototyping: React.FC = () => {
           )}
 
           {/* Wireframe ready with focus - inline expansion view */}
-          <Fade in={!!(isWireframeReady && focusedVariantIndex)} timeout={300} unmountOnExit>
-            <Box sx={{ flex: 1, overflow: 'hidden' }}>
+          <Fade in={!!(isWireframeReady && focusedVariantIndex)} timeout={300} unmountOnExit style={{ flex: 1, display: 'flex', minHeight: 0 }}>
+            <Box sx={{ flex: 1, overflow: 'hidden', display: 'flex' }}>
               {focusedVariantIndex && (
                 <InlineExpansionGrid
                   wireframes={wireframes}
@@ -5521,8 +5521,9 @@ export const VibePrototyping: React.FC = () => {
             in={!!((isComplete || (isGenerating && (focusedVariant?.status === 'complete' || completedVariantIndices.has(focusedVariantIndex || 0)))) && focusedVariantIndex && editMode === 'cursor' && panelView !== 'flow')}
             timeout={300}
             unmountOnExit
+            style={{ flex: 1, display: 'flex', minHeight: 0 }}
           >
-            <Box sx={{ flex: 1, overflow: 'hidden' }}>
+            <Box sx={{ flex: 1, overflow: 'hidden', display: 'flex' }}>
               {focusedVariantIndex && (
                 <InlineExpansionGrid
                   wireframes={wireframes}
