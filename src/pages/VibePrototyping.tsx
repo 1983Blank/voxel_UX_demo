@@ -89,8 +89,6 @@ import {
   Eye,
   Folders,
   FlowArrow,
-  ClockClockwise,
-  CopySimple,
   ChatTeardropText,
   CheckCircle,
   MapPin,
@@ -115,7 +113,6 @@ import {
   createVibeSession,
   generateVariantPlan,
   getVibeSession,
-  getVibeSessionsForScreen,
   getVariantPlans,
   approvePlan,
   type VibeSession,
@@ -913,9 +910,10 @@ function FetchedHtmlIframe({
   return null;
 }
 
-// Canvas variant preview card (in 2x2 grid)
+// Canvas variant preview card (gallery view)
 function CanvasVariantCard({
   label,
+  sublabel,
   isLoading = false,
   htmlUrl,
   wireframeUrl,
@@ -929,6 +927,8 @@ function CanvasVariantCard({
   isHovered = false,
 }: {
   label: string;
+  /** Secondary label (e.g., "Variant A") shown below main label */
+  sublabel?: string;
   isLoading?: boolean;
   htmlUrl?: string | null;
   wireframeUrl?: string | null;
@@ -1105,6 +1105,11 @@ function CanvasVariantCard({
                 <Typography variant="caption" sx={{ color: 'white', fontWeight: 500 }}>
                   {label}
                 </Typography>
+                {sublabel && (
+                  <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.7)', display: 'block', fontSize: '0.65rem' }}>
+                    {sublabel}
+                  </Typography>
+                )}
               </Box>
             </Box>
           ) : showWireframePreview ? (
@@ -1143,12 +1148,27 @@ function CanvasVariantCard({
                 }}
               >
                 <Typography variant="caption" sx={{ color: '#333', fontWeight: 500 }}>
-                  {label} (wireframe)
+                  {label}
                 </Typography>
+                {sublabel && (
+                  <Typography variant="caption" sx={{ color: 'rgba(0,0,0,0.6)', display: 'block', fontSize: '0.65rem' }}>
+                    {sublabel} (wireframe)
+                  </Typography>
+                )}
+                {!sublabel && (
+                  <Typography variant="caption" sx={{ color: 'rgba(0,0,0,0.6)', display: 'block', fontSize: '0.65rem' }}>
+                    (wireframe)
+                  </Typography>
+                )}
               </Box>
             </Box>
           ) : (
-            <Typography color="text.secondary">{label}</Typography>
+            <Box sx={{ textAlign: 'center' }}>
+              <Typography color="text.secondary">{label}</Typography>
+              {sublabel && (
+                <Typography variant="caption" color="text.secondary">{sublabel}</Typography>
+              )}
+            </Box>
           )}
         </Box>
       </CardActionArea>
@@ -1526,14 +1546,7 @@ export const VibePrototyping: React.FC = () => {
   const [shareWireframes, setShareWireframes] = useState(false); // Share wireframes vs prototypes
   const [isCreatingShare, setIsCreatingShare] = useState(false);
   const [viewMode, setViewMode] = useState<'wireframes' | 'prototypes'>('prototypes'); // Toggle between views
-  const [generationMode, setGenerationMode] = useState<'single' | 'all'>('all'); // Single variant or all 4
-  const [selectedVariantToGenerate, setSelectedVariantToGenerate] = useState<number>(1); // Which variant to generate in single mode
   const [hoveredVariantIndex, setHoveredVariantIndex] = useState<number | null>(null); // For chat card hover highlighting
-
-  // Session history for multiple sessions per project
-  const [sessionHistory, setSessionHistory] = useState<VibeSession[]>([]);
-  const [sessionHistoryOpen, setSessionHistoryOpen] = useState(false);
-  const [isDuplicatingSession, setIsDuplicatingSession] = useState(false);
 
   // Per-variant feedback sub-threads
   const [variantFeedback, setVariantFeedback] = useState<Map<number, FeedbackComment[]>>(new Map());
@@ -2126,10 +2139,6 @@ export const VibePrototyping: React.FC = () => {
           } else {
             clearSession();
           }
-
-          // Fetch session history for this screen (multiple sessions feature)
-          const sessions = await getVibeSessionsForScreen(screenId);
-          setSessionHistory(sessions);
         }
       }
 
@@ -2744,12 +2753,12 @@ export const VibePrototyping: React.FC = () => {
         generationAbortControllerRef.current = abortController;
 
         try {
-          // Filter plans based on generation mode
-          const plansToGenerate = generationMode === 'single'
-            ? plan.plans.filter(p => p.variant_index === selectedVariantToGenerate)
-            : plan.plans;
+          // Filter plans based on selected variants from store
+          const plansToGenerate = plan.plans.filter(p =>
+            selectedVariants.includes(p.variant_index)
+          );
 
-          console.log('[VibePrototyping] Generation mode:', generationMode, 'Plans to generate:', plansToGenerate.length);
+          console.log('[VibePrototyping] Selected variants:', selectedVariants, 'Plans to generate:', plansToGenerate.length);
 
           const results = await generateAllVariantsToolMode(
             currentSession.id,
@@ -3590,35 +3599,6 @@ export const VibePrototyping: React.FC = () => {
     }
   }, [screenId, editedName, updateScreen, showSuccess, showError]);
 
-  // Handle duplicating a session to create a new one
-  const handleDuplicateSession = useCallback(async (sourceSession: VibeSession) => {
-    if (!screenId || !screen?.editedHtml) return;
-
-    setIsDuplicatingSession(true);
-    try {
-      // Create new session with same prompt but new name
-      const newSession = await createVibeSession(
-        screenId,
-        `${sourceSession.name} (copy)`,
-        sourceSession.prompt
-      );
-
-      if (newSession) {
-        showSuccess('Session duplicated! Opening new session...');
-        setSessionHistoryOpen(false);
-        // Navigate to the new session
-        navigate(`/prototyping/${screenId}/${newSession.id}`);
-      } else {
-        showError('Failed to duplicate session');
-      }
-    } catch (error) {
-      console.error('Failed to duplicate session:', error);
-      showError('Failed to duplicate session');
-    } finally {
-      setIsDuplicatingSession(false);
-    }
-  }, [screenId, screen?.editedHtml, navigate, showSuccess, showError]);
-
   // Fetch feedback for the focused variant
   const fetchVariantFeedback = useCallback(async () => {
     if (!currentSession || !focusedVariantIndex) return;
@@ -4277,36 +4257,11 @@ export const VibePrototyping: React.FC = () => {
                       sx={{ mr: 1 }}
                     />
                   )}
-                  {/* Generation Mode Selector */}
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <ToggleButtonGroup
-                      value={generationMode}
-                      exclusive
-                      onChange={(_, value) => value && setGenerationMode(value)}
-                      size="small"
-                      sx={{ height: 32 }}
-                    >
-                      <ToggleButton value="single" sx={{ px: 1.5, fontSize: '0.75rem' }}>
-                        Single
-                      </ToggleButton>
-                      <ToggleButton value="all" sx={{ px: 1.5, fontSize: '0.75rem' }}>
-                        All 4
-                      </ToggleButton>
-                    </ToggleButtonGroup>
-                    {generationMode === 'single' && (
-                      <Select
-                        value={selectedVariantToGenerate}
-                        onChange={(e) => setSelectedVariantToGenerate(Number(e.target.value))}
-                        size="small"
-                        sx={{ minWidth: 100, height: 32, fontSize: '0.75rem' }}
-                      >
-                        <MenuItem value={1}>Variant A</MenuItem>
-                        <MenuItem value={2}>Variant B</MenuItem>
-                        <MenuItem value={3}>Variant C</MenuItem>
-                        <MenuItem value={4}>Variant D</MenuItem>
-                      </Select>
-                    )}
-                  </Box>
+                  <Chip
+                    size="small"
+                    label={`${selectedVariants.length} variant${selectedVariants.length !== 1 ? 's' : ''} selected`}
+                    sx={{ mr: 1 }}
+                  />
                   <Button
                     variant="outlined"
                     onClick={() => handleRepromptWireframes()}
@@ -4319,10 +4274,11 @@ export const VibePrototyping: React.FC = () => {
                     variant="contained"
                     onClick={handleBuildHighFidelity}
                     size="small"
+                    disabled={selectedVariants.length === 0}
                     startIcon={error ? <ArrowClockwise size={14} /> : undefined}
                     sx={{ background: config.gradients?.primary || config.colors.primary }}
                   >
-                    {error ? 'Retry Build' : generationMode === 'single' ? 'Build Variant' : 'Build All'}
+                    {error ? 'Retry Build' : `Build ${selectedVariants.length === 1 ? 'Variant' : 'Variants'}`}
                   </Button>
                 </>
               )}
@@ -5089,24 +5045,6 @@ export const VibePrototyping: React.FC = () => {
 
               <Divider orientation="vertical" flexItem />
 
-              {/* Session History button */}
-              {sessionHistory.length > 1 && (
-                <Tooltip title={`${sessionHistory.length} sessions for this screen`}>
-                  <Button
-                    variant="outlined"
-                    size="small"
-                    startIcon={<ClockClockwise size={16} />}
-                    onClick={() => setSessionHistoryOpen(true)}
-                    sx={{
-                      textTransform: 'none',
-                      transition: 'all 0.2s ease',
-                    }}
-                  >
-                    History ({sessionHistory.length})
-                  </Button>
-                </Tooltip>
-              )}
-
               <Button
                 variant="contained"
                 size="small"
@@ -5232,19 +5170,19 @@ export const VibePrototyping: React.FC = () => {
             </Box>
           )}
 
-          {/* Loading/Planning/Wireframing/Generating state - 2x2 grid or single expanded variant */}
+          {/* Loading/Planning/Wireframing/Generating state - gallery or single expanded variant */}
           {/* During generation, users can click completed variants to preview them */}
           {(isPlanning || isPlanReady || isWireframing || isWireframeReady || isGenerating) && !focusedVariantIndex && (
             <Box sx={{ flex: 1, p: 2, overflow: 'auto', minHeight: 0 }}>
               <Grid container spacing={2} sx={{ height: '100%', minHeight: 0 }}>
-                {['Variant A', 'Variant B', 'Variant C', 'Variant D'].map((label, idx) => {
-                  const variantIndex = idx + 1;
-
-                  // In single mode, only show the selected variant
-                  if (generationMode === 'single' && variantIndex !== selectedVariantToGenerate) {
+                {[1, 2, 3, 4].map((variantIndex) => {
+                  // Only show selected variants
+                  if (!selectedVariants.includes(variantIndex)) {
                     return null;
                   }
 
+                  const variantPlan = plan?.plans?.find(p => p.variant_index === variantIndex);
+                  const variantLabel = `Variant ${String.fromCharCode(64 + variantIndex)}`;
                   const variant = variants.find((v) => v.variant_index === variantIndex);
                   const variantProgress = getVariantProgress(variantIndex);
                   const variantStreamingHtml = streamingHtml[variantIndex];
@@ -5256,18 +5194,23 @@ export const VibePrototyping: React.FC = () => {
                   // Allow clicking when: variant complete OR wireframe ready with wireframe available
                   const canClick = isVariantComplete || (isWireframeReady && wireframe?.wireframeUrl);
 
-                  // In single mode, expand to full width and height
-                  const isSingleMode = generationMode === 'single';
+                  // Single variant = full screen, 2+ variants = gallery
+                  const isFullScreen = selectedVariants.length === 1;
 
                   return (
                     <Grid
                       item
-                      xs={isSingleMode ? 12 : 6}
-                      key={label}
-                      sx={{ height: isSingleMode ? '100%' : '50%' }}
+                      xs={12}
+                      md={isFullScreen ? 12 : 6}
+                      key={variantIndex}
+                      sx={{
+                        height: isFullScreen ? '100%' : 'auto',
+                        minHeight: isFullScreen ? undefined : 300,
+                      }}
                     >
                       <CanvasVariantCard
-                        label={label}
+                        label={variantPlan?.title || variantLabel}
+                        sublabel={variantPlan?.title ? variantLabel : undefined}
                         isLoading={isGenerating && !isVariantComplete}
                         htmlUrl={variant?.html_url}
                         wireframeUrl={wireframe?.wireframeUrl}
@@ -5288,17 +5231,21 @@ export const VibePrototyping: React.FC = () => {
           )}
 
           {/* Wireframe ready with focus - inline expansion view */}
-          {isWireframeReady && focusedVariantIndex && (
-            <InlineExpansionGrid
-              wireframes={wireframes}
-              focusedIndex={focusedVariantIndex}
-              getVariantByIndex={getVariantByIndex}
-              viewMode={viewMode}
-              enableInteractivity={interactivityEnabled}
-              useLLMEnhancement={useLLMEnhancement}
-              streamingHtml={streamingHtml[focusedVariantIndex]}
-            />
-          )}
+          <Fade in={!!(isWireframeReady && focusedVariantIndex)} timeout={300} unmountOnExit>
+            <Box sx={{ flex: 1, overflow: 'hidden' }}>
+              {focusedVariantIndex && (
+                <InlineExpansionGrid
+                  wireframes={wireframes}
+                  focusedIndex={focusedVariantIndex}
+                  getVariantByIndex={getVariantByIndex}
+                  viewMode={viewMode}
+                  enableInteractivity={interactivityEnabled}
+                  useLLMEnhancement={useLLMEnhancement}
+                  streamingHtml={streamingHtml[focusedVariantIndex]}
+                />
+              )}
+            </Box>
+          </Fade>
 
           {/* Complete state - Gallery grid with all completed variants (no focus) */}
           {isComplete && !focusedVariantIndex && (
@@ -5308,7 +5255,22 @@ export const VibePrototyping: React.FC = () => {
                 <Typography variant="subtitle1" fontWeight={600}>
                   All Variants Ready
                 </Typography>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                  {/* View Mode Toggle */}
+                  <ToggleButtonGroup
+                    value={viewMode}
+                    exclusive
+                    onChange={(_, value) => value && setViewMode(value)}
+                    size="small"
+                    sx={{ height: 32 }}
+                  >
+                    <ToggleButton value="wireframes" sx={{ px: 1.5, fontSize: '0.75rem' }}>
+                      Wireframes
+                    </ToggleButton>
+                    <ToggleButton value="prototypes" sx={{ px: 1.5, fontSize: '0.75rem' }}>
+                      Prototypes
+                    </ToggleButton>
+                  </ToggleButtonGroup>
                   <Typography variant="caption" color="text.secondary">
                     Click a variant to explore
                   </Typography>
@@ -5332,8 +5294,8 @@ export const VibePrototyping: React.FC = () => {
                     const variant = variants.find((v) => v.variant_index === variantIndex);
                     const wireframe = wireframes.find(w => w.variantIndex === variantIndex);
 
-                    // In single mode, only show the selected variant
-                    if (generationMode === 'single' && variantIndex !== selectedVariantToGenerate) {
+                    // Only show variants that were selected
+                    if (!selectedVariants.includes(variantIndex)) {
                       return null;
                     }
 
@@ -5342,19 +5304,26 @@ export const VibePrototyping: React.FC = () => {
                       return null;
                     }
 
-                    // Calculate grid size based on number of completed variants
-                    const completedCount = variants.filter(v => v.status === 'complete').length;
-                    const isSingleMode = generationMode === 'single' || completedCount === 1;
+                    // Calculate grid size: 1 variant = full screen, 2+ = gallery
+                    const completedSelectedCount = variants.filter(
+                      v => v.status === 'complete' && selectedVariants.includes(v.variant_index)
+                    ).length;
+                    const isFullScreen = completedSelectedCount === 1;
 
                     return (
                       <Grid
                         item
-                        xs={isSingleMode ? 12 : 6}
+                        xs={12}
+                        md={isFullScreen ? 12 : 6}
                         key={variantIndex}
-                        sx={{ height: isSingleMode ? '100%' : '50%' }}
+                        sx={{
+                          height: isFullScreen ? '100%' : 'auto',
+                          minHeight: isFullScreen ? undefined : 300,
+                        }}
                       >
                         <CanvasVariantCard
                           label={p.title || `Variant ${String.fromCharCode(64 + variantIndex)}`}
+                          sublabel={p.title ? `Variant ${String.fromCharCode(64 + variantIndex)}` : undefined}
                           isLoading={false}
                           htmlUrl={variant?.html_url}
                           wireframeUrl={wireframe?.wireframeUrl}
@@ -5389,19 +5358,27 @@ export const VibePrototyping: React.FC = () => {
           {/* Complete or Generating state with focus - inline expansion view (preview mode) */}
           {/* Allow exploring completed variants while others are still generating */}
           {/* Also handles interactive mode where variants may be in streamingHtml but not vibe_variants */}
-          {(isComplete || (isGenerating && (focusedVariant?.status === 'complete' || completedVariantIndices.has(focusedVariantIndex || 0)))) && focusedVariantIndex && editMode === 'cursor' && panelView !== 'flow' && (
-            <InlineExpansionGrid
-              wireframes={wireframes}
-              focusedIndex={focusedVariantIndex}
-              onEditClick={() => setEditMode('code')}
-              onIterateClick={() => setIterationDialogOpen(true)}
-              getVariantByIndex={getVariantByIndex}
-              viewMode={viewMode}
-              enableInteractivity={interactivityEnabled}
-              useLLMEnhancement={useLLMEnhancement}
-              streamingHtml={streamingHtml[focusedVariantIndex]}
-            />
-          )}
+          <Fade
+            in={!!((isComplete || (isGenerating && (focusedVariant?.status === 'complete' || completedVariantIndices.has(focusedVariantIndex || 0)))) && focusedVariantIndex && editMode === 'cursor' && panelView !== 'flow')}
+            timeout={300}
+            unmountOnExit
+          >
+            <Box sx={{ flex: 1, overflow: 'hidden' }}>
+              {focusedVariantIndex && (
+                <InlineExpansionGrid
+                  wireframes={wireframes}
+                  focusedIndex={focusedVariantIndex}
+                  onEditClick={() => setEditMode('code')}
+                  onIterateClick={() => setIterationDialogOpen(true)}
+                  getVariantByIndex={getVariantByIndex}
+                  viewMode={viewMode}
+                  enableInteractivity={interactivityEnabled}
+                  useLLMEnhancement={useLLMEnhancement}
+                  streamingHtml={streamingHtml[focusedVariantIndex]}
+                />
+              )}
+            </Box>
+          </Fade>
 
           {/* Focused variant with edit mode (code or wysiwyg) - single full preview with code/wysiwyg editor */}
           {/* Also works during generation if the focused variant is complete */}
@@ -6146,154 +6123,6 @@ export const VibePrototyping: React.FC = () => {
           </Button>
         </DialogActions>
       </Dialog>
-
-      {/* Session History Drawer */}
-      <Drawer
-        anchor="right"
-        open={sessionHistoryOpen}
-        onClose={() => setSessionHistoryOpen(false)}
-      >
-        <Box sx={{ width: 380, height: '100%', display: 'flex', flexDirection: 'column' }}>
-          <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1, fontFamily: config.fonts.display }}>
-                <ClockClockwise size={24} />
-                Session History
-              </Typography>
-              <IconButton size="small" onClick={() => setSessionHistoryOpen(false)}>
-                <X size={20} />
-              </IconButton>
-            </Box>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-              {sessionHistory.length} session{sessionHistory.length !== 1 ? 's' : ''} for this screen
-            </Typography>
-          </Box>
-
-          <List sx={{ flex: 1, overflow: 'auto', p: 1 }}>
-            {sessionHistory.map((historySession) => {
-              const isCurrentSession = historySession.id === sessionId;
-              return (
-                <ListItem
-                  key={historySession.id}
-                  disablePadding
-                  sx={{ mb: 1 }}
-                >
-                  <Card
-                    variant={isCurrentSession ? 'elevation' : 'outlined'}
-                    sx={{
-                      width: '100%',
-                      bgcolor: isCurrentSession ? 'action.selected' : 'background.paper',
-                      border: isCurrentSession ? 2 : 1,
-                      borderColor: isCurrentSession ? 'primary.main' : 'divider',
-                    }}
-                  >
-                    <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 0.5 }}>
-                        <Box sx={{ flex: 1, minWidth: 0 }}>
-                          <Typography
-                            variant="subtitle2"
-                            fontWeight={600}
-                            sx={{
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap',
-                            }}
-                          >
-                            {historySession.name || 'Untitled Session'}
-                            {isCurrentSession && (
-                              <Chip
-                                label="Current"
-                                size="small"
-                                color="primary"
-                                sx={{ ml: 1, height: 18, fontSize: 10 }}
-                              />
-                            )}
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary" display="block">
-                            {new Date(historySession.created_at).toLocaleDateString(undefined, {
-                              month: 'short',
-                              day: 'numeric',
-                              year: 'numeric',
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })}
-                          </Typography>
-                        </Box>
-                      </Box>
-
-                      {historySession.prompt && (
-                        <Typography
-                          variant="body2"
-                          color="text.secondary"
-                          sx={{
-                            mt: 0.5,
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            display: '-webkit-box',
-                            WebkitLineClamp: 2,
-                            WebkitBoxOrient: 'vertical',
-                            fontSize: 12,
-                            fontStyle: 'italic',
-                          }}
-                        >
-                          "{historySession.prompt}"
-                        </Typography>
-                      )}
-
-                      <Box sx={{ display: 'flex', gap: 1, mt: 1.5 }}>
-                        {!isCurrentSession && (
-                          <Button
-                            size="small"
-                            variant="outlined"
-                            startIcon={<Eye size={14} />}
-                            onClick={() => {
-                              setSessionHistoryOpen(false);
-                              navigate(`/prototyping/${screenId}/${historySession.id}`);
-                            }}
-                            sx={{ flex: 1, fontSize: 11 }}
-                          >
-                            View
-                          </Button>
-                        )}
-                        <Button
-                          size="small"
-                          variant={isCurrentSession ? 'contained' : 'outlined'}
-                          startIcon={isDuplicatingSession ? <CircularProgress size={14} /> : <CopySimple size={14} />}
-                          onClick={() => handleDuplicateSession(historySession)}
-                          disabled={isDuplicatingSession}
-                          sx={{ flex: 1, fontSize: 11 }}
-                        >
-                          Duplicate
-                        </Button>
-                      </Box>
-                    </CardContent>
-                  </Card>
-                </ListItem>
-              );
-            })}
-          </List>
-
-          <Box sx={{ p: 2, borderTop: 1, borderColor: 'divider' }}>
-            <Button
-              fullWidth
-              variant="contained"
-              startIcon={<Plus size={18} />}
-              onClick={() => {
-                setSessionHistoryOpen(false);
-                navigate(`/prototyping/${screenId}`);
-              }}
-              sx={{
-                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                '&:hover': {
-                  background: 'linear-gradient(135deg, #5a6fd6 0%, #6a4190 100%)',
-                },
-              }}
-            >
-              New Session
-            </Button>
-          </Box>
-        </Box>
-      </Drawer>
 
       {/* Per-variant Feedback Drawer */}
       <Drawer
