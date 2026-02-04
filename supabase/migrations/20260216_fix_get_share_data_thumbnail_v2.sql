@@ -1,16 +1,8 @@
--- Migration: Add wireframe sharing support
--- Date: 2026-02-01
+-- Migration: Fix get_share_data function - screens table has 'thumbnail' not 'thumbnail_url'
+-- Date: 2026-02-04
+-- Fixes: column sc.thumbnail_url does not exist error
 
--- Add wireframe sharing flag to shares table
-ALTER TABLE vibe_shares ADD COLUMN IF NOT EXISTS share_wireframes BOOLEAN DEFAULT false;
-
--- Add plan_id reference for wireframe-specific shares
-ALTER TABLE vibe_shares ADD COLUMN IF NOT EXISTS plan_id UUID REFERENCES vibe_variant_plans(id) ON DELETE CASCADE;
-
--- Create index for efficient wireframe share lookups
-CREATE INDEX IF NOT EXISTS idx_vibe_shares_wireframes ON vibe_shares(session_id, share_wireframes) WHERE share_wireframes = true;
-
--- Drop and recreate get_share_data function with new return type
+-- Drop and recreate with correct column name
 DROP FUNCTION IF EXISTS get_share_data(TEXT);
 
 CREATE OR REPLACE FUNCTION get_share_data(p_share_token TEXT)
@@ -37,14 +29,14 @@ BEGIN
   WHERE s.share_token = p_share_token
     AND s.is_active = true
     AND (s.expires_at IS NULL OR s.expires_at > NOW());
-  
+
   IF NOT FOUND THEN
     RETURN;
   END IF;
 
   -- Determine which variant to show
   IF v_share.share_type = 'random' THEN
-    -- Select a random variant from those marked as selected (is_selected is on vibe_variant_plans)
+    -- Select a random variant from those marked as selected
     SELECT vp.variant_index INTO v_selected_variant
     FROM vibe_variant_plans vp
     JOIN vibe_variants vv ON vv.session_id = vp.session_id AND vv.variant_index = vp.variant_index
@@ -103,43 +95,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
-COMMENT ON COLUMN vibe_shares.share_wireframes IS 'When true, share link shows wireframes instead of final prototypes';
-COMMENT ON COLUMN vibe_shares.plan_id IS 'Optional reference to specific plan for wireframe sharing';
-
--- Update create_share_link function to support wireframe sharing
-CREATE OR REPLACE FUNCTION create_share_link(
-  p_session_id UUID,
-  p_share_type TEXT,
-  p_variant_index INTEGER DEFAULT NULL,
-  p_expires_in_days INTEGER DEFAULT NULL,
-  p_share_wireframes BOOLEAN DEFAULT FALSE
-)
-RETURNS TABLE(share_id UUID, share_token TEXT) AS $$
-DECLARE
-  v_token TEXT;
-  v_share_id UUID;
-  v_expires_at TIMESTAMPTZ;
-BEGIN
-  -- Generate unique token
-  LOOP
-    v_token := generate_share_token();
-    EXIT WHEN NOT EXISTS (SELECT 1 FROM vibe_shares WHERE vibe_shares.share_token = v_token);
-  END LOOP;
-
-  -- Calculate expiration
-  IF p_expires_in_days IS NOT NULL THEN
-    v_expires_at := now() + (p_expires_in_days || ' days')::interval;
-  END IF;
-
-  -- Insert share with wireframe flag
-  INSERT INTO vibe_shares (session_id, user_id, share_type, variant_index, share_token, expires_at, share_wireframes)
-  VALUES (p_session_id, auth.uid(), p_share_type, p_variant_index, v_token, v_expires_at, p_share_wireframes)
-  RETURNING id INTO v_share_id;
-
-  RETURN QUERY SELECT v_share_id, v_token;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- Grant execute permission to anonymous users for public share viewing
+-- Re-grant execute permissions
 GRANT EXECUTE ON FUNCTION get_share_data(TEXT) TO anon;
 GRANT EXECUTE ON FUNCTION get_share_data(TEXT) TO authenticated;
