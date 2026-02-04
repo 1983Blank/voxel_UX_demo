@@ -137,3 +137,7 @@ BEGIN
   RETURN QUERY SELECT v_share_id, v_token;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Grant execute permission to anonymous users for public share viewing
+GRANT EXECUTE ON FUNCTION get_share_data(TEXT) TO anon;
+GRANT EXECUTE ON FUNCTION get_share_data(TEXT) TO authenticated;

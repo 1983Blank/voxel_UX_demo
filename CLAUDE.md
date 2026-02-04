@@ -138,3 +138,72 @@ Captured screens are stored in `src/mock-captures/screens/` as HTML files from t
 3. ❌ Calling `getSession()` before `onAuthStateChange` listener is set up
 4. ✅ Use `onAuthStateChange` and wait for `INITIAL_SESSION` or `SIGNED_IN` events
 5. ✅ Get user from `useAuthStore` instead of calling Supabase auth directly
+
+## Supabase Database Migrations - CRITICAL Guidelines
+
+### Writing Idempotent Migrations
+Migrations may be partially applied or re-run. Always use defensive patterns:
+
+```sql
+-- Tables: Use IF NOT EXISTS
+CREATE TABLE IF NOT EXISTS my_table (...);
+
+-- Indexes: Use IF NOT EXISTS
+CREATE INDEX IF NOT EXISTS idx_name ON my_table(column);
+
+-- Policies: Always DROP before CREATE (no IF NOT EXISTS for policies)
+DROP POLICY IF EXISTS "Policy name" ON my_table;
+CREATE POLICY "Policy name" ON my_table FOR SELECT USING (...);
+
+-- Triggers: Always DROP before CREATE
+DROP TRIGGER IF EXISTS trigger_name ON my_table;
+CREATE TRIGGER trigger_name ...;
+
+-- Functions: Use CREATE OR REPLACE
+CREATE OR REPLACE FUNCTION my_function(...) ...;
+
+-- Realtime publications: Wrap in exception handler
+DO $$
+BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE my_table;
+EXCEPTION WHEN duplicate_object THEN
+  NULL; -- Already in publication, ignore
+END $$;
+
+-- Columns: Use IF NOT EXISTS
+ALTER TABLE my_table ADD COLUMN IF NOT EXISTS new_column TYPE;
+```
+
+### RPC Function Permissions for Public Access
+If a function needs to be called by anonymous users (like share link viewing):
+
+```sql
+-- SECURITY DEFINER bypasses RLS but still needs EXECUTE grant
+CREATE OR REPLACE FUNCTION get_share_data(p_token TEXT)
+RETURNS ... AS $$ ... $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Grant execute to both anon and authenticated roles
+GRANT EXECUTE ON FUNCTION get_share_data(TEXT) TO anon;
+GRANT EXECUTE ON FUNCTION get_share_data(TEXT) TO authenticated;
+```
+
+### Deploying Migrations
+```bash
+# Check pending migrations
+npx supabase db push --dry-run
+
+# Apply migrations
+npx supabase db push
+
+# Deploy edge functions (after migration changes)
+npx supabase functions deploy function-name --no-verify-jwt
+```
+
+### Common Pitfalls That Break Migrations
+1. ❌ `CREATE POLICY` without `DROP POLICY IF EXISTS` first
+2. ❌ `CREATE TRIGGER` without `DROP TRIGGER IF EXISTS` first
+3. ❌ `ALTER PUBLICATION ... ADD TABLE` without exception handling
+4. ❌ Forgetting `GRANT EXECUTE` for functions called by anonymous users
+5. ❌ Changing function parameter names without updating client code
+6. ✅ Always test migrations with `--dry-run` first
+7. ✅ Check client code parameter names match function parameter names

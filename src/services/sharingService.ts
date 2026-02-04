@@ -133,9 +133,21 @@ export async function getShareData(token: string): Promise<ShareData | null> {
   console.log('[SharingService] Fetching share data for token:', token);
 
   // Use public client for anonymous access (no auth required)
-  const { data, error } = await supabasePublic.rpc('get_share_data', {
+  // Try new parameter name first, fall back to old if needed
+  let data, error;
+
+  // First try with the new parameter name (from 20260210_wireframe_sharing.sql migration)
+  ({ data, error } = await supabasePublic.rpc('get_share_data', {
     p_share_token: token,
-  });
+  }));
+
+  // If that fails with a parameter error, try the old parameter name (p_token)
+  if (error && (error.message?.includes('parameter') || error.code === 'PGRST202')) {
+    console.log('[SharingService] Trying with legacy parameter name...');
+    ({ data, error } = await supabasePublic.rpc('get_share_data', {
+      p_token: token,
+    }));
+  }
 
   console.log('[SharingService] RPC response:', { data, error });
 

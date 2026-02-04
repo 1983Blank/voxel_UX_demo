@@ -38,25 +38,30 @@ CREATE INDEX IF NOT EXISTS idx_gen_sessions_status ON generation_sessions(status
 -- Enable RLS
 ALTER TABLE generation_sessions ENABLE ROW LEVEL SECURITY;
 
--- RLS Policies
+-- RLS Policies (drop and recreate to avoid conflicts)
+DROP POLICY IF EXISTS "Users view own generation sessions" ON generation_sessions;
 CREATE POLICY "Users view own generation sessions"
   ON generation_sessions FOR SELECT
   USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users insert own generation sessions" ON generation_sessions;
 CREATE POLICY "Users insert own generation sessions"
   ON generation_sessions FOR INSERT
   WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users update own generation sessions" ON generation_sessions;
 CREATE POLICY "Users update own generation sessions"
   ON generation_sessions FOR UPDATE
   USING (auth.uid() = user_id);
 
 -- Service role can update any session (for edge functions)
+DROP POLICY IF EXISTS "Service role updates sessions" ON generation_sessions;
 CREATE POLICY "Service role updates sessions"
   ON generation_sessions FOR UPDATE
   USING (auth.jwt() ->> 'role' = 'service_role');
 
 -- Updated_at trigger
+DROP TRIGGER IF EXISTS generation_sessions_updated_at ON generation_sessions;
 CREATE TRIGGER generation_sessions_updated_at
   BEFORE UPDATE ON generation_sessions
   FOR EACH ROW EXECUTE FUNCTION update_updated_at();
@@ -104,6 +109,7 @@ CREATE INDEX IF NOT EXISTS idx_gen_variants_phase ON generation_variants(phase);
 ALTER TABLE generation_variants ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies (based on parent session ownership)
+DROP POLICY IF EXISTS "Users view own generation variants" ON generation_variants;
 CREATE POLICY "Users view own generation variants"
   ON generation_variants FOR SELECT
   USING (
@@ -112,6 +118,7 @@ CREATE POLICY "Users view own generation variants"
     )
   );
 
+DROP POLICY IF EXISTS "Users insert own generation variants" ON generation_variants;
 CREATE POLICY "Users insert own generation variants"
   ON generation_variants FOR INSERT
   WITH CHECK (
@@ -120,6 +127,7 @@ CREATE POLICY "Users insert own generation variants"
     )
   );
 
+DROP POLICY IF EXISTS "Users update own generation variants" ON generation_variants;
 CREATE POLICY "Users update own generation variants"
   ON generation_variants FOR UPDATE
   USING (
@@ -129,11 +137,13 @@ CREATE POLICY "Users update own generation variants"
   );
 
 -- Service role can manage all variants (for edge functions)
+DROP POLICY IF EXISTS "Service role manages variants" ON generation_variants;
 CREATE POLICY "Service role manages variants"
   ON generation_variants FOR ALL
   USING (auth.jwt() ->> 'role' = 'service_role');
 
 -- Updated_at trigger
+DROP TRIGGER IF EXISTS generation_variants_updated_at ON generation_variants;
 CREATE TRIGGER generation_variants_updated_at
   BEFORE UPDATE ON generation_variants
   FOR EACH ROW EXECUTE FUNCTION update_updated_at();
@@ -176,6 +186,7 @@ CREATE INDEX IF NOT EXISTS idx_gen_steps_status ON generation_steps(status);
 ALTER TABLE generation_steps ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies (based on grandparent session ownership)
+DROP POLICY IF EXISTS "Users view own generation steps" ON generation_steps;
 CREATE POLICY "Users view own generation steps"
   ON generation_steps FOR SELECT
   USING (
@@ -186,6 +197,7 @@ CREATE POLICY "Users view own generation steps"
     )
   );
 
+DROP POLICY IF EXISTS "Users insert own generation steps" ON generation_steps;
 CREATE POLICY "Users insert own generation steps"
   ON generation_steps FOR INSERT
   WITH CHECK (
@@ -196,6 +208,7 @@ CREATE POLICY "Users insert own generation steps"
     )
   );
 
+DROP POLICY IF EXISTS "Users update own generation steps" ON generation_steps;
 CREATE POLICY "Users update own generation steps"
   ON generation_steps FOR UPDATE
   USING (
@@ -207,6 +220,7 @@ CREATE POLICY "Users update own generation steps"
   );
 
 -- Service role can manage all steps (for edge functions)
+DROP POLICY IF EXISTS "Service role manages steps" ON generation_steps;
 CREATE POLICY "Service role manages steps"
   ON generation_steps FOR ALL
   USING (auth.jwt() ->> 'role' = 'service_role');
@@ -215,9 +229,26 @@ CREATE POLICY "Service role manages steps"
 -- ENABLE REALTIME
 -- Allows clients to subscribe to changes via postgres_changes
 -- ============================================
-ALTER PUBLICATION supabase_realtime ADD TABLE generation_sessions;
-ALTER PUBLICATION supabase_realtime ADD TABLE generation_variants;
-ALTER PUBLICATION supabase_realtime ADD TABLE generation_steps;
+DO $$
+BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE generation_sessions;
+EXCEPTION WHEN duplicate_object THEN
+  NULL; -- Table already in publication, ignore
+END $$;
+
+DO $$
+BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE generation_variants;
+EXCEPTION WHEN duplicate_object THEN
+  NULL; -- Table already in publication, ignore
+END $$;
+
+DO $$
+BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE generation_steps;
+EXCEPTION WHEN duplicate_object THEN
+  NULL; -- Table already in publication, ignore
+END $$;
 
 -- ============================================
 -- HELPER FUNCTIONS
