@@ -5192,76 +5192,101 @@ export const VibePrototyping: React.FC = () => {
 
           {/* Loading/Planning/Wireframing/Generating state - gallery or single expanded variant */}
           {/* During generation, users can click completed variants to preview them */}
-          {/* Show all planned variants - selected ones are being built, unselected can be clicked to add */}
+          {/* Focus+Context Gallery: Large variant on left, thumbnails stacked on right */}
           {(isPlanning || isPlanReady || isWireframing || isWireframeReady || isGenerating) && !focusedVariantIndex && (
-            <Box sx={{ flex: 1, p: 2, overflow: 'auto', minHeight: 0 }}>
-              <Grid container spacing={2} sx={{ height: '100%', minHeight: 0 }}>
-                {[1, 2, 3, 4].map((variantIndex) => {
-                  const variantPlan = plan?.plans?.find(p => p.variant_index === variantIndex);
-                  // Skip variants that don't have a plan
-                  if (!variantPlan) {
-                    return null;
-                  }
+            <Box sx={{ flex: 1, display: 'flex', gap: 2, p: 2, minHeight: 0, overflow: 'hidden' }}>
+              {(() => {
+                // Get all planned variants
+                const plannedVariants = [1, 2, 3, 4]
+                  .map(idx => ({
+                    index: idx,
+                    plan: plan?.plans?.find(p => p.variant_index === idx),
+                    variant: variants.find(v => v.variant_index === idx),
+                    wireframe: wireframes.find(w => w.variantIndex === idx),
+                  }))
+                  .filter(v => v.plan);
 
-                  const variantLabel = `Variant ${String.fromCharCode(64 + variantIndex)}`;
-                  const variant = variants.find((v) => v.variant_index === variantIndex);
-                  const variantProgress = getVariantProgress(variantIndex);
-                  const variantStreamingHtml = streamingHtml[variantIndex];
-                  const wireframe = wireframes.find(w => w.variantIndex === variantIndex);
+                if (plannedVariants.length === 0) return null;
 
-                  // Track if this variant was selected for building
-                  const isSelected = selectedVariants.includes(variantIndex);
+                // First variant is the focused one (large view)
+                const focusedVar = plannedVariants[0];
+                const otherVars = plannedVariants.slice(1);
 
-                  // Check completion: database status OR completedVariantIndices (for interactive mode during generation)
-                  const isVariantComplete = variant?.status === 'complete' || completedVariantIndices.has(variantIndex);
-
-                  // Allow clicking when:
-                  // 1. Variant is complete (has prototype) - to focus it
-                  // 2. Wireframe ready with wireframe available - to focus or build prototype
-                  // 3. Plan ready with plan available - to generate wireframe (even if not selected)
-                  const hasWireframe = wireframe?.wireframeUrl || wireframe?.wireframeHtml;
-                  const hasPlan = !!variantPlan;
+                const renderVariantCard = (v: typeof focusedVar, isLarge: boolean) => {
+                  const variantLabel = `Variant ${String.fromCharCode(64 + v.index)}`;
+                  const variantProgress = getVariantProgress(v.index);
+                  const variantStreamingHtml = streamingHtml[v.index];
+                  const isSelected = selectedVariants.includes(v.index);
+                  const isVariantComplete = v.variant?.status === 'complete' || completedVariantIndices.has(v.index);
+                  const hasWireframe = v.wireframe?.wireframeUrl || v.wireframe?.wireframeHtml;
+                  const hasPlan = !!v.plan;
                   const canClick = isVariantComplete ||
                     (isWireframeReady && hasWireframe) ||
                     (isPlanReady && hasPlan && !isCreatingWireframes) ||
-                    (isWireframeReady && hasPlan && !hasWireframe && !isCreatingWireframes); // Allow clicking unbuilt variants to build them
-
-                  // Calculate grid size based on number of planned variants
-                  const plannedCount = plan?.plans?.length || 0;
-                  const isFullScreen = plannedCount === 1;
+                    (isWireframeReady && hasPlan && !hasWireframe && !isCreatingWireframes);
 
                   return (
-                    <Grid
-                      item
-                      xs={12}
-                      md={isFullScreen ? 12 : 6}
-                      key={variantIndex}
-                      sx={{
-                        height: isFullScreen ? '100%' : 'auto',
-                        minHeight: isFullScreen ? undefined : 300,
-                        // Visual indicator for unselected variants
-                        opacity: isSelected || isVariantComplete ? 1 : 0.7,
-                      }}
-                    >
-                      <CanvasVariantCard
-                        label={variantPlan?.title || variantLabel}
-                        sublabel={variantPlan?.title ? `${variantLabel}${!isSelected && !isVariantComplete ? ' (click to build)' : ''}` : undefined}
-                        isLoading={(isGenerating || isWireframing) && isSelected && !isVariantComplete}
-                        htmlUrl={variant?.html_url}
-                        wireframeUrl={wireframe?.wireframeUrl}
-                        wireframeHtml={wireframe?.wireframeHtml}
-                        streamingHtml={variantStreamingHtml}
-                        progress={variantProgress}
-                        onClick={canClick ? () => handleVariantClick(variantIndex) : undefined}
-                        viewMode={viewMode}
-                        enableInteractivity={interactivityEnabled}
-                        useLLMEnhancement={useLLMEnhancement}
-                        isHovered={hoveredVariantIndex === variantIndex}
-                      />
-                    </Grid>
+                    <CanvasVariantCard
+                      label={v.plan?.title || variantLabel}
+                      sublabel={v.plan?.title ? `${variantLabel}${!isSelected && !isVariantComplete ? ' (click to build)' : ''}` : undefined}
+                      isLoading={(isGenerating || isWireframing) && isSelected && !isVariantComplete}
+                      htmlUrl={v.variant?.html_url}
+                      wireframeUrl={v.wireframe?.wireframeUrl}
+                      wireframeHtml={v.wireframe?.wireframeHtml}
+                      streamingHtml={variantStreamingHtml}
+                      progress={variantProgress}
+                      onClick={canClick ? () => handleVariantClick(v.index) : undefined}
+                      viewMode={viewMode}
+                      enableInteractivity={interactivityEnabled}
+                      useLLMEnhancement={useLLMEnhancement}
+                      isHovered={hoveredVariantIndex === v.index}
+                    />
                   );
-                })}
-              </Grid>
+                };
+
+                // Single variant = full screen
+                if (plannedVariants.length === 1) {
+                  return (
+                    <Box sx={{ flex: 1, minHeight: 0 }}>
+                      {renderVariantCard(focusedVar, true)}
+                    </Box>
+                  );
+                }
+
+                // Multiple variants = focus+context layout
+                return (
+                  <>
+                    {/* Large focused variant on the left */}
+                    <Box sx={{ flex: 3, minHeight: 0, minWidth: 0 }}>
+                      {renderVariantCard(focusedVar, true)}
+                    </Box>
+
+                    {/* Thumbnails stacked vertically on the right */}
+                    <Box sx={{
+                      flex: 1,
+                      minWidth: 200,
+                      maxWidth: 280,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 1.5,
+                      overflow: 'auto',
+                    }}>
+                      {otherVars.map((v) => (
+                        <Box
+                          key={v.index}
+                          sx={{
+                            minHeight: 140,
+                            flexShrink: 0,
+                            opacity: selectedVariants.includes(v.index) || v.variant?.status === 'complete' ? 1 : 0.7,
+                          }}
+                        >
+                          {renderVariantCard(v, false)}
+                        </Box>
+                      ))}
+                    </Box>
+                  </>
+                );
+              })()}
             </Box>
           )}
 
@@ -5321,59 +5346,77 @@ export const VibePrototyping: React.FC = () => {
                 </Box>
               </Box>
 
-              {/* Gallery Grid - shows all completed variants */}
-              <Box sx={{ flex: 1, p: 2, overflow: 'auto', minHeight: 0 }}>
-                <Grid container spacing={2} sx={{ height: '100%', minHeight: 0 }}>
-                  {(plan?.plans || []).map((p, idx) => {
-                    const variantIndex = idx + 1;
-                    const variant = variants.find((v) => v.variant_index === variantIndex);
-                    const wireframe = wireframes.find(w => w.variantIndex === variantIndex);
+              {/* Focus+Context Gallery - large variant on left, thumbnails on right */}
+              <Box sx={{ flex: 1, display: 'flex', gap: 2, p: 2, minHeight: 0, overflow: 'hidden' }}>
+                {(() => {
+                  // Get all completed variants
+                  const completedVariants = (plan?.plans || [])
+                    .map((p, idx) => ({
+                      index: idx + 1,
+                      plan: p,
+                      variant: variants.find(v => v.variant_index === idx + 1),
+                      wireframe: wireframes.find(w => w.variantIndex === idx + 1),
+                    }))
+                    .filter(v => selectedVariants.includes(v.index) && v.variant?.status === 'complete');
 
-                    // Only show variants that were selected
-                    if (!selectedVariants.includes(variantIndex)) {
-                      return null;
-                    }
+                  if (completedVariants.length === 0) return null;
 
-                    // Skip if variant not complete
-                    if (variant?.status !== 'complete') {
-                      return null;
-                    }
+                  const focusedVar = completedVariants[0];
+                  const otherVars = completedVariants.slice(1);
 
-                    // Calculate grid size: 1 variant = full screen, 2+ = gallery
-                    const completedSelectedCount = variants.filter(
-                      v => v.status === 'complete' && selectedVariants.includes(v.variant_index)
-                    ).length;
-                    const isFullScreen = completedSelectedCount === 1;
+                  const renderVariantCard = (v: typeof focusedVar) => (
+                    <CanvasVariantCard
+                      label={v.plan.title || `Variant ${String.fromCharCode(64 + v.index)}`}
+                      sublabel={v.plan.title ? `Variant ${String.fromCharCode(64 + v.index)}` : undefined}
+                      isLoading={false}
+                      htmlUrl={v.variant?.html_url}
+                      wireframeUrl={v.wireframe?.wireframeUrl}
+                      wireframeHtml={v.wireframe?.wireframeHtml}
+                      progress={100}
+                      onClick={() => handleVariantClick(v.index)}
+                      viewMode={viewMode}
+                      enableInteractivity={interactivityEnabled}
+                      useLLMEnhancement={useLLMEnhancement}
+                      isHovered={hoveredVariantIndex === v.index}
+                    />
+                  );
 
+                  // Single variant = full screen
+                  if (completedVariants.length === 1) {
                     return (
-                      <Grid
-                        item
-                        xs={12}
-                        md={isFullScreen ? 12 : 6}
-                        key={variantIndex}
-                        sx={{
-                          height: isFullScreen ? '100%' : 'auto',
-                          minHeight: isFullScreen ? undefined : 300,
-                        }}
-                      >
-                        <CanvasVariantCard
-                          label={p.title || `Variant ${String.fromCharCode(64 + variantIndex)}`}
-                          sublabel={p.title ? `Variant ${String.fromCharCode(64 + variantIndex)}` : undefined}
-                          isLoading={false}
-                          htmlUrl={variant?.html_url}
-                          wireframeUrl={wireframe?.wireframeUrl}
-                          wireframeHtml={wireframe?.wireframeHtml}
-                          progress={100}
-                          onClick={() => handleVariantClick(variantIndex)}
-                          viewMode={viewMode}
-                          enableInteractivity={interactivityEnabled}
-                          useLLMEnhancement={useLLMEnhancement}
-                          isHovered={hoveredVariantIndex === variantIndex}
-                        />
-                      </Grid>
+                      <Box sx={{ flex: 1, minHeight: 0 }}>
+                        {renderVariantCard(focusedVar)}
+                      </Box>
                     );
-                  })}
-                </Grid>
+                  }
+
+                  // Multiple variants = focus+context layout
+                  return (
+                    <>
+                      {/* Large focused variant on the left */}
+                      <Box sx={{ flex: 3, minHeight: 0, minWidth: 0 }}>
+                        {renderVariantCard(focusedVar)}
+                      </Box>
+
+                      {/* Thumbnails stacked vertically on the right */}
+                      <Box sx={{
+                        flex: 1,
+                        minWidth: 200,
+                        maxWidth: 280,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 1.5,
+                        overflow: 'auto',
+                      }}>
+                        {otherVars.map((v) => (
+                          <Box key={v.index} sx={{ minHeight: 140, flexShrink: 0 }}>
+                            {renderVariantCard(v)}
+                          </Box>
+                        ))}
+                      </Box>
+                    </>
+                  );
+                })()}
               </Box>
             </Box>
           )}
