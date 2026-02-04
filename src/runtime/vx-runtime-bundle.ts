@@ -700,36 +700,52 @@ function sanitizeLLMCode(code: string): string {
 }
 
 /**
- * Escape ALL </script> patterns inside <script> tag content EXCEPT the actual closing tag.
+ * Escape ALL </script> patterns inside <script> tag content to prevent premature tag closing.
  *
  * The browser parser sees ANY </script> and thinks the script tag is closed, even if
  * it's inside a JavaScript string literal. This is a fundamental HTML parsing behavior.
  *
- * Strategy: For each script block, escape all </script except the last one (the real closing tag).
+ * IMPORTANT: Uses DOMParser for reliable script tag identification. The regex approach
+ * with non-greedy matching fails when scripts contain "</script>" in string literals
+ * because it matches to the first </script> it finds.
+ *
+ * Strategy:
+ * 1. Use DOMParser to correctly identify all script elements and their content
+ * 2. Escape </script patterns in each script's content
+ * 3. Rebuild the HTML with the escaped content
  */
 function escapeScriptContentClosingTags(html: string): string {
-  let result = html;
   let totalEscaped = 0;
 
-  // Find all <script>...</script> blocks and process each one
-  // Use a non-greedy match to find individual script blocks
-  result = result.replace(/(<script[^>]*>)([\s\S]*?)(<\/script>)/gi, (fullMatch, openTag, content, closeTag) => {
-    // Count how many </script patterns are in the content (excluding the actual close tag)
-    const innerCloseMatches = content.match(/<\/script/gi);
+  // Use DOMParser to correctly parse script elements
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, 'text/html');
 
-    if (innerCloseMatches && innerCloseMatches.length > 0) {
-      // Escape ALL </script in the content - they're all problematic
+  // Process each script element
+  const scripts = doc.querySelectorAll('script');
+  scripts.forEach(script => {
+    const content = script.textContent || '';
+
+    // Check for </script patterns in the content
+    const matches = content.match(/<\/script/gi);
+    if (matches && matches.length > 0) {
+      // Escape all </script patterns - use <\/script which is valid in JS
       const escapedContent = content.replace(/<\/script/gi, '<\\/script');
-      totalEscaped += innerCloseMatches.length;
-      console.log('[escapeScriptContent] Escaped', innerCloseMatches.length, '</script patterns in script block');
-      return openTag + escapedContent + closeTag;
-    }
+      totalEscaped += matches.length;
+      console.log('[escapeScriptContent] Escaped', matches.length, '</script patterns in script block');
 
-    return fullMatch;
+      // Update the script content
+      script.textContent = escapedContent;
+    }
   });
 
   console.log('[escapeScriptContent] Total </script patterns escaped:', totalEscaped);
-  return result;
+
+  // Serialize back to HTML
+  if (doc.documentElement) {
+    return '<!DOCTYPE html>\n' + doc.documentElement.outerHTML;
+  }
+  return html;
 }
 
 /**
