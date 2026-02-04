@@ -309,14 +309,8 @@ export async function applyModifications(
   // For multi-screen, we'd need to merge them, but typically interactions are per-screen
   let lastInteractionState: InteractionState | null = null;
 
-  // Process each screen again just to get the interaction state
-  // (this is a bit wasteful but keeps the code cleaner)
+  // Process each screen to extract interaction state from modifications
   for (const screenMod of spec.screens) {
-    const baseHtml = screens.get(screenMod.screenId);
-    if (!baseHtml) continue;
-
-    // Parse to extract interaction state
-    const doc = parseHTML(baseHtml);
     const interactionState = createInteractionState();
 
     // Collect interaction tools from modifications
