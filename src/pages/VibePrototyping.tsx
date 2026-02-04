@@ -1874,6 +1874,14 @@ export const VibePrototyping: React.FC = () => {
               const plans = await getVariantPlans(sessionId);
               if (plans.length > 0) {
                 setPlan({ plans, model: '', provider: '' }, true); // skipStatusUpdate
+                // Update planning phase content with actual variant names
+                const variantNames = plans.map((p, i) =>
+                  `${String.fromCharCode(65 + i)}. ${p.title}`
+                ).join('\n');
+                setPhaseContent(prev => ({
+                  ...prev,
+                  planning: `Created 4 unique approaches:\n${variantNames}`,
+                }));
               }
 
               // Load variants and sync status if variants are complete
@@ -2235,6 +2243,15 @@ export const VibePrototyping: React.FC = () => {
       });
 
       setSession(result.session);
+
+      // Update planning phase content with actual variant names
+      const variantNames = result.plans.map((p, i) =>
+        `${String.fromCharCode(65 + i)}. ${p.title}`
+      ).join('\n');
+      setPhaseContent(prev => ({
+        ...prev,
+        planning: `Created 4 unique approaches:\n${variantNames}`,
+      }));
 
       // Stop at plan_ready - user must approve paradigms before wireframing
       setStatus('plan_ready');
