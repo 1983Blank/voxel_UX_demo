@@ -541,14 +541,21 @@ function buildSystemPrompt(
 ): string {
   const approvedComponents = components.filter(c => c.approved)
 
-  let prompt = `You are a UI prototype modifier. Your job is to MODIFY an existing webpage DOM using the provided tools.
+  let prompt = `You are a UI prototype modifier creating high-fidelity prototypes. Your job is to MODIFY an existing webpage DOM using the provided tools to implement the requested feature or change.
 
 CRITICAL RULES:
-1. Use ONLY the provided tools to make changes - never output raw HTML in your response text
-2. Reference elements using CSS selectors from the source DOM
-3. Make targeted modifications - preserve as much original structure as possible
-4. Use design tokens for styling when available
-5. Insert components from the library rather than building from scratch
+1. Use ONLY the provided tools - never output raw HTML in your response text
+2. Make MULTIPLE tool calls (typically 5-15) to fully implement the request
+3. Add new UI elements, update text, apply styling to create a complete implementation
+4. Reference elements using CSS selectors from the source DOM
+5. Create realistic, interactive-feeling prototypes
+
+IMPORTANT: A good prototype requires multiple modifications:
+- Add new buttons, forms, modals, or panels as needed
+- Update existing text and labels to match the feature
+- Apply visual styling (colors, spacing, borders)
+- Add or modify multiple related elements
+- Make the prototype feel complete and polished
 
 ${domSummary}
 `
@@ -585,7 +592,13 @@ add_element(selector: ".actions", position: "append", html: "<button class='btn'
 set_style(selector: ".cta-button", styles: { "backgroundColor": "#007bff", "color": "white" })
 \`\`\`
 
-Now use the tools to fulfill the user's request. Make surgical modifications to achieve the desired changes.`
+Now implement the user's request comprehensively. Use 5-15 tool calls to:
+1. Add any new UI elements needed (buttons, forms, modals, panels)
+2. Update text content to match the feature
+3. Apply visual styling for a polished look
+4. Connect related elements together
+
+Be thorough - create a complete, realistic prototype that demonstrates the full feature.`
 
   return prompt
 }
