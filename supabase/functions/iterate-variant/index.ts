@@ -17,6 +17,21 @@ interface VariantContext {
   screenshotUrl?: string
 }
 
+interface ProductContext {
+  productName?: string
+  productDescription?: string
+  goals?: string[]
+  designPrinciples?: string[]
+  contextSummary?: string
+}
+
+interface CurrentVariantPlan {
+  title: string
+  description: string
+  approach: string
+  keyFeatures?: string[]
+}
+
 interface IterateRequest {
   sessionId: string
   variantId: string
@@ -26,6 +41,8 @@ interface IterateRequest {
   provider?: 'anthropic' | 'openai' | 'google'
   model?: string
   otherVariantsContext?: VariantContext[]
+  productContext?: ProductContext
+  currentVariantPlan?: CurrentVariantPlan
 }
 
 // System prompt for iteration
@@ -53,22 +70,60 @@ function buildIterationPrompt(
   currentHtml: string,
   iterationPrompt: string,
   variantIndex: number,
-  otherVariantsContext?: VariantContext[]
+  otherVariantsContext?: VariantContext[],
+  productContext?: ProductContext,
+  currentVariantPlan?: CurrentVariantPlan
 ): string {
-  // Build context about other variants if provided
-  let contextSection = ''
+  const sections: string[] = []
+
+  // Product context section
+  if (productContext) {
+    const productParts: string[] = []
+    if (productContext.productName) {
+      productParts.push(`Product: ${productContext.productName}`)
+    }
+    if (productContext.productDescription) {
+      productParts.push(`Description: ${productContext.productDescription}`)
+    }
+    if (productContext.goals && productContext.goals.length > 0) {
+      productParts.push(`Goals:\n${productContext.goals.map(g => `- ${g}`).join('\n')}`)
+    }
+    if (productContext.designPrinciples && productContext.designPrinciples.length > 0) {
+      productParts.push(`Design Principles:\n${productContext.designPrinciples.map(p => `- ${p}`).join('\n')}`)
+    }
+    if (productContext.contextSummary) {
+      productParts.push(`Additional Context: ${productContext.contextSummary}`)
+    }
+    if (productParts.length > 0) {
+      sections.push(`## Product Context\n${productParts.join('\n\n')}`)
+    }
+  }
+
+  // Current variant plan context
+  if (currentVariantPlan) {
+    const planParts: string[] = [
+      `Variant ${String.fromCharCode(64 + variantIndex)}: "${currentVariantPlan.title}"`,
+      `Approach: ${currentVariantPlan.approach}`,
+      `Description: ${currentVariantPlan.description}`,
+    ]
+    if (currentVariantPlan.keyFeatures && currentVariantPlan.keyFeatures.length > 0) {
+      planParts.push(`Key Features:\n${currentVariantPlan.keyFeatures.map(f => `- ${f}`).join('\n')}`)
+    }
+    sections.push(`## Current Variant Plan\n${planParts.join('\n')}`)
+  }
+
+  // Other variants context
   if (otherVariantsContext && otherVariantsContext.length > 0) {
-    contextSection = `
-Context about other variants in this prototype session (for awareness, not for copying):
+    sections.push(`## Other Variants (for awareness, not for copying)
 ${otherVariantsContext.map(v =>
   `- Variant ${String.fromCharCode(64 + v.variantIndex)} (${v.approach}): "${v.title}"
    ${v.description}`
 ).join('\n')}
 
-You are modifying Variant ${String.fromCharCode(64 + variantIndex)}. Ensure your changes maintain this variant's unique identity and approach while addressing the user's request.
-
-`
+Ensure your changes maintain this variant's unique identity and approach while addressing the user's request.`)
   }
+
+  const contextSection = sections.length > 0 ? sections.join('\n\n') + '\n\n' : ''
 
   return `${contextSection}Current HTML to modify:
 ${currentHtml}
@@ -300,12 +355,14 @@ Deno.serve(async (req) => {
       throw new Error('Failed to retrieve API key')
     }
 
-    // Build prompt with variant context
+    // Build prompt with full context (product, variant plan, other variants)
     const prompt = buildIterationPrompt(
       body.currentHtml,
       body.iterationPrompt,
       body.variantIndex,
-      body.otherVariantsContext
+      body.otherVariantsContext,
+      body.productContext,
+      body.currentVariantPlan
     )
 
     // Generate iterated HTML based on provider

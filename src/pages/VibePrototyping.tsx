@@ -29,8 +29,6 @@ import FormControlLabel from '@mui/material/FormControlLabel';
 import RadioGroup from '@mui/material/RadioGroup';
 import Radio from '@mui/material/Radio';
 import Drawer from '@mui/material/Drawer';
-import List from '@mui/material/List';
-import ListItem from '@mui/material/ListItem';
 import Select from '@mui/material/Select';
 import InputLabel from '@mui/material/InputLabel';
 import ToggleButton from '@mui/material/ToggleButton';
@@ -115,7 +113,6 @@ import {
   getVibeSession,
   getVariantPlans,
   approvePlan,
-  type VibeSession,
 } from '@/services/variantPlanService';
 import {
   getVariants,
@@ -142,6 +139,8 @@ import {
   revertToIteration,
   type VibeIteration,
   type VariantContext,
+  type ProductContextForIteration,
+  type CurrentVariantPlan,
 } from '@/services/iterationService';
 import {
   generateInteractivePrototypesWithAgent,
@@ -1180,8 +1179,6 @@ function CanvasVariantCard({
 function InlineExpansionGrid({
   wireframes,
   focusedIndex,
-  onEditClick,
-  onIterateClick,
   getVariantByIndex,
   viewMode = 'prototypes',
   enableInteractivity = false,
@@ -1190,8 +1187,6 @@ function InlineExpansionGrid({
 }: {
   wireframes: Array<{ variantIndex: number; wireframeUrl: string; wireframeHtml?: string }>;
   focusedIndex: number;
-  onEditClick?: () => void;
-  onIterateClick?: () => void;
   getVariantByIndex: (index: number) => { html_url?: string; status: string; iteration_count?: number } | undefined;
   viewMode?: 'wireframes' | 'prototypes';
   enableInteractivity?: boolean;
@@ -1289,7 +1284,7 @@ function InlineExpansionGrid({
     <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', p: 2, minHeight: 0 }}>
       {/* Header toolbar with status and actions */}
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
-        {/* Left: Status chips */}
+        {/* Status chips */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           {isWireframe && (
             <Chip
@@ -1303,6 +1298,18 @@ function InlineExpansionGrid({
               }}
             />
           )}
+          {!isWireframe && isComplete && (
+            <Chip
+              size="small"
+              label="Prototype"
+              sx={{
+                bgcolor: 'rgba(102, 126, 234, 0.2)',
+                color: '#667eea',
+                fontSize: 11,
+                height: 22,
+              }}
+            />
+          )}
           {focusedVariant?.iteration_count && focusedVariant.iteration_count > 0 && (
             <Chip
               size="small"
@@ -1311,48 +1318,6 @@ function InlineExpansionGrid({
             />
           )}
         </Box>
-
-        {/* Right: Action buttons for complete variants */}
-        {isComplete && (
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            {onIterateClick && (
-              <Button
-                variant="outlined"
-                size="small"
-                startIcon={<ArrowsClockwise size={16} />}
-                onClick={onIterateClick}
-                sx={{
-                  borderColor: '#764ba2',
-                  color: '#764ba2',
-                  '&:hover': {
-                    borderColor: '#667eea',
-                    bgcolor: 'rgba(118, 75, 162, 0.04)',
-                  },
-                }}
-              >
-                Iterate
-              </Button>
-            )}
-            {onEditClick && (
-              <Button
-                variant="outlined"
-                size="small"
-                startIcon={<Code size={16} />}
-                onClick={onEditClick}
-                sx={{
-                  borderColor: 'grey.400',
-                  color: 'text.secondary',
-                  '&:hover': {
-                    borderColor: 'grey.600',
-                    bgcolor: 'grey.50',
-                  },
-                }}
-              >
-                Edit Code
-              </Button>
-            )}
-          </Box>
-        )}
       </Box>
 
       {/* Full screen preview */}
@@ -1831,7 +1796,6 @@ export const VibePrototyping: React.FC = () => {
   }, [status, variantStartTimes, completedVariantIndices]);
 
   // Iteration state
-  const [iterationDialogOpen, setIterationDialogOpen] = useState(false);
   const [iterationPrompt, setIterationPrompt] = useState('');
   const [isIterating, setIsIterating] = useState(false);
   const [iterationHistory, setIterationHistory] = useState<VibeIteration[]>([]);
@@ -3257,7 +3221,6 @@ export const VibePrototyping: React.FC = () => {
     }
 
     setIsIterating(true);
-    setIterationDialogOpen(false);
 
     try {
       // Add messages with variant metadata for sub-thread display
@@ -3278,6 +3241,27 @@ export const VibePrototyping: React.FC = () => {
           };
         });
 
+      // Build product context from context files
+      const productContext: ProductContextForIteration = {
+        productName: sourceMetadata?.title || screen?.title,
+        productDescription: sourceMetadata?.description,
+        goals: contextFiles
+          .filter(f => f.category === 'goals')
+          .map(f => f.title),
+        contextSummary: contextFiles.length > 0
+          ? `${contextFiles.length} context files loaded: ${contextFiles.map(f => f.title).join(', ')}`
+          : undefined,
+      };
+
+      // Build current variant plan context
+      const currentPlan = plan?.plans.find(p => p.variant_index === focusedVariantIndex);
+      const currentVariantPlan: CurrentVariantPlan | undefined = currentPlan ? {
+        title: currentPlan.title,
+        description: currentPlan.description,
+        approach: getVibeVariantLabel(focusedVariantIndex),
+        keyFeatures: currentPlan.key_features,
+      } : undefined;
+
       const result = await iterateOnVariant(
         currentSession.id,
         focusedVariant.id,
@@ -3289,7 +3273,9 @@ export const VibePrototyping: React.FC = () => {
             // Could show progress in chat
           }
         },
-        otherVariantsContext
+        otherVariantsContext,
+        productContext,
+        currentVariantPlan
       );
 
       if (result.success && result.htmlUrl) {
@@ -3319,7 +3305,7 @@ export const VibePrototyping: React.FC = () => {
       setIsIterating(false);
       setIterationPrompt('');
     }
-  }, [currentSession, focusedVariantIndex, fetchedVariantHtml, iterationPrompt, getVariantByIndex, addChatMessage, setVariants]);
+  }, [currentSession, focusedVariantIndex, fetchedVariantHtml, iterationPrompt, getVariantByIndex, addChatMessage, setVariants, contextFiles, sourceMetadata, screen, plan]);
 
   // Handle revert to previous iteration
   const handleRevertIteration = useCallback(async (iterationId: string) => {
@@ -3561,14 +3547,49 @@ export const VibePrototyping: React.FC = () => {
     showSuccess('Link copied to clipboard');
   }, [shareLink, showSuccess]);
 
-  // Handle variant selection
-  const handleVariantClick = useCallback((index: number) => {
-    setFocusedVariantIndex(index);
-    // When clicking a variant from complete state, ensure we're viewing prototypes
-    if (status === 'complete') {
-      setViewMode('prototypes');
+  // Handle variant selection - can also trigger generation for un-built variants
+  const handleVariantClick = useCallback(async (index: number) => {
+    const variant = getVariantByIndex(index);
+    const wireframe = wireframes.find(w => w.variantIndex === index);
+    const hasWireframe = !!wireframe?.wireframeUrl || !!wireframe?.wireframeHtml;
+    const hasPrototype = !!variant?.html_url && variant?.status === 'complete';
+
+    // If prototype exists, focus it
+    if (hasPrototype) {
+      setFocusedVariantIndex(index);
+      if (status === 'complete') {
+        setViewMode('prototypes');
+      }
+      return;
     }
-  }, [status]);
+
+    // If wireframe exists but no prototype, offer to build it
+    if (hasWireframe && !hasPrototype && status === 'wireframe_ready') {
+      // Focus the variant and then build it
+      setFocusedVariantIndex(index);
+      // Add to selected variants and trigger build
+      const { setSelectedVariants } = useVibeStore.getState();
+      setSelectedVariants([index]);
+      addChatMessage('assistant', `Building high-fidelity prototype for Variant ${String.fromCharCode(64 + index)}...`);
+      // Trigger build after a short delay to let UI update
+      setTimeout(() => handleBuildHighFidelity(), 100);
+      return;
+    }
+
+    // If only planned (no wireframe), offer to wireframe it
+    if (!hasWireframe && status === 'plan_ready') {
+      // Add to selected variants and trigger wireframe
+      const { setSelectedVariants } = useVibeStore.getState();
+      setSelectedVariants([index]);
+      addChatMessage('assistant', `Creating wireframe for Variant ${String.fromCharCode(64 + index)}...`);
+      // Trigger wireframe creation
+      setTimeout(() => handleCreateWireframes(), 100);
+      return;
+    }
+
+    // Default: just focus the variant
+    setFocusedVariantIndex(index);
+  }, [status, getVariantByIndex, wireframes, addChatMessage, handleBuildHighFidelity, handleCreateWireframes]);
 
   const handleBackToGrid = useCallback(() => {
     setFocusedVariantIndex(null);
@@ -5172,30 +5193,43 @@ export const VibePrototyping: React.FC = () => {
 
           {/* Loading/Planning/Wireframing/Generating state - gallery or single expanded variant */}
           {/* During generation, users can click completed variants to preview them */}
+          {/* Show all planned variants - selected ones are being built, unselected can be clicked to add */}
           {(isPlanning || isPlanReady || isWireframing || isWireframeReady || isGenerating) && !focusedVariantIndex && (
             <Box sx={{ flex: 1, p: 2, overflow: 'auto', minHeight: 0 }}>
               <Grid container spacing={2} sx={{ height: '100%', minHeight: 0 }}>
                 {[1, 2, 3, 4].map((variantIndex) => {
-                  // Only show selected variants
-                  if (!selectedVariants.includes(variantIndex)) {
+                  const variantPlan = plan?.plans?.find(p => p.variant_index === variantIndex);
+                  // Skip variants that don't have a plan
+                  if (!variantPlan) {
                     return null;
                   }
 
-                  const variantPlan = plan?.plans?.find(p => p.variant_index === variantIndex);
                   const variantLabel = `Variant ${String.fromCharCode(64 + variantIndex)}`;
                   const variant = variants.find((v) => v.variant_index === variantIndex);
                   const variantProgress = getVariantProgress(variantIndex);
                   const variantStreamingHtml = streamingHtml[variantIndex];
                   const wireframe = wireframes.find(w => w.variantIndex === variantIndex);
 
+                  // Track if this variant was selected for building
+                  const isSelected = selectedVariants.includes(variantIndex);
+
                   // Check completion: database status OR completedVariantIndices (for interactive mode during generation)
                   const isVariantComplete = variant?.status === 'complete' || completedVariantIndices.has(variantIndex);
 
-                  // Allow clicking when: variant complete OR wireframe ready with wireframe available
-                  const canClick = isVariantComplete || (isWireframeReady && wireframe?.wireframeUrl);
+                  // Allow clicking when:
+                  // 1. Variant is complete (has prototype) - to focus it
+                  // 2. Wireframe ready with wireframe available - to focus or build prototype
+                  // 3. Plan ready with plan available - to generate wireframe (even if not selected)
+                  const hasWireframe = wireframe?.wireframeUrl || wireframe?.wireframeHtml;
+                  const hasPlan = !!variantPlan;
+                  const canClick = isVariantComplete ||
+                    (isWireframeReady && hasWireframe) ||
+                    (isPlanReady && hasPlan && !isCreatingWireframes) ||
+                    (isWireframeReady && hasPlan && !hasWireframe && !isCreatingWireframes); // Allow clicking unbuilt variants to build them
 
-                  // Single variant = full screen, 2+ variants = gallery
-                  const isFullScreen = selectedVariants.length === 1;
+                  // Calculate grid size based on number of planned variants
+                  const plannedCount = plan?.plans?.length || 0;
+                  const isFullScreen = plannedCount === 1;
 
                   return (
                     <Grid
@@ -5206,12 +5240,14 @@ export const VibePrototyping: React.FC = () => {
                       sx={{
                         height: isFullScreen ? '100%' : 'auto',
                         minHeight: isFullScreen ? undefined : 300,
+                        // Visual indicator for unselected variants
+                        opacity: isSelected || isVariantComplete ? 1 : 0.7,
                       }}
                     >
                       <CanvasVariantCard
                         label={variantPlan?.title || variantLabel}
-                        sublabel={variantPlan?.title ? variantLabel : undefined}
-                        isLoading={isGenerating && !isVariantComplete}
+                        sublabel={variantPlan?.title ? `${variantLabel}${!isSelected && !isVariantComplete ? ' (click to build)' : ''}` : undefined}
+                        isLoading={(isGenerating || isWireframing) && isSelected && !isVariantComplete}
                         htmlUrl={variant?.html_url}
                         wireframeUrl={wireframe?.wireframeUrl}
                         wireframeHtml={wireframe?.wireframeHtml}
@@ -5368,8 +5404,6 @@ export const VibePrototyping: React.FC = () => {
                 <InlineExpansionGrid
                   wireframes={wireframes}
                   focusedIndex={focusedVariantIndex}
-                  onEditClick={() => setEditMode('code')}
-                  onIterateClick={() => setIterationDialogOpen(true)}
                   getVariantByIndex={getVariantByIndex}
                   viewMode={viewMode}
                   enableInteractivity={interactivityEnabled}
@@ -5429,23 +5463,6 @@ export const VibePrototyping: React.FC = () => {
                       <ChatTeardropText size={18} weight={variantFeedback.get(focusedVariantIndex!)?.length ? 'fill' : 'regular'} />
                     </IconButton>
                   </Tooltip>
-                  <Button
-                    variant="outlined"
-                    size="small"
-                    startIcon={isIterating ? <CircularProgress size={14} /> : <ArrowsClockwise size={16} />}
-                    onClick={() => setIterationDialogOpen(true)}
-                    disabled={isIterating || !fetchedVariantHtml}
-                    sx={{
-                      borderColor: '#764ba2',
-                      color: '#764ba2',
-                      '&:hover': {
-                        borderColor: '#667eea',
-                        bgcolor: 'rgba(118, 75, 162, 0.04)',
-                      },
-                    }}
-                  >
-                    {isIterating ? 'Iterating...' : 'Iterate'}
-                  </Button>
                 </Box>
               </Box>
 
@@ -5996,63 +6013,6 @@ export const VibePrototyping: React.FC = () => {
               </Button>
             </>
           )}
-        </DialogActions>
-      </Dialog>
-
-      {/* Iteration Dialog */}
-      <Dialog
-        open={iterationDialogOpen}
-        onClose={() => setIterationDialogOpen(false)}
-        maxWidth="sm"
-        fullWidth
-        TransitionComponent={Fade}
-      >
-        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1, fontFamily: config.fonts.display }}>
-          <ArrowsClockwise size={24} />
-          Iterate on Variant {focusedVariantIndex ? String.fromCharCode(64 + focusedVariantIndex) : ''}
-        </DialogTitle>
-        <DialogContent>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            Describe what changes you want to make to this variant. The AI will modify the current design based on your request.
-          </Typography>
-          <TextField
-            fullWidth
-            multiline
-            rows={4}
-            placeholder="e.g., Make the header larger and change the primary color to blue"
-            value={iterationPrompt}
-            onChange={(e) => setIterationPrompt(e.target.value)}
-            autoFocus
-            sx={{
-              '& .MuiOutlinedInput-root': {
-                fontFamily: config.fonts.body,
-              },
-            }}
-          />
-          {iterationHistory.length > 0 && (
-            <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-              This variant has {iterationHistory.length} previous iteration{iterationHistory.length > 1 ? 's' : ''}
-            </Typography>
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setIterationDialogOpen(false)} variant="outlined">
-            Cancel
-          </Button>
-          <Button
-            variant="contained"
-            startIcon={<Lightning size={18} />}
-            onClick={handleIterate}
-            disabled={!iterationPrompt.trim() || isIterating}
-            sx={{
-              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-              '&:hover': {
-                background: 'linear-gradient(135deg, #5a6fd6 0%, #6a4190 100%)',
-              },
-            }}
-          >
-            {isIterating ? 'Iterating...' : 'Apply Changes'}
-          </Button>
         </DialogActions>
       </Dialog>
 

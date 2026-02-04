@@ -53,6 +53,27 @@ export interface VariantContext {
 }
 
 /**
+ * Product/account context for iteration
+ */
+export interface ProductContextForIteration {
+  productName?: string;
+  productDescription?: string;
+  goals?: string[];
+  designPrinciples?: string[];
+  contextSummary?: string;
+}
+
+/**
+ * Current variant's plan context
+ */
+export interface CurrentVariantPlan {
+  title: string;
+  description: string;
+  approach: string;
+  keyFeatures?: string[];
+}
+
+/**
  * Iterate on a variant with a refinement prompt
  */
 export async function iterateOnVariant(
@@ -62,7 +83,9 @@ export async function iterateOnVariant(
   currentHtml: string,
   iterationPrompt: string,
   onProgress?: ProgressCallback,
-  otherVariantsContext?: VariantContext[]
+  otherVariantsContext?: VariantContext[],
+  productContext?: ProductContextForIteration,
+  currentVariantPlan?: CurrentVariantPlan
 ): Promise<IterationResult> {
   if (!isSupabaseConfigured()) {
     throw new Error('Supabase not configured');
@@ -104,7 +127,9 @@ export async function iterateOnVariant(
       variantIndex,
       currentHtml,
       iterationPrompt,
-      otherVariantsContext,  // Optional context about other variants
+      otherVariantsContext,
+      productContext,
+      currentVariantPlan,
     },
     headers: {
       Authorization: `Bearer ${session.access_token}`,
