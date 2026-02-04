@@ -1034,7 +1034,7 @@ export async function saveToolModeVariant(
     const htmlBlob = new Blob([html], { type: 'text/html' });
 
     const { error: uploadError } = await supabase.storage
-      .from('vibe-variants')
+      .from('vibe-files')
       .upload(htmlPath, htmlBlob, {
         contentType: 'text/html',
         upsert: true,
@@ -1047,7 +1047,7 @@ export async function saveToolModeVariant(
 
     // Get public URL for HTML
     const { data: urlData } = supabase.storage
-      .from('vibe-variants')
+      .from('vibe-files')
       .getPublicUrl(htmlPath);
 
     const htmlUrl = urlData.publicUrl;
