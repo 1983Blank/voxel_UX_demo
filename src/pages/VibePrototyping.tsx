@@ -116,6 +116,7 @@ import {
   saveVariantPartialHtml,
   getPartialHtmlForSession,
   GenerationError,
+  type VibeVariant,
 } from '@/services/variantCodeService';
 import {
   generateVisualWireframes,
@@ -1785,6 +1786,66 @@ export const VibePrototyping: React.FC = () => {
     }).catch(console.error);
   }, []);
 
+  // Helper function to restore VirtualFS from html_url when checkpoints aren't available
+  // This handles tool-mode variants that were saved to storage
+  const restoreFromHtmlUrls = async (
+    dbVariants: VibeVariant[],
+    prototypeStore: ReturnType<typeof usePrototypeStore.getState>
+  ) => {
+    console.log('[VibePrototyping] Restoring from html_url for', dbVariants.length, 'variants');
+
+    const INDEX_TO_APPROACH: Record<number, string> = {
+      1: 'minimal',
+      2: 'feature-rich',
+      3: 'gamified',
+      4: 'accessible',
+    };
+
+    // Initialize store if empty
+    if (Object.keys(prototypeStore.variants).length === 0) {
+      const approaches = dbVariants.map(v =>
+        INDEX_TO_APPROACH[v.variant_index] || 'minimal'
+      );
+      prototypeStore.startGeneration(approaches as ('minimal' | 'feature-rich' | 'gamified' | 'accessible')[]);
+    }
+
+    for (const dbVariant of dbVariants) {
+      if (!dbVariant.html_url) continue;
+
+      try {
+        console.log(`[VibePrototyping] Fetching HTML for variant ${dbVariant.variant_index} from:`, dbVariant.html_url);
+        const response = await fetch(dbVariant.html_url);
+        if (!response.ok) {
+          console.warn(`[VibePrototyping] Failed to fetch HTML for variant ${dbVariant.variant_index}`);
+          continue;
+        }
+
+        const html = await response.text();
+        console.log(`[VibePrototyping] Loaded ${html.length} bytes for variant ${dbVariant.variant_index}`);
+
+        // Find the variant ID in the store
+        const approach = INDEX_TO_APPROACH[dbVariant.variant_index] || 'minimal';
+        const variantId = Object.keys(prototypeStore.variants).find(
+          id => prototypeStore.variants[id].approach === approach
+        );
+
+        if (variantId) {
+          const files = [{ path: 'index.html', content: html, type: 'html' as const }];
+          prototypeStore.setVariantReady(variantId, files, []);
+          console.log(`[VibePrototyping] Restored VirtualFS for variant ${dbVariant.variant_index}`);
+
+          // Also set streamingHtml for preview
+          setStreamingHtml(prev => ({
+            ...prev,
+            [dbVariant.variant_index]: html,
+          }));
+        }
+      } catch (err) {
+        console.error(`[VibePrototyping] Error restoring variant ${dbVariant.variant_index}:`, err);
+      }
+    }
+  };
+
   // Initialize screen data
   useEffect(() => {
     const init = async () => {
@@ -1978,10 +2039,14 @@ export const VibePrototyping: React.FC = () => {
                     if (restoration.restored) {
                       console.log('[VibePrototyping] Successfully restored', restoration.results?.length, 'variants from checkpoint');
                     } else {
-                      console.log('[VibePrototyping] No checkpoint data available for restoration');
+                      console.log('[VibePrototyping] No checkpoint data available, trying to restore from html_url...');
+                      // Fallback: restore from html_url for tool mode variants
+                      await restoreFromHtmlUrls(existingVariants, prototypeStore);
                     }
                   } catch (err) {
                     console.warn('[VibePrototyping] Failed to restore from checkpoint:', err);
+                    // Fallback: restore from html_url for tool mode variants
+                    await restoreFromHtmlUrls(existingVariants, prototypeStore);
                   }
                 }
               }

@@ -996,3 +996,137 @@ export async function getVariantSpec(
     return null;
   }
 }
+
+/**
+ * Save tool-mode generated HTML to storage and update/create variant record
+ * This enables persistence across page refreshes for tool-mode generation
+ */
+export async function saveToolModeVariant(
+  sessionId: string,
+  planId: string,
+  variantIndex: number,
+  html: string,
+  spec: ModificationSpec,
+  model?: string,
+  _provider?: string  // For future use
+): Promise<VibeVariant | null> {
+  if (!isSupabaseConfigured()) {
+    console.error('[VariantCodeService] Supabase not configured');
+    return null;
+  }
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    console.error('[VariantCodeService] Not authenticated');
+    return null;
+  }
+
+  console.log('[VariantCodeService] Saving tool-mode variant:', {
+    sessionId,
+    variantIndex,
+    htmlLength: html.length,
+    specScreens: spec.screens?.length || 0,
+  });
+
+  try {
+    // Upload HTML to storage
+    const htmlPath = `${user.id}/${sessionId}/variant_${variantIndex}.html`;
+    const htmlBlob = new Blob([html], { type: 'text/html' });
+
+    const { error: uploadError } = await supabase.storage
+      .from('vibe-variants')
+      .upload(htmlPath, htmlBlob, {
+        contentType: 'text/html',
+        upsert: true,
+      });
+
+    if (uploadError) {
+      console.error('[VariantCodeService] Failed to upload HTML:', uploadError);
+      return null;
+    }
+
+    // Get public URL for HTML
+    const { data: urlData } = supabase.storage
+      .from('vibe-variants')
+      .getPublicUrl(htmlPath);
+
+    const htmlUrl = urlData.publicUrl;
+
+    // Upload spec to storage
+    const specPath = `${user.id}/${sessionId}/variant_${variantIndex}_spec.json`;
+    const specBlob = new Blob([JSON.stringify(spec, null, 2)], { type: 'application/json' });
+
+    await supabase.storage
+      .from('vibe-files')
+      .upload(specPath, specBlob, {
+        contentType: 'application/json',
+        upsert: true,
+      });
+
+    // Check if variant record exists
+    const { data: existingVariant } = await supabase
+      .from('vibe_variants')
+      .select('id')
+      .eq('session_id', sessionId)
+      .eq('variant_index', variantIndex)
+      .single();
+
+    let variant: VibeVariant;
+
+    if (existingVariant) {
+      // Update existing variant
+      const { data: updatedVariant, error: updateError } = await supabase
+        .from('vibe_variants')
+        .update({
+          html_path: htmlPath,
+          html_url: htmlUrl,
+          status: 'complete',
+          generation_model: model || 'claude-sonnet-4-20250514',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', existingVariant.id)
+        .select()
+        .single();
+
+      if (updateError) {
+        console.error('[VariantCodeService] Failed to update variant:', updateError);
+        return null;
+      }
+
+      variant = updatedVariant as VibeVariant;
+    } else {
+      // Create new variant record
+      const { data: newVariant, error: insertError } = await supabase
+        .from('vibe_variants')
+        .insert({
+          session_id: sessionId,
+          plan_id: planId,
+          variant_index: variantIndex,
+          html_path: htmlPath,
+          html_url: htmlUrl,
+          status: 'complete',
+          generation_model: model || 'claude-sonnet-4-20250514',
+        })
+        .select()
+        .single();
+
+      if (insertError) {
+        console.error('[VariantCodeService] Failed to insert variant:', insertError);
+        return null;
+      }
+
+      variant = newVariant as VibeVariant;
+    }
+
+    console.log('[VariantCodeService] Tool-mode variant saved:', {
+      variantId: variant.id,
+      variantIndex,
+      htmlUrl,
+    });
+
+    return variant;
+  } catch (error) {
+    console.error('[VariantCodeService] Error saving tool-mode variant:', error);
+    return null;
+  }
+}

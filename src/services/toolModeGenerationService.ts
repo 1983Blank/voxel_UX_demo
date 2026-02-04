@@ -23,6 +23,7 @@ import {
   applyModifications,
   stripScripts,
 } from './domModifier';
+import { saveToolModeVariant } from './variantCodeService';
 import type {
   ModificationSpec,
   ExtractedComponentForTools,
@@ -665,6 +666,23 @@ export async function generateVariantToolMode(
 
   // Mark all steps as completed
   customSteps.forEach(step => { step.status = 'completed'; });
+
+  // Save variant to storage and database for persistence across refreshes
+  try {
+    await saveToolModeVariant(
+      sessionId,
+      plan.id,
+      variantIndex,
+      html,
+      specResult.spec,
+      specResult.model,
+      specResult.provider
+    );
+    console.log('[ToolModeGeneration] Variant saved to database:', variantIndex);
+  } catch (saveError) {
+    // Log but don't fail - the variant is still usable in memory
+    console.error('[ToolModeGeneration] Failed to save variant to database:', saveError);
+  }
 
   onProgress?.({
     stage: 'complete',
