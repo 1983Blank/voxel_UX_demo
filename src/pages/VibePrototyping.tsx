@@ -5189,7 +5189,7 @@ export const VibePrototyping: React.FC = () => {
           )}
 
           {/* Plan ready state - show captured screen with plan cards on side */}
-          {isPlanReady && !focusedVariantIndex && screen?.editedHtml && plan?.plans?.length > 0 && (
+          {isPlanReady && !focusedVariantIndex && screen?.editedHtml && (plan?.plans?.length ?? 0) > 0 && (
             <Box sx={{ flex: 1, display: 'flex', gap: 2, p: 2, minHeight: 0, overflow: 'hidden' }}>
               {/* Captured screen as main focus */}
               <Box sx={{ flex: 3, minHeight: 0, minWidth: 0 }}>
@@ -5227,7 +5227,7 @@ export const VibePrototyping: React.FC = () => {
                 <Typography variant="caption" color="text.secondary" sx={{ px: 0.5 }}>
                   Planned Variants
                 </Typography>
-                {plan.plans.map((p) => {
+                {plan!.plans!.map((p) => {
                   const variantLabel = `Variant ${String.fromCharCode(64 + p.variant_index)}`;
                   const isSelected = selectedVariants.includes(p.variant_index);
                   return (
