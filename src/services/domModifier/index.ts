@@ -67,35 +67,40 @@ function serializeDOM(doc: Document): string {
 
 /**
  * Strip all script tags from HTML to prevent errors from source page scripts
- * Preserves the visual structure while removing JavaScript
+ * Uses regex for reliability with SingleFile captures and complex HTML
  */
 export function stripScripts(html: string): string {
-  const doc = parseHTML(html);
+  let result = html;
+  let scriptCount = 0;
+  let noscriptCount = 0;
+  let eventHandlerCount = 0;
 
-  // Remove all script tags
-  const scripts = doc.querySelectorAll('script');
-  scripts.forEach(script => script.remove());
+  // Count and remove script tags (including with attributes)
+  // Match <script...>...</script> including multiline content
+  const scriptMatches = result.match(/<script\b[^>]*>[\s\S]*?<\/script>/gi);
+  scriptCount = scriptMatches?.length || 0;
+  result = result.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '');
 
-  // Remove inline event handlers (onclick, onload, etc.)
-  const allElements = doc.querySelectorAll('*');
-  allElements.forEach(el => {
-    // Get all attributes
-    const attrs = Array.from(el.attributes);
-    attrs.forEach(attr => {
-      // Remove event handler attributes
-      if (attr.name.startsWith('on')) {
-        el.removeAttribute(attr.name);
-      }
-    });
-  });
+  // Remove noscript tags
+  const noscriptMatches = result.match(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi);
+  noscriptCount = noscriptMatches?.length || 0;
+  result = result.replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, '');
 
-  // Remove noscript tags (they often contain fallback content we don't need)
-  const noscripts = doc.querySelectorAll('noscript');
-  noscripts.forEach(ns => ns.remove());
+  // Remove inline event handlers (onclick, onload, onerror, etc.)
+  // Match on* attributes with their values
+  const beforeEventStrip = result.length;
+  result = result.replace(/\s+on\w+\s*=\s*["'][^"']*["']/gi, '');
+  result = result.replace(/\s+on\w+\s*=\s*[^\s>]+/gi, ''); // unquoted handlers
+  eventHandlerCount = Math.round((beforeEventStrip - result.length) / 20); // rough estimate
 
-  console.log(`[domModifier] Stripped ${scripts.length} scripts, ${noscripts.length} noscripts`);
+  // Remove javascript: URLs in href/src attributes
+  result = result.replace(/\s+href\s*=\s*["']javascript:[^"']*["']/gi, ' href="#"');
+  result = result.replace(/\s+src\s*=\s*["']javascript:[^"']*["']/gi, '');
 
-  return serializeDOM(doc);
+  console.log(`[domModifier] Stripped ${scriptCount} scripts, ${noscriptCount} noscripts, ~${eventHandlerCount} event handlers`);
+  console.log(`[domModifier] HTML size: ${html.length} -> ${result.length} bytes (${Math.round((1 - result.length/html.length) * 100)}% reduction)`);
+
+  return result;
 }
 
 /**
