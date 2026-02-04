@@ -544,6 +544,8 @@ function VariantCard({
   onToggleCheck,
   onClick,
   agentSteps,
+  onMouseEnter,
+  onMouseLeave,
 }: {
   title: string;
   description: string;
@@ -563,6 +565,10 @@ function VariantCard({
   onClick?: () => void;
   /** Agent progress steps for granular display */
   agentSteps?: Array<{ stepKey: string; label: string; status: 'pending' | 'in_progress' | 'completed' | 'failed' }>;
+  /** Hover handler for cross-panel highlighting */
+  onMouseEnter?: () => void;
+  /** Mouse leave handler for cross-panel highlighting */
+  onMouseLeave?: () => void;
 }) {
   const { config } = useThemeStore();
   const [showWireframe, setShowWireframe] = useState(false);
@@ -590,6 +596,8 @@ function VariantCard({
         } : {},
       }}
       onClick={onClick}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
     >
       <CardContent sx={{ py: 1.5, px: 2, '&:last-child': { pb: 1.5 } }}>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
@@ -902,6 +910,7 @@ function CanvasVariantCard({
   viewMode = 'prototypes',
   enableInteractivity = false,
   useLLMEnhancement = true,
+  isHovered = false,
 }: {
   label: string;
   isLoading?: boolean;
@@ -914,6 +923,8 @@ function CanvasVariantCard({
   viewMode?: 'wireframes' | 'prototypes';
   enableInteractivity?: boolean;
   useLLMEnhancement?: boolean;
+  /** Whether this card is being hovered via cross-panel highlighting */
+  isHovered?: boolean;
 }) {
   // Show streaming preview if available during loading OR if no htmlUrl (interactive mode fallback)
   const showStreamingPreview = streamingHtml && streamingHtml.length > 100 && (isLoading || !htmlUrl);
@@ -933,6 +944,12 @@ function CanvasVariantCard({
         flexDirection: 'column',
         cursor: onClick ? 'pointer' : 'default',
         transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+        // Cross-panel hover highlight effect
+        ...(isHovered && {
+          borderColor: '#667eea',
+          boxShadow: '0 0 0 3px rgba(102, 126, 234, 0.3), 0 8px 24px rgba(102, 126, 234, 0.15)',
+          transform: 'scale(1.01)',
+        }),
         '&:hover': onClick ? {
           borderColor: '#764ba2',
           boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
@@ -1495,6 +1512,7 @@ export const VibePrototyping: React.FC = () => {
   const [viewMode, setViewMode] = useState<'wireframes' | 'prototypes'>('prototypes'); // Toggle between views
   const [generationMode, setGenerationMode] = useState<'single' | 'all'>('all'); // Single variant or all 4
   const [selectedVariantToGenerate, setSelectedVariantToGenerate] = useState<number>(1); // Which variant to generate in single mode
+  const [hoveredVariantIndex, setHoveredVariantIndex] = useState<number | null>(null); // For chat card hover highlighting
   const [createdShare, setCreatedShare] = useState<ShareLink | null>(null);
   const [pagesAnchorEl, setPagesAnchorEl] = useState<null | HTMLElement>(null);
   const [breadcrumbAnchorEl, setBreadcrumbAnchorEl] = useState<null | HTMLElement>(null);
@@ -3920,6 +3938,8 @@ export const VibePrototyping: React.FC = () => {
                       elapsedTime={elapsedTimes[variantIndex]}
                       onClick={isVariantComplete ? () => handleVariantClick(variantIndex) : undefined}
                       agentSteps={(isThisBuilding || isVariantComplete || isVariantFailed) ? agentSteps : undefined}
+                      onMouseEnter={() => setHoveredVariantIndex(variantIndex)}
+                      onMouseLeave={() => setHoveredVariantIndex(null)}
                     />
                   );
                 })}
@@ -4952,6 +4972,7 @@ export const VibePrototyping: React.FC = () => {
                         viewMode={viewMode}
                         enableInteractivity={interactivityEnabled}
                         useLLMEnhancement={useLLMEnhancement}
+                        isHovered={hoveredVariantIndex === variantIndex}
                       />
                     </Grid>
                   );
